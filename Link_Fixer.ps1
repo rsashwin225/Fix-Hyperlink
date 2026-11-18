@@ -22,7 +22,7 @@
 # (it must be a Link Fixer script of a higher version that PowerShell can read) and then used for this run, and
 # a copy is kept for when there is no connection. Without an address, or without a connection, the version inside
 # this file is used. Nothing is sent to the address, the tool only reads from it.
-$LF_VERSION = 10
+$LF_VERSION = 11
 function Get-LfVersion([string]$text) {
     $m = [regex]::Match($text, '(?m)^\$LF_VERSION\s*=\s*(\d+)\s*$')
     if ($m.Success) { return [int]$m.Groups[1].Value }
@@ -538,6 +538,71 @@ function Test-ErrorOrBlockPage([string]$html, [bool]$requireContent = $false) {
     return ''
 }
 
+# The name of the website, read from the page the site itself shows for a link that does not work (its "page not
+# found" page). Used as the text for a broken link. It is looked for in this order: the site-name tag of the page,
+# the application name, an element the page marks as its site name or logo, the structured data of the page, the
+# first line of the page header that reads like a name (banners such as "An official website" are skipped), and
+# last the part of the page title that is not the error. Nothing is made from the web address.
+function Get-SiteName([string]$html, [string]$url) {
+    if (-not $html) { return '' }
+    $head = $html; if ($head.Length -gt 400000) { $head = $head.Substring(0, 400000) }
+    $head = [regex]::Replace($head, '(?is)<(script|style|noscript|svg|template)\b(?![^>]*ld\+json)[^>]*>.*?</\1>', ' ')
+    $skip = '(?i)skip|official (website|site)|here.s how you know|\.gov|\bgovernment\b|secure|cookie|privacy|menu|search|log ?in|sign ?in|register|subscribe|contact|toggle|navigation|close|language|translate|espa.ol|home page|homepage|^home$|not found|error|404|oops|sorry|javascript|loading|^(skip|main|content)'
+    $cands = New-Object System.Collections.Generic.List[string]
+    $m1 = Get-MetaContent $head @('og:site_name', 'application-name', 'twitter:site_name'); if ($m1) { $cands.Add($m1) }
+    foreach ($m in [regex]::Matches($head, '(?is)<(?:a|div|span|p|h1|h2|h3|strong|b|figure)\b[^>]*\b(?:class|id)\s*=\s*"[^"]*(?:site-?(?:name|title)|brand|org(?:anization)?-?name|agency-?name|masthead-?title|header-?title|logo-?text)[^"]*"[^>]*>(.*?)</(?:a|div|span|p|h1|h2|h3|strong|b|figure)>')) { $cands.Add((Strip-Tags $m.Groups[1].Value)) }
+    foreach ($m in [regex]::Matches($head, '(?is)<img\b[^>]*\bclass\s*=\s*"[^"]*(?:logo|brand)[^"]*"[^>]*\balt\s*=\s*"([^"]+)"')) { $cands.Add([System.Net.WebUtility]::HtmlDecode($m.Groups[1].Value)) }
+    foreach ($m in [regex]::Matches($head, '(?is)<script[^>]+ld\+json[^>]*>(.*?)</script>')) {
+        $j = $m.Groups[1].Value
+        if ($j -match '"@type"\s*:\s*\[?\s*"(Organization|GovernmentOrganization|WebSite|NewsMediaOrganization|EducationalOrganization|MedicalOrganization|Corporation|LocalBusiness)"') {
+            $nm = [regex]::Match($j, '"name"\s*:\s*"((?:[^"\\]|\\.)*)"'); if ($nm.Success) { $cands.Add(($nm.Groups[1].Value -replace '\\"', '"')) }
+        }
+    }
+    # the first line of the page header that reads like a name: a few capitalised words, no sentence
+    $hm = [regex]::Match($head, '(?is)<header\b[^>]*>(.*?)</header>')
+    $region = ''
+    if ($hm.Success) { $region = $hm.Groups[1].Value } else { $bm = [regex]::Match($head, '(?is)<body\b[^>]*>(.{0,12000})'); if ($bm.Success) { $region = $bm.Groups[1].Value } }
+    # what is specific to this one page (its own heading and title tags) is never taken as the site name
+    $own = New-Object System.Collections.Generic.List[string]
+    foreach ($m in [regex]::Matches($head, '(?is)<h[12]\b[^>]*>(.*?)</h[12]>')) { $own.Add((((Strip-Tags $m.Groups[1].Value) -replace '\s+', ' ').Trim().ToLowerInvariant())) }
+    $ogt = Get-MetaContent $head @('og:title', 'twitter:title'); if ($ogt) { $own.Add($ogt.ToLowerInvariant()) }
+    $lines = New-Object System.Collections.Generic.List[string]
+    foreach ($m in [regex]::Matches($region, '>([^<>]{8,140})<')) {
+        $t = ([System.Net.WebUtility]::HtmlDecode($m.Groups[1].Value) -replace '\s+', ' ').Trim()
+        if (-not $t -or $t -match $skip -or $t -match '[.!?:;|]' -or $own.Contains($t.ToLowerInvariant())) { continue }
+        $ws = @($t -split ' ' | Where-Object { $_ })
+        if ($ws.Count -lt 2 -or $ws.Count -gt 12) { continue }
+        $cap = @($ws | Where-Object { $_ -cmatch '^[A-Z0-9(]' -or $_ -cmatch '^(of|and|the|for|de|la|du|von|van|&)$' }).Count
+        if ($cap / $ws.Count -ge 0.75) { $lines.Add($t) }
+    }
+    if ($lines.Count -gt 0) { $cands.Add($lines[0]) }
+    # the part of the page title that is not the error (Page not found | Site name)
+    $tm = [regex]::Match($head, '(?is)<title[^>]*>(.*?)</title>')
+    if ($tm.Success) {
+        $dashes = [string][char]0x2013 + [string][char]0x2014
+        $segs = New-Object System.Collections.Generic.List[string]
+        foreach ($seg in @([regex]::Split([System.Net.WebUtility]::HtmlDecode($tm.Groups[1].Value), '\s+[|' + $dashes + ']\s+|\s+-\s+|\s+::\s+|\s*\|\s*'))) {
+            $q = ($seg -replace '\s+', ' ').Trim()
+            if (-not $q -or $q -match $skip -or $q -match '(?i)page|found|unavailable|exist') { continue }
+            $ql = $q.ToLowerInvariant(); $isOwn = $false
+            foreach ($o in $own) { if ($o -and ($o -eq $ql -or $o.Contains($ql) -or $ql.Contains($o))) { $isOwn = $true } }
+            if (-not $isOwn) { $segs.Add($q) }
+        }
+        # only a title part that is clearly the site, not another page title: the one that is left once the page's own heading is taken out
+        if ($segs.Count -eq 1) { $cands.Add($segs[0]) }
+    }
+    $generic = '^(home|homepage|welcome|menu|search|error|not found|page not found|untitled|loading|website|site)$'
+    foreach ($c in $cands) {
+        $t = ([string]$c -replace '\s&\s', ' and ' -replace '\s+', ' ').Trim()
+        if (-not $t) { continue }
+        if (($t -ceq $t.ToUpperInvariant()) -and ($t -cmatch '[A-Z]') -and $t.Length -gt 6) { $t = (New-Object Globalization.CultureInfo('en-US')).TextInfo.ToTitleCase($t.ToLowerInvariant()) }
+        $t = Clean-LinkText $t
+        $n = Get-WordCount $t
+        if ($n -ge 1 -and $n -le 12 -and $t -notmatch $generic -and $t -notmatch '(?i)not found|page not found|\b404\b|access denied|just a moment') { return $t }
+    }
+    return ''
+}
+
 # Decides whether the destination works, before any suggestion is made from it.
 #   1. A direct request, the way a script can make it.
 #   2. If that fails (or lands on an error, CAPTCHA or bot check page) a real browser installed on this
@@ -548,7 +613,7 @@ function Test-ErrorOrBlockPage([string]$html, [bool]$requireContent = $false) {
 function Get-LinkStatus([string]$url) {
     $isPdf = ($url -match '(?i)\.pdf($|[?#])')
     $reason = ''; $final = $false
-    $bytes = $null; $ct = ''
+    $bytes = $null; $ct = ''; $errHtml = ''; $errKind = ''
     try {
         $req = [Net.HttpWebRequest]::Create($url)
         $req.Timeout = 15000; $req.ReadWriteTimeout = 15000
@@ -581,6 +646,7 @@ function Get-LinkStatus([string]$url) {
             return [pscustomobject]@{ Working = $true; Reason = ''; Bytes = $bytes; ContentType = $ct; EdgeHtml = $null; IsPdf = $isPdf }
         }
         $reason = $why
+        $errHtml = Decode-Html $bytes $ct; $errKind = $why
     } catch {
         $reason = 'the page could not be reached'
         # A direct .NET method call that throws comes back wrapped in a
@@ -593,6 +659,18 @@ function Get-LinkStatus([string]$url) {
                 $code = [int]$we.Response.StatusCode
                 $reason = 'the page replied with ' + $code + ' ' + $we.Response.StatusDescription
                 if ($code -eq 404 -or $code -eq 410) { $final = $true }
+                # the error page the site shows for this answer, when it sends one
+                try {
+                    $ect = [string]$we.Response.ContentType
+                    if ($ect -match '(?i)html|xml|text') {
+                        $rs2 = $we.Response.GetResponseStream(); $ms2 = New-Object IO.MemoryStream; $b2 = New-Object byte[] 65536
+                        while ($ms2.Length -lt 600000) { $n2 = $rs2.Read($b2, 0, $b2.Length); if ($n2 -le 0) { break }; $ms2.Write($b2, 0, $n2) }
+                        $errHtml = Decode-Html $ms2.ToArray() $ect
+                    }
+                } catch { }
+                if ($code -eq 404 -or $code -eq 410) { $errKind = 'the page says the address was not found' }
+                elseif ($code -eq 401 -or $code -eq 403) { $errKind = 'the page says access is denied' }
+                else { $bk = ''; if ($errHtml) { $bk = Test-ErrorOrBlockPage $errHtml }; if ($bk) { $errKind = $bk } else { $errKind = 'the page is an error page' } }
             } catch { }
         } elseif ($we -and $we.Message -match '(?i)timed out') { $reason = 'the page took too long to reply' }
         elseif ($we -and $we.Message -match '(?i)SSL|TLS|certificate|trust') { $reason = 'a secure connection could not be made' }
@@ -606,9 +684,11 @@ function Get-LinkStatus([string]$url) {
             if (-not $why2) {
                 return [pscustomobject]@{ Working = $true; Reason = $reason; Bytes = $null; ContentType = ''; EdgeHtml = $edgeHtml; IsPdf = $isPdf }
             }
+            # what the real browser shows is an error page: that page (not the answer the script got) says why
+            if ($why2 -ne 'the page is empty') { $errHtml = $edgeHtml; $errKind = $why2 }
         }
     }
-    return [pscustomobject]@{ Working = $false; Reason = $reason; Bytes = $null; ContentType = ''; EdgeHtml = $null; IsPdf = $isPdf }
+    return [pscustomobject]@{ Working = $false; Reason = $reason; Bytes = $null; ContentType = ''; EdgeHtml = $null; IsPdf = $isPdf; ErrHtml = $errHtml; ErrKind = $errKind }
 }
 
 # ---------- YouTube ----------
@@ -928,7 +1008,12 @@ function Get-WatchState($w) {
     # the same check as for the first lookup: an error, CAPTCHA or bot check page is never read for text
     $why = Test-ErrorOrBlockPage $html $true
     if ($why -eq 'the page is empty') { return @{ state = 'loading' } }
-    if ($why -and $why -ne 'the page has almost no content') { return @{ state = 'blocked' } }
+    if ($why -and $why -ne 'the page has almost no content') {
+        # a robot check or an access-denied page can still be passed in the window; a not-found or error page of the site cannot
+        if ($why -match 'CAPTCHA|denied') { return @{ state = 'blocked' } }
+        $nm = ''; try { $nm = Get-SiteName $html $pageUrl } catch { }
+        return @{ state = 'broken'; text = $nm; source = 'site name' }
+    }
     if ($why) { return @{ state = 'weak' } }
     $s = Get-PageTextSuggestion $pageUrl $html
     if ($s.Text) { return @{ state = 'found'; text = $s.Text; source = $s.Source } }
@@ -987,7 +1072,14 @@ function Get-LinkSuggestion([string]$url) {
         # 1. Is the destination working? Decided before anything is read from the page.
         $st = Get-LinkStatus $url
         $isPdf = $st.IsPdf
-        if (-not $st.Working) { $status = 'broken'; $reason = $st.Reason }
+        if (-not $st.Working) {
+            $status = 'broken'; $reason = $st.Reason
+            # a not-found or error page the site itself shows: the name of the site is the text (never the page title of a CAPTCHA or access-denied page)
+            if ($st.ErrHtml -and $st.ErrKind -and $st.ErrKind -notmatch 'CAPTCHA|denied|empty|almost no content') {
+                $nm = ''; try { $nm = Get-SiteName $st.ErrHtml $url } catch { }
+                if ($nm) { $text = $nm; $source = 'site name' }
+            }
+        }
         else {
             # 2. Only now may the page itself be used.
             $source = $st.Reason
@@ -1008,7 +1100,7 @@ function Get-LinkSuggestion([string]$url) {
             if (-not $text) { $status = 'notext'; $source = '' }
         }
     }
-    if ($status -ne 'working') { $text = '' }
+    if ($status -ne 'working' -and $source -ne 'site name') { $text = '' }
     if ($text -and $isPdf -and $text -notmatch '(?i)\.pdf$') { $text = $text + '.pdf' }
     return [pscustomobject]@{ Text = $text; Source = $source; IsPdf = $isPdf; Status = $status; Reason = $reason }
 }
@@ -1083,7 +1175,7 @@ var ITEMS = __ITEMS__;
 var TOKEN = "__TOKEN__";
 var CANWATCH = __CANWATCH__;
 var S = ITEMS.map(function(it){ return {text: it.text}; });
-var W = ITEMS.map(function(){ return {note: "", busy: false, weak: 0, found: "", kept: "", stuck: 0}; });
+var W = ITEMS.map(function(){ return {note: "", busy: false, weak: 0, found: "", kept: "", stuck: 0, brokenPage: false}; });
 var GOICON = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 2h5v5M14 2L7.5 8.5M12 9.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3.5"/></svg>';
 var COPYICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="currentColor"><path d="M0 6.75C0 5.78.78 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .14.11.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/><path d="M5 1.75C5 .78 5.78 0 6.75 0h7.5C15.22 0 16 .78 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .14.11.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>';
 var TICKICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/></svg>';
@@ -1106,7 +1198,9 @@ function noteInfo(i){
   var it = ITEMS[i], w = W[i], has = S[i].text.trim() !== "";
   if(w.busy) return {t: w.note, c: "gry", a: w.stuck >= 12};
   if(has){
+    var nameUsed = (it.source === "site name" && S[i].text === it.text) || (w.brokenPage && w.found && S[i].text === w.found);
     if(w.kept) return {t: w.kept, c: "grn"};
+    if(nameUsed) return {t: "Link not working, the site name is used, please check", c: "grn"};
     if(w.found && S[i].text === w.found) return {t: "Text taken from the page, please check", c: "grn"};
     if(it.status === "working") return {t: /please check/.test(it.source) ? cap(it.source) : "", c: "grn"};
     return {t: "Text added", c: "grn"};
@@ -1116,8 +1210,10 @@ function noteInfo(i){
   if(it.status === "working") return {t: "Type the text for the link", c: "red"};
   return {t: "No meaningful sentence found, please type the text", c: "red"};
 }
+// the link to open the address in the person's own browser is always there on a card that has Go to Link
 function noteHtml(x, i){
-  return esc(x.t) + (x.a ? ' <a href="' + esc(ITEMS[i].url) + '" target="_blank" rel="noopener noreferrer">Open in my normal browser</a>' : "");
+  var open = ITEMS[i].status === "working" ? "" : '<a class="own" href="' + esc(ITEMS[i].url) + '" target="_blank" rel="noopener noreferrer">Open in my normal browser</a>';
+  return esc(x.t) + (x.t && open ? " &middot; " : "") + open;
 }
 function refreshNote(i){ var n = document.querySelector('[data-note="' + i + '"]'); if(!n) return; var x = noteInfo(i); n.innerHTML = noteHtml(x, i); n.className = "note " + x.c; }
 function setNote(i, t){ W[i].note = t; refreshNote(i); }
@@ -1170,7 +1266,8 @@ function fillText(i, t){
     S[i].text = t; w.found = t; w.note = ""; w.kept = "";
     var inp = document.querySelector('input.txt[data-i="' + i + '"]'); if(inp){ inp.value = t; inp.classList.remove("empty"); }
     counts();
-  } else { w.kept = "A suggestion was found, your own text was kept: " + t; }
+  } else if(S[i].text.trim() === t){ w.found = t; w.note = ""; w.kept = ""; }
+  else { w.kept = "A suggestion was found, your own text was kept: " + t; }
   refreshNote(i);
 }
 function poll(i, n){
@@ -1178,6 +1275,11 @@ function poll(i, n){
   if(n > 400){ w.busy = false; setNote(i, "Stopped waiting for the page. Press Go to Link to try again."); return; }
   post("/pagestatus", {i: i}).then(function(r){
     if(r.state === "found"){ fillText(i, r.text); return; }
+    if(r.state === "broken"){
+      w.brokenPage = true;
+      if(r.text){ fillText(i, r.text); } else { w.busy = false; setNote(i, "Link not working, please type the text"); }
+      return;
+    }
     if(r.state === "weak"){ w.weak++; if(w.weak >= 4){ w.busy = false; setNote(i, "The page opened but no meaningful sentence was found, please type the text"); return; } setNote(i, "Reading the page..."); }
     else if(r.state === "closed"){ w.busy = false; setNote(i, "The window was closed before the page was read, please type the text"); return; }
     else if(r.state === "error"){ w.busy = false; setNote(i, "The page could not be read, please type the text"); return; }
@@ -1192,7 +1294,7 @@ function poll(i, n){
 }
 function startWatch(i){
   var w = W[i]; if(w.busy) return;
-  w.busy = true; w.weak = 0; w.stuck = 0; w.kept = ""; setNote(i, "Opening the page in a new window...");
+  w.busy = true; w.weak = 0; w.stuck = 0; w.kept = ""; w.brokenPage = false; setNote(i, "Opening the page in a new window...");
   post("/golink", {i: i}).then(function(r){
     if(!r.ok){ w.busy = false; setNote(i, "Opened as a normal link. The page cannot be read in this case, please type the text"); window.open(ITEMS[i].url, "_blank", "noopener"); return; }
     poll(i, 0);
