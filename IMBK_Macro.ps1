@@ -15,6 +15,8 @@
 #      text combined with its Subtitle text, after step 1 has run.
 #
 # A backup copy is saved first, next to the original (name_BEFORE_SLIDfix.pptx).
+$IMBK_VERSION = '4.1'   # shown at the start of the window; the updater compares this number with GitHub
+
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression
@@ -919,6 +921,8 @@ function Fix-One([string]$path) {
     }
 }
 
+Write-Host "IMBK Macro - running version $IMBK_VERSION" -ForegroundColor Cyan
+Write-Host ''
 $files = if ($args.Count -gt 0) { $args } else { Select-Files }
 if ($files.Count -eq 0) { Write-Host "No files selected."; exit }
 $report = foreach ($f in $files) { Fix-One $f }
