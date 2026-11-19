@@ -1,682 +1,1173 @@
 # ALT TEXT TOOL SCRIPT
-# PPT Alt-Text Filler (S4Carlisle) - PowerShell version, no Python needed.
+# PPT Alt-Text Filler (S4Carlisle). Self-updates from GitHub through AltText_Update.ps1.
+$ALT_VERSION = '3.0'   # shown at the start of the window; the updater compares this number with GitHub
+Write-Host ('PPT Alt-Text Filler - running version ' + $ALT_VERSION) -ForegroundColor Cyan
+Write-Host ''
+# AltText_Matcher.ps1
+# Fills picture alt text in a .pptx from the "For Import" sheet of the alt text Excel file.
 #
-#   1. Pick the PowerPoint file, then the publisher's Alt-Text Excel log.
-#   2. The tool matches every picture to a row of the log (same matching as the earlier Python tool).
-#   3. A review page opens in your browser: each picture with a thumbnail, the suggested Element ID and the alt
-#      text that will be written. Green = confident, amber = check the picture, red = pick the Element ID yourself.
-#      You can also type your own alt text, mark a picture decorative, or add the long description.
-#   4. Press "Apply" - a new copy <name>_with_alt.pptx is saved next to the original. The original is never changed.
+# Step 1  Make the review page: shows every picture with a dropdown of the Excel alt texts.
+#         You pick the matching row for each picture, then press Save mapping.
+# Step 2  Apply: reads the saved mapping and writes the Excel alt text into the pictures.
 #
-# Self-updates from GitHub through AltText_Update.ps1 (see the version line below).
-$ALT_VERSION = '2.0'   # shown at the start of the window; the updater compares this number with GitHub
+# Alt text written = Alt Text - Short, plus Alt Text - Long when the row has one.
+# Pictures that already have alt text are kept as they are. Rows marked Decorative are
+# marked decorative. Nothing else in the deck is changed, and the original file is never
+# touched: the result is saved as a copy.
 
 $ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName Microsoft.VisualBasic
 
-$NS_P = 'http://schemas.openxmlformats.org/presentationml/2006/main'
-$NS_A = 'http://schemas.openxmlformats.org/drawingml/2006/main'
-$NS_R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+$NS_A   = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+$NS_P   = 'http://schemas.openxmlformats.org/presentationml/2006/main'
+$NS_R   = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 $NS_REL = 'http://schemas.openxmlformats.org/package/2006/relationships'
-$NS_SS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
-$DECOR_URI = '{C183D7F6-B498-43B3-948B-1728B52AA6E4}'
-$DECOR_NS = 'http://schemas.microsoft.com/office/drawing/2017/decorative'
+$NS_M   = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+$NS_DEC = 'http://schemas.microsoft.com/office/drawing/2017/decorative'
+$DEC_URI = '{C183D7F6-B498-43B3-948B-1728B52AA6E4}'
 
-$STOP = @{}
-foreach ($w in ('a an the of in on at to for and or with by from is are was were be as this that these those it its into over under shows show showing displays display depicts depict illustrates illustration photo picture image graphic labeled reads read text figure table titled title'.Split(' '))) { $STOP[$w] = $true }
-$ABBR = [ordered]@{ 'ad' = 'additional duty'; 'ems' = 'emergency medical services'; 'emt' = 'emergency medical technician' }
-$AUTO_THRESHOLD = 0.55   # match score needed to pre-fill
-$MARGIN = 0.12           # best must beat 2nd best by this much
-
-# ----------------------------------------------------------------- small helpers
-function New-XmlDoc([string]$text) {
-    $d = New-Object Xml.XmlDocument
-    $d.PreserveWhitespace = $true
-    $d.LoadXml($text)
-    return $d
-}
-function New-Nsmgr([Xml.XmlDocument]$doc) {
-    $m = New-Object Xml.XmlNamespaceManager($doc.NameTable)
-    [void]$m.AddNamespace('p', $NS_P); [void]$m.AddNamespace('a', $NS_A)
-    [void]$m.AddNamespace('r', $NS_R); [void]$m.AddNamespace('rel', $NS_REL); [void]$m.AddNamespace('x', $NS_SS)
-    return ,$m
-}
-function Read-ZipBytes($zip, [string]$name) {
-    $e = $zip.GetEntry($name)
-    if ($null -eq $e) { return $null }
-    $s = $e.Open(); $m = New-Object IO.MemoryStream
-    try { [void]$s.CopyTo($m) } finally { $s.Dispose() }
-    return ,$m.ToArray()
-}
-function Read-ZipText($zip, [string]$name) {
-    $b = Read-ZipBytes $zip $name
-    if ($null -eq $b) { return $null }
-    $t = [Text.Encoding]::UTF8.GetString($b)
-    return $t.TrimStart([char]0xFEFF)
-}
-function Get-Rels($zip, [string]$part) {
-    $dir = ''; $leaf = $part
-    $i = $part.LastIndexOf('/')
-    if ($i -ge 0) { $dir = $part.Substring(0, $i + 1); $leaf = $part.Substring($i + 1) }
-    $text = Read-ZipText $zip ($dir + '_rels/' + $leaf + '.rels')
-    $map = @{}
-    if ($null -eq $text) { return $map }
-    $doc = New-XmlDoc $text
-    foreach ($rel in $doc.DocumentElement.ChildNodes) {
-        if ($rel.NodeType -ne 'Element') { continue }
-        $map[$rel.GetAttribute('Id')] = @{ target = $rel.GetAttribute('Target'); type = $rel.GetAttribute('Type'); mode = $rel.GetAttribute('TargetMode') }
-    }
-    return $map
-}
-function Resolve-Part([string]$fromPart, [string]$target) {
-    $dir = ''
-    $i = $fromPart.LastIndexOf('/')
-    if ($i -ge 0) { $dir = $fromPart.Substring(0, $i) }
-    $combined = if ($target.StartsWith('/')) { $target.TrimStart('/') } else { "$dir/$target" }
-    $parts = New-Object System.Collections.Generic.List[string]
-    foreach ($seg in ($combined -replace '\\', '/').Split('/')) {
-        if ($seg -eq '..') { if ($parts.Count -gt 0) { $parts.RemoveAt($parts.Count - 1) } }
-        elseif ($seg -eq '.' -or $seg -eq '') { continue }
-        else { $parts.Add($seg) }
-    }
-    return ($parts -join '/')
-}
-function Get-Chapter([string]$path) {
-    $m = [regex]::Match([IO.Path]::GetFileName($path), '(?:PPT|CH|Chapter)[_\- ]?0*(\d{1,3})', 'IgnoreCase')
-    if ($m.Success) { return $m.Groups[1].Value.PadLeft(2, '0') }
+function Pick-File([string]$title, [string]$filter) {
+    $owner = New-Object System.Windows.Forms.Form
+    $owner.TopMost = $true
+    $dlg = New-Object System.Windows.Forms.OpenFileDialog
+    $dlg.Title = $title
+    $dlg.Filter = $filter
+    $dlg.InitialDirectory = Join-Path $env:USERPROFILE 'Downloads'
+    if ($dlg.ShowDialog($owner) -eq 'OK') { return $dlg.FileName }
     return $null
 }
 
-# ----------------------------------------------------------------- Excel log (xlsx read without Excel)
-function Get-ColIndex([string]$cellRef) {
-    $letters = ($cellRef -replace '[0-9]', '').ToUpperInvariant()
-    $n = 0
-    foreach ($ch in $letters.ToCharArray()) { $n = $n * 26 + ([int]$ch - 64) }
-    return $n - 1
+function Read-ZipText($zip, [string]$name) {
+    $e = $zip.GetEntry($name)
+    if (-not $e) { return $null }
+    $sr = New-Object IO.StreamReader($e.Open(), [Text.Encoding]::UTF8)
+    try { return $sr.ReadToEnd() } finally { $sr.Close() }
 }
-function Read-Sheets([string]$xlsx) {
+
+function Resolve-Part([string]$fromPart, [string]$target) {
+    if ($target.StartsWith('/')) { return $target.TrimStart('/') }
+    $baseDir = [IO.Path]::GetDirectoryName($fromPart.Replace('/', '\')).Replace('\', '/')
+    $parts = New-Object System.Collections.Generic.List[string]
+    foreach ($s in ($baseDir + '/' + $target).Split('/')) {
+        if ($s -eq '' -or $s -eq '.') { continue }
+        if ($s -eq '..') { if ($parts.Count -gt 0) { $parts.RemoveAt($parts.Count - 1) } } else { $parts.Add($s) }
+    }
+    return ($parts -join '/')
+}
+
+function Col-Letters([string]$ref) { return ([regex]::Match($ref, '^[A-Z]+')).Value }
+
+function Norm-Chapter([string]$v) {
+    $t = ($v + '').Trim()
+    $n = 0
+    if ([int]::TryParse($t, [ref]$n)) { return [string]$n }
+    return $t.ToUpperInvariant()
+}
+
+# ---------- Excel ----------
+function Get-AltRows([string]$xlsx) {
     $zip = [IO.Compression.ZipFile]::OpenRead($xlsx)
     try {
-        $shared = New-Object System.Collections.Generic.List[string]
-        $sst = Read-ZipText $zip 'xl/sharedStrings.xml'
-        if ($sst) {
-            $d = New-XmlDoc $sst; $nsm = New-Nsmgr $d
-            foreach ($si in $d.SelectNodes('//x:si', $nsm)) {
-                $sb = New-Object Text.StringBuilder
-                foreach ($t in $si.SelectNodes('.//x:t[not(ancestor::x:rPh)]', $nsm)) { [void]$sb.Append($t.InnerText) }
-                $shared.Add($sb.ToString())
+        $wb = New-Object Xml.XmlDocument; $wb.LoadXml((Read-ZipText $zip 'xl/workbook.xml'))
+        $wns = New-Object Xml.XmlNamespaceManager($wb.NameTable)
+        $wns.AddNamespace('m', $NS_M); $wns.AddNamespace('r', $NS_R)
+        $rels = New-Object Xml.XmlDocument; $rels.LoadXml((Read-ZipText $zip 'xl/_rels/workbook.xml.rels'))
+        $relMap = @{}
+        foreach ($r in $rels.DocumentElement.ChildNodes) { if ($r.NodeType -eq 'Element') { $relMap[$r.GetAttribute('Id')] = $r.GetAttribute('Target') } }
+
+        $strings = New-Object System.Collections.Generic.List[string]
+        $sstText = Read-ZipText $zip 'xl/sharedStrings.xml'
+        if ($sstText) {
+            $sd = New-Object Xml.XmlDocument; $sd.LoadXml($sstText)
+            $sns = New-Object Xml.XmlNamespaceManager($sd.NameTable); $sns.AddNamespace('m', $NS_M)
+            foreach ($si in $sd.DocumentElement.ChildNodes) {
+                if ($si.NodeType -ne 'Element') { continue }
+                $strings.Add((($si.SelectNodes('.//m:t', $sns) | ForEach-Object { $_.InnerText }) -join ''))
             }
         }
-        $wb = New-XmlDoc (Read-ZipText $zip 'xl/workbook.xml'); $wnsm = New-Nsmgr $wb
-        $rels = Get-Rels $zip 'xl/workbook.xml'
-        $sheets = @()
-        foreach ($sh in $wb.SelectNodes('//x:sheets/x:sheet', $wnsm)) {
+
+        $sheetList = @()
+        foreach ($sh in $wb.SelectNodes('//m:sheets/m:sheet', $wns)) {
             $rid = $sh.GetAttribute('id', $NS_R)
-            if (-not $rels.ContainsKey($rid)) { continue }
-            $part = Resolve-Part 'xl/workbook.xml' $rels[$rid].target
-            $text = Read-ZipText $zip $part
-            if ($null -eq $text) { continue }
-            $sd = New-XmlDoc $text; $snsm = New-Nsmgr $sd
-            $rows = New-Object System.Collections.Generic.List[object]
-            foreach ($row in $sd.SelectNodes('//x:sheetData/x:row', $snsm)) {
-                $cells = @{}
-                foreach ($c in $row.SelectNodes('x:c', $snsm)) {
-                    $idx = Get-ColIndex $c.GetAttribute('r')
-                    $type = $c.GetAttribute('t')
-                    $val = $null
-                    if ($type -eq 's') {
-                        $v = $c.SelectSingleNode('x:v', $snsm)
-                        if ($v -and $v.InnerText -match '^\d+$') { $val = $shared[[int]$v.InnerText] }
-                    } elseif ($type -eq 'inlineStr') {
-                        $sb = New-Object Text.StringBuilder
-                        foreach ($t in $c.SelectNodes('.//x:t', $snsm)) { [void]$sb.Append($t.InnerText) }
-                        $val = $sb.ToString()
-                    } else {
-                        $v = $c.SelectSingleNode('x:v', $snsm)
-                        if ($v) {
-                            $val = $v.InnerText
-                            if ($type -eq 'b') { $val = $(if ($val -eq '1') { 'True' } else { 'False' }) }
-                            elseif ($type -ne 'str' -and $val -match '^-?\d+\.0+$') { $val = $val -replace '\.0+$', '' }
-                        }
-                    }
-                    if ($null -ne $val) { $cells[$idx] = $val }
-                }
-                $rows.Add(@{ n = [int]$row.GetAttribute('r'); cells = $cells })
-            }
-            $sheets += ,@{ name = $sh.GetAttribute('name'); rows = $rows }
+            $sheetList += [pscustomobject]@{ Name = $sh.GetAttribute('name'); Part = (Resolve-Part 'xl/workbook.xml' $relMap[$rid]) }
         }
-        return ,$sheets
+
+        $best = $null
+        $ordered = @($sheetList | Where-Object { $_.Name -match 'import' }) + @($sheetList | Where-Object { $_.Name -notmatch 'import' })
+        foreach ($sh in $ordered) {
+            $grid = Read-Sheet $zip $sh.Part $strings
+            foreach ($rn in ($grid.Keys | Sort-Object)) {
+                $vals = @($grid[$rn].Values)
+                if ($vals -contains 'Element Number' -and ($vals -contains 'Alt Text - Short')) { $best = @{ Grid = $grid; Header = $rn }; break }
+            }
+            if ($best) { break }
+        }
+        if (-not $best) { throw 'The Excel file has no sheet with the columns Element Number and Alt Text - Short.' }
+
+        $hdr = $best.Grid[$best.Header]
+        $col = @{}
+        foreach ($k in $hdr.Keys) { $col[$hdr[$k].Trim()] = $k }
+        $get = { param($row, $name) if ($col.ContainsKey($name) -and $row.ContainsKey($col[$name])) { return [string]$row[$col[$name]] } else { return '' } }
+
+        $out = New-Object System.Collections.Generic.List[object]
+        foreach ($rn in ($best.Grid.Keys | Sort-Object)) {
+            if ($rn -le $best.Header) { continue }
+            $row = $best.Grid[$rn]
+            $id = (& $get $row 'Element Number').Trim()
+            if (-not $id) { continue }
+            $out.Add([pscustomobject]@{
+                Row = $rn
+                Chapter = (Norm-Chapter (& $get $row 'Chapter Number'))
+                Id = $id
+                Usage = (& $get $row 'Usage').Trim()
+                Decorative = ((& $get $row 'Decorative').Trim().ToUpperInvariant() -eq 'YES')
+                Short = (& $get $row 'Alt Text - Short').Trim()
+                Long = (& $get $row 'Alt Text - Long').Trim()
+            })
+        }
+        return ,$out.ToArray()
     } finally { $zip.Dispose() }
 }
 
-function Import-Log([string]$xlsx) {
-    $sheets = Read-Sheets $xlsx
-    $best = $null; $bestN = 0
-    foreach ($sh in $sheets) {
-        $hdrRow = $sh.rows | Where-Object { $_.n -eq 1 } | Select-Object -First 1
-        if ($null -eq $hdrRow) { continue }
-        $hit = $false
-        foreach ($k in $hdrRow.cells.Keys) { if (([string]$hdrRow.cells[$k]).Trim().ToLowerInvariant().StartsWith('alt text - short')) { $hit = $true } }
-        $maxRow = 0; foreach ($r in $sh.rows) { if ($r.n -gt $maxRow) { $maxRow = $r.n } }
-        if ($hit -and $maxRow -gt $bestN -and $sh.name.ToLowerInvariant() -ne 'examples') { $best = $sh; $bestN = $maxRow }
-    }
-    if ($null -eq $best) { throw "Could not find a sheet with an 'Alt Text - Short' column." }
-    $hdrRow = $best.rows | Where-Object { $_.n -eq 1 } | Select-Object -First 1
-    $hdrNames = New-Object System.Collections.Generic.List[string]; $hdrIdx = @{}
-    foreach ($k in ($hdrRow.cells.Keys | Sort-Object)) {
-        $h = ([string]$hdrRow.cells[$k]).Trim().ToLowerInvariant()
-        if (-not $hdrIdx.ContainsKey($h)) { $hdrNames.Add($h) }
-        $hdrIdx[$h] = [int]$k
-    }
-    function Find-Col([string[]]$names) {
-        foreach ($n in $names) { foreach ($h in $hdrNames) { if ($h.StartsWith($n)) { return $hdrIdx[$h] } } }
-        return -1
-    }
-    $ci = @{
-        prefix = (Find-Col @('chapter prefix')); ch = (Find-Col @('chapter number')); el = (Find-Col @('element number'))
-        usage = (Find-Col @('usage')); dec = (Find-Col @('decorative')); short = (Find-Col @('alt text - short'))
-        long = (Find-Col @('alt text - long')); fig = (Find-Col @('figure naming')); page = (Find-Col @('page no'))
-    }
-    $rows = New-Object System.Collections.Generic.List[object]
-    foreach ($r in ($best.rows | Where-Object { $_.n -ge 2 } | Sort-Object { $_.n })) {
-        $g = { param($k) if ($ci[$k] -ge 0 -and $r.cells.ContainsKey($ci[$k])) { ([string]$r.cells[$ci[$k]]).Trim() } else { '' } }
-        $short = & $g 'short'; $el = & $g 'el'
-        if (-not ($short -or $el)) { continue }
-        $ch = & $g 'ch'
-        if ($ch -match '^\d+$') { $ch = $ch.PadLeft(2, '0') }
-        $rows.Add([pscustomobject]@{
-            prefix = (& $g 'prefix'); ch = $ch; el = $el; usage = (& $g 'usage')
-            dec = (@('yes', 'y') -contains (& $g 'dec').ToLowerInvariant())
-            short = $short; long = (& $g 'long'); fig = (& $g 'fig'); page = (& $g 'page'); key = ''
-        })
-    }
-    return ,$rows
-}
-
-# ----------------------------------------------------------------- PPTX reading
-$script:BoxCache = @{}
-function Get-LayoutMaster($zip, [string]$slidePart) {
-    $rels = Get-Rels $zip $slidePart
-    $layout = $null
-    foreach ($v in $rels.Values) { if ($v.type -match 'slideLayout$') { $layout = Resolve-Part $slidePart $v.target; break } }
-    $master = $null
-    if ($layout) {
-        $lr = Get-Rels $zip $layout
-        foreach ($v in $lr.Values) { if ($v.type -match 'slideMaster$') { $master = Resolve-Part $layout $v.target; break } }
-    }
-    return @($layout, $master)
-}
-function Get-XfrmBox($node, $nsm) {
-    $xf = $node.SelectSingleNode('p:spPr/a:xfrm', $nsm)
-    if ($null -eq $xf) { $xf = $node.SelectSingleNode('p:grpSpPr/a:xfrm', $nsm) }
-    if ($null -eq $xf) { return $null }
-    $off = $xf.SelectSingleNode('a:off', $nsm); $ext = $xf.SelectSingleNode('a:ext', $nsm)
-    if ($null -eq $off -or $null -eq $ext) { return $null }
-    return @{ x = [double]$off.GetAttribute('x'); y = [double]$off.GetAttribute('y'); cx = [double]$ext.GetAttribute('cx'); cy = [double]$ext.GetAttribute('cy') }
-}
-function Find-PhBox($zip, [string]$part, [string]$type, [string]$idx) {
-    if (-not $part) { return $null }
-    $key = "$part|$type|$idx"
-    if ($script:BoxCache.ContainsKey($key)) { return $script:BoxCache[$key] }
+function Read-Sheet($zip, [string]$part, $strings) {
+    $grid = @{}
     $text = Read-ZipText $zip $part
-    $box = $null
-    if ($text) {
-        $d = New-XmlDoc $text; $nsm = New-Nsmgr $d
-        foreach ($sp in $d.SelectNodes('//p:sp', $nsm)) {
-            $ph = $sp.SelectSingleNode('p:nvSpPr/p:nvPr/p:ph', $nsm)
-            if ($null -eq $ph) { continue }
-            $pi = $ph.GetAttribute('idx'); $pt = $ph.GetAttribute('type')
-            if (($idx -and $pi -eq $idx) -or ((-not $idx) -and $type -and $pt -eq $type)) { $box = Get-XfrmBox $sp $nsm; if ($box) { break } }
+    if (-not $text) { return $grid }
+    $d = New-Object Xml.XmlDocument; $d.LoadXml($text)
+    $m = New-Object Xml.XmlNamespaceManager($d.NameTable); $m.AddNamespace('m', $NS_M)
+    foreach ($r in $d.SelectNodes('//m:sheetData/m:row', $m)) {
+        $rn = [int]$r.GetAttribute('r')
+        $cells = @{}
+        foreach ($c in $r.SelectNodes('m:c', $m)) {
+            $t = $c.GetAttribute('t')
+            $v = ''
+            if ($t -eq 'inlineStr') { $v = (($c.SelectNodes('.//m:t', $m) | ForEach-Object { $_.InnerText }) -join '') }
+            else {
+                $vn = $c.SelectSingleNode('m:v', $m)
+                if ($vn) {
+                    if ($t -eq 's') { $v = $strings[[int]$vn.InnerText] } else { $v = $vn.InnerText }
+                }
+            }
+            if ($v -ne '') { $cells[(Col-Letters $c.GetAttribute('r'))] = $v }
         }
+        if ($cells.Count) { $grid[$rn] = $cells }
     }
-    $script:BoxCache[$key] = $box
-    return $box
-}
-function Get-ShapeBox($zip, [string]$slidePart, $node, $nsm) {
-    $b = Get-XfrmBox $node $nsm
-    if ($b) { return $b }
-    $ph = $node.SelectSingleNode('p:nvSpPr/p:nvPr/p:ph', $nsm)
-    if ($null -eq $ph) { $ph = $node.SelectSingleNode('p:nvPicPr/p:nvPr/p:ph', $nsm) }
-    if ($null -eq $ph) { return $null }
-    $lm = Get-LayoutMaster $zip $slidePart
-    $type = $ph.GetAttribute('type'); $idx = $ph.GetAttribute('idx')
-    $b = Find-PhBox $zip $lm[0] $type $idx
-    if ($b) { return $b }
-    if (-not $type) { $type = 'body' }
-    return (Find-PhBox $zip $lm[1] $type '')
-}
-function Get-ParaText($node, $nsm) {
-    $paras = @()
-    foreach ($p in $node.SelectNodes('.//a:p', $nsm)) {
-        $sb = New-Object Text.StringBuilder
-        foreach ($c in $p.ChildNodes) {
-            if ($c.LocalName -eq 'r' -or $c.LocalName -eq 'fld') { foreach ($t in $c.SelectNodes('a:t', $nsm)) { [void]$sb.Append($t.InnerText) } }
-            elseif ($c.LocalName -eq 'br') { [void]$sb.Append("`n") }
-        }
-        $paras += $sb.ToString()
-    }
-    return ($paras -join "`n").Trim()
-}
-function Get-Tokens([string]$text) {
-    $t = ([string]$text).ToLowerInvariant()
-    foreach ($k in $ABBR.Keys) { $t = [regex]::Replace($t, '\b' + $k + '\b', $ABBR[$k]) }
-    $out = New-Object System.Collections.Generic.List[string]
-    foreach ($m in [regex]::Matches($t, '[a-z0-9]+')) {
-        $w = $m.Value
-        if ($STOP.ContainsKey($w)) { continue }
-        if ($w.Length -gt 3 -and $w.EndsWith('s')) { $w = $w.Substring(0, $w.Length - 1) }
-        $out.Add($w)
-    }
-    return ,$out
+    return $grid
 }
 
-function Import-Deck([string]$pptx) {
+# ---------- PowerPoint ----------
+function Get-SlideParts($zip) {
+    $pres = New-Object Xml.XmlDocument; $pres.LoadXml((Read-ZipText $zip 'ppt/presentation.xml'))
+    $pm = New-Object Xml.XmlNamespaceManager($pres.NameTable); $pm.AddNamespace('p', $NS_P); $pm.AddNamespace('r', $NS_R)
+    $rels = New-Object Xml.XmlDocument; $rels.LoadXml((Read-ZipText $zip 'ppt/_rels/presentation.xml.rels'))
+    $map = @{}
+    foreach ($r in $rels.DocumentElement.ChildNodes) { if ($r.NodeType -eq 'Element') { $map[$r.GetAttribute('Id')] = (Resolve-Part 'ppt/presentation.xml' $r.GetAttribute('Target')) } }
+    $list = New-Object System.Collections.Generic.List[string]
+    foreach ($s in $pres.SelectNodes('//p:sldIdLst/p:sldId', $pm)) { $list.Add($map[$s.GetAttribute('id', $NS_R)]) }
+    return ,$list.ToArray()
+}
+
+function New-SlideNs($doc) {
+    $m = New-Object Xml.XmlNamespaceManager($doc.NameTable)
+    $m.AddNamespace('a', $NS_A); $m.AddNamespace('p', $NS_P); $m.AddNamespace('r', $NS_R)
+    return ,$m
+}
+
+function Get-NodeText($node, $m) {
+    $parts = New-Object System.Collections.Generic.List[string]
+    foreach ($para in $node.SelectNodes('.//a:p', $m)) {
+        $sb = New-Object System.Text.StringBuilder
+        foreach ($c in $para.ChildNodes) {
+            if ($c.LocalName -eq 'br') { [void]$sb.Append(' ') }
+            elseif ($c.LocalName -eq 'r' -or $c.LocalName -eq 'fld') {
+                $t = $c.SelectSingleNode('a:t', $m)
+                if ($t) { [void]$sb.Append($t.InnerText) }
+            }
+        }
+        $parts.Add($sb.ToString())
+    }
+    return ([regex]::Replace(($parts -join ' '), '\s+', ' ')).Trim()
+}
+
+function Test-AiGenerated([string]$alt) {
+    if (-not $alt) { return $false }
+    return [bool]([regex]::IsMatch($alt, '(?i)(ai[\s-]*generat|generated\s+(by|using)\s+ai|automatically\s+generated|ai[\s-]*content\s+may\s+be\s+incorrect)'))
+}
+
+function Get-DeckPictures([string]$pptx) {
     $zip = [IO.Compression.ZipFile]::OpenRead($pptx)
     try {
-        $pres = New-XmlDoc (Read-ZipText $zip 'ppt/presentation.xml'); $pnsm = New-Nsmgr $pres
-        $prels = Get-Rels $zip 'ppt/presentation.xml'
-        $slideParts = @()
-        foreach ($sid in $pres.SelectNodes('//p:sldIdLst/p:sldId', $pnsm)) {
-            $slideParts += (Resolve-Part 'ppt/presentation.xml' $prels[$sid.GetAttribute('id', $NS_R)].target)
-        }
-        $pics = New-Object System.Collections.Generic.List[object]
-        $docs = @{}
-        $n = 0
-        foreach ($part in $slideParts) {
-            $n++
-            $doc = New-XmlDoc (Read-ZipText $zip $part); $nsm = New-Nsmgr $doc
-            $docs[$part] = $doc
-            $rels = Get-Rels $zip $part
-            $spTree = $doc.SelectSingleNode('//p:cSld/p:spTree', $nsm)
-            # title + other text shapes (top level only, like the earlier tool)
-            $title = ''; $texts = New-Object System.Collections.Generic.List[object]
-            foreach ($e in $spTree.ChildNodes) {
-                if ($e.NodeType -ne 'Element' -or $e.LocalName -ne 'sp') { continue }
-                if ($null -eq $e.SelectSingleNode('p:txBody', $nsm)) { continue }
-                $t = Get-ParaText $e $nsm
-                if (-not $t) { continue }
-                $ph = $e.SelectSingleNode('p:nvSpPr/p:nvPr/p:ph', $nsm)
-                $isTitle = $ph -and (@('title', 'ctrTitle') -contains $ph.GetAttribute('type'))
-                if ($isTitle) { if (-not $title) { $title = $t } }
-                elseif ($t -notmatch '^(?i)(\u00A9|courtesy|top |bottom |left |right |source)') { $texts.Add(@{ node = $e; text = $t }) }
+        $parts = Get-SlideParts $zip
+        $out = New-Object System.Collections.Generic.List[object]
+        $creditRx = '(?i)(' + [char]169 + '|courtesy|shutterstock|istock|getty|alamy|copyright)'
+        for ($i = 0; $i -lt $parts.Count; $i++) {
+            $d = New-Object Xml.XmlDocument; $d.PreserveWhitespace = $true; $d.LoadXml((Read-ZipText $zip $parts[$i]))
+            $m = New-SlideNs $d
+            $title = ''
+            $ts = $d.SelectSingleNode('//p:sp[p:nvSpPr/p:nvPr/p:ph[@type="title" or @type="ctrTitle"]]', $m)
+            if ($ts) { $title = Get-NodeText $ts $m }
+            $slideText = (($d.SelectNodes('//a:t', $m) | ForEach-Object { $_.InnerText }) -join ' ')
+            # short texts on the slide, cut off before any photo credit
+            $geo = New-Object System.Collections.Generic.List[object]
+            $shorts = New-Object System.Collections.Generic.List[string]
+            foreach ($sp in $d.SelectNodes('//p:cSld/p:spTree/p:sp', $m)) {
+                if ($sp.SelectSingleNode('p:nvSpPr/p:nvPr/p:ph[@type="title" or @type="ctrTitle"]', $m)) { continue }
+                $gt = Get-NodeText $sp $m
+                $mm = [regex]::Match($gt, $creditRx)
+                if ($mm.Success) { $gt = $gt.Substring(0, $mm.Index).Trim() }
+                if ($gt.Length -eq 0 -or $gt.Length -gt 200) { continue }
+                if ($gt.Length -le 80 -and -not $shorts.Contains($gt)) { $shorts.Add($gt) }
+                if ($gt.Length -gt 80) { continue }
+                $go = $sp.SelectSingleNode('p:spPr/a:xfrm/a:off', $m); $ge = $sp.SelectSingleNode('p:spPr/a:xfrm/a:ext', $m)
+                if (-not $go -or -not $ge) { continue }
+                $geo.Add([pscustomobject]@{ Text = $gt; X = [double]$go.GetAttribute('x'); Y = [double]$go.GetAttribute('y'); W = [double]$ge.GetAttribute('cx'); H = [double]$ge.GetAttribute('cy') })
             }
-            $allText = (($texts | ForEach-Object { $_.text }) -join ' ')
-            $stack = New-Object System.Collections.Generic.Stack[object]
-            $order = New-Object System.Collections.Generic.List[object]
-            function Walk($parent) {
-                foreach ($e in $parent.ChildNodes) {
-                    if ($e.NodeType -ne 'Element') { continue }
-                    if ($e.LocalName -eq 'pic') { $order.Add($e) }
-                    elseif ($e.LocalName -eq 'grpSp') { Walk $e }
-                }
-            }
-            Walk $spTree
-            foreach ($pic in $order) {
-                $pr = $pic.SelectSingleNode('p:nvPicPr/p:cNvPr', $nsm)
-                $near = ''
-                $pb = Get-ShapeBox $zip $part $pic $nsm
-                if ($pb) {
-                    $cx = $pb.x + $pb.cx / 2; $cy = $pb.y + $pb.cy / 2; $bd = $null
-                    foreach ($tx in $texts) {
-                        $tb = Get-ShapeBox $zip $part $tx.node $nsm
-                        if ($null -eq $tb) { continue }
-                        $dd = [math]::Sqrt([math]::Pow($tb.x + $tb.cx / 2 - $cx, 2) + [math]::Pow($tb.y + $tb.cy / 2 - $cy, 2))
-                        if ($null -eq $bd -or $dd -lt $bd) { $near = $tx.text; $bd = $dd }
+            foreach ($p in $d.SelectNodes('//p:pic', $m)) {
+                $nv = $p.SelectSingleNode('p:nvPicPr/p:cNvPr', $m)
+                $isVideo = [bool]($p.SelectSingleNode('.//a:videoFile|.//a:audioFile', $m))
+                $label = ''
+                $po = $p.SelectSingleNode('p:spPr/a:xfrm/a:off', $m); $pe = $p.SelectSingleNode('p:spPr/a:xfrm/a:ext', $m)
+                if ($po -and $pe) {
+                    $px = [double]$po.GetAttribute('x'); $py = [double]$po.GetAttribute('y'); $pw = [double]$pe.GetAttribute('cx'); $ph = [double]$pe.GetAttribute('cy')
+                    $bestD = [double]::MaxValue
+                    foreach ($g in $geo) {
+                        $ox = [Math]::Min($px + $pw, $g.X + $g.W) - [Math]::Max($px, $g.X)
+                        $oy = [Math]::Min($py + $ph, $g.Y + $g.H) - [Math]::Max($py, $g.Y)
+                        $minW = [Math]::Min($pw, $g.W); $minH = [Math]::Min($ph, $g.H)
+                        $dist = -1.0
+                        if ($minW -gt 0 -and ($ox / $minW) -ge 0.3 -and $g.Y -ge ($py + $ph * 0.85)) {
+                            $gap = [Math]::Max(0, $g.Y - ($py + $ph))
+                            if ($gap -le 1000000) { $dist = $gap + 0.5 * [Math]::Abs(($g.X + $g.W / 2) - ($px + $pw / 2)) }
+                        } elseif ($minH -gt 0 -and ($oy / $minH) -ge 0.3) {
+                            if ($g.X -ge ($px + $pw)) { $gap = $g.X - ($px + $pw) } elseif (($g.X + $g.W) -le $px) { $gap = $px - ($g.X + $g.W) } else { $gap = 0 }
+                            if ($gap -le 800000) { $dist = 400000 + $gap }
+                        }
+                        if ($dist -ge 0 -and $dist -lt $bestD) { $bestD = $dist; $label = $g.Text }
                     }
                 }
-                $blob = $null; $mime = ''
-                $blip = $pic.SelectSingleNode('p:blipFill/a:blip', $nsm)
-                if ($blip) {
-                    $rid = $blip.GetAttribute('embed', $NS_R)
-                    if ($rid -and $rels.ContainsKey($rid)) {
-                        $mp = Resolve-Part $part $rels[$rid].target
-                        $blob = Read-ZipBytes $zip $mp
-                        $ext = [IO.Path]::GetExtension($mp).ToLowerInvariant()
-                        $mime = switch ($ext) { '.png' { 'image/png' } '.jpg' { 'image/jpeg' } '.jpeg' { 'image/jpeg' } '.gif' { 'image/gif' } '.bmp' { 'image/bmp' } '.svg' { 'image/svg+xml' } '.webp' { 'image/webp' } default { '' } }
-                    }
-                }
-                $decor = ($null -ne $pic.SelectSingleNode('.//*[local-name()="decorative"]'))
-                $pics.Add([pscustomobject]@{
-                    slide = $n; part = $part; node = $pic; id = [int]$pr.GetAttribute('id'); name = $pr.GetAttribute('name')
-                    alt = ([string]$pr.GetAttribute('descr')).Trim(); decor = $decor; title = $title; near = $near
-                    allText = $allText; blob = $blob; mime = $mime
+                $embed = ''
+                $blipN = $p.SelectSingleNode('p:blipFill/a:blip', $m)
+                if ($blipN) { $embed = $blipN.GetAttribute('embed', $NS_R) }
+                $out.Add([pscustomobject]@{
+                    Part = $parts[$i]; Embed = $embed;
+                    Slide = $i + 1; Title = $title.Trim(); SlideText = $slideText; ShapeId = $nv.GetAttribute('id'); Name = $nv.GetAttribute('name')
+                    Alt = $nv.GetAttribute('descr'); Label = $label; Shorts = $shorts.ToArray(); IsVideo = $isVideo
+                    IsAi = (Test-AiGenerated $nv.GetAttribute('descr'))
                 })
             }
         }
-        return @{ pics = $pics; docs = $docs; slides = $slideParts.Count }
+        return ,$out.ToArray()
     } finally { $zip.Dispose() }
 }
 
-# ----------------------------------------------------------------- matching (same method as the earlier tool)
-function Invoke-Match($pics, $rows) {
-    $cands = @($rows | Where-Object { $_.short })
-    $seen = @{}
-    foreach ($r in $cands) {
-        $k = if ($r.el) { $r.el } else { '?' }
-        if ($seen.ContainsKey($k)) { $seen[$k]++ } else { $seen[$k] = 1 }
-        $r.key = if ($seen[$k] -eq 1) { $k } else { "$k #$($seen[$k])" }
+function Find-ShapeById($shapes, [int]$id) {
+    foreach ($s in $shapes) {
+        if ($s.Id -eq $id) { return $s }
+        if ($s.Type -eq 6) { $r = Find-ShapeById $s.GroupItems $id; if ($r) { return $r } }
     }
-    $docs = @()
-    foreach ($r in $cands) {
-        $lg = $r.long; if ($lg.Length -gt 300) { $lg = $lg.Substring(0, 300) }
-        $h = New-Object 'System.Collections.Generic.HashSet[string]'
-        foreach ($w in (Get-Tokens ($r.short + ' ' + $lg + ' ' + $r.el))) { [void]$h.Add($w) }
-        $docs += ,$h
-    }
-    $n = $docs.Count
-    $df = @{}
-    foreach ($d in $docs) { foreach ($w in $d) { if ($df.ContainsKey($w)) { $df[$w]++ } else { $df[$w] = 1 } } }
-    $idf = @{}
-    foreach ($w in $df.Keys) { $idf[$w] = [math]::Log(($n + 1) / ($df[$w] + 0.5)) }
-    $pairs = New-Object System.Collections.Generic.List[object]
-    for ($pi = 0; $pi -lt $pics.Count; $pi++) {
-        $p = $pics[$pi]
-        $weights = [ordered]@{}
-        foreach ($pair in @(@($p.near, 3), @($p.title, 1.5), @($p.allText, 1), @($p.alt, 4))) {
-            $set = New-Object 'System.Collections.Generic.HashSet[string]'
-            foreach ($w in (Get-Tokens $pair[0])) { [void]$set.Add($w) }
-            foreach ($w in $set) { if (-not $weights.Contains($w) -or $weights[$w] -lt $pair[1]) { $weights[$w] = [double]$pair[1] } }
-        }
-        $tot = 0.0
-        foreach ($w in $weights.Keys) { $tot += $weights[$w] * $(if ($df.ContainsKey($w)) { $idf[$w] } else { 0.6 }) }
-        if ($tot -eq 0) { $tot = 1.0 }
-        $sc = New-Object 'double[]' $n
-        for ($ri = 0; $ri -lt $n; $ri++) {
-            $hit = 0.0
-            foreach ($w in $weights.Keys) { if ($docs[$ri].Contains($w)) { $hit += $weights[$w] * $idf[$w] } }
-            $sc[$ri] = $hit / $tot
-        }
-        $order = @(0..($n - 1) | Sort-Object @{ Expression = { - $sc[$_] } }, @{ Expression = { $_ } })
-        if ($n -eq 0) { $order = @() }
-        $best = if ($order.Count -gt 0) { $sc[$order[0]] } else { 0.0 }
-        $second = if ($order.Count -gt 1) { $sc[$order[1]] } else { 0.0 }
-        $top = [math]::Min(4, $order.Count)
-        for ($k = 0; $k -lt $top; $k++) {
-            $ri = $order[$k]
-            $pairs.Add([pscustomobject]@{ sc = $sc[$ri]; pi = $pi; ri = $ri; margin = $(if ($ri -eq $order[0]) { $best - $second } else { 0.0 }) })
-        }
-    }
-    $sorted = @($pairs | Sort-Object @{ Expression = { $_.sc }; Descending = $true }, @{ Expression = { $_.pi }; Descending = $true }, @{ Expression = { $_.ri }; Descending = $true }, @{ Expression = { $_.margin }; Descending = $true })
-    $usedP = @{}; $usedR = @{}; $res = @{}
-    foreach ($e in $sorted) {
-        if ($usedP.ContainsKey($e.pi) -or $usedR.ContainsKey($e.ri)) { continue }
-        $res[$e.pi] = @{ row = $cands[$e.ri]; score = $e.sc; margin = $e.margin }
-        $usedP[$e.pi] = $true; $usedR[$e.ri] = $true
-    }
-    return @{ res = $res; cands = $cands }
+    return $null
 }
 
-# ----------------------------------------------------------------- writing the alt text
-function Set-Decorative($pic, $nsm, [Xml.XmlDocument]$doc) {
-    $pr = $pic.SelectSingleNode('p:nvPicPr/p:cNvPr', $nsm)
-    [void]$pr.SetAttribute('descr', '')
-    Remove-DecorativeMark $pic $nsm
-    $extLst = $pr.SelectSingleNode('a:extLst', $nsm)
-    if ($null -eq $extLst) { $extLst = $doc.CreateElement('a', 'extLst', $NS_A); [void]$pr.AppendChild($extLst) }
-    $ext = $doc.CreateElement('a', 'ext', $NS_A); [void]$ext.SetAttribute('uri', $DECOR_URI)
-    $dec = $doc.CreateElement('adec', 'decorative', $DECOR_NS); [void]$dec.SetAttribute('val', '1')
-    [void]$ext.AppendChild($dec); [void]$extLst.AppendChild($ext)
-}
-function Remove-DecorativeMark($pic, $nsm) {
-    $pr = $pic.SelectSingleNode('p:nvPicPr/p:cNvPr', $nsm)
-    $extLst = $pr.SelectSingleNode('a:extLst', $nsm)
-    if ($null -eq $extLst) { return }
-    foreach ($ext in @($extLst.SelectNodes('a:ext', $nsm))) {
-        if ($ext.GetAttribute('uri') -eq $DECOR_URI) { [void]$extLst.RemoveChild($ext) }
-    }
-    if (-not $extLst.HasChildNodes) { [void]$pr.RemoveChild($extLst) }
-}
-
-function Save-WithAlt([string]$pptxIn, [string]$pptxOut, $pics, $docs, $edits) {
-    Copy-Item -LiteralPath $pptxIn -Destination $pptxOut -Force
-    $done = 0; $decor = 0; $skipped = 0; $touched = @{}
-    foreach ($ed in $edits) {
-        $i = [int]$ed.i
-        if ($i -lt 0 -or $i -ge $pics.Count) { continue }
-        $p = $pics[$i]
-        $doc = $docs[$p.part]; $nsm = New-Nsmgr $doc
-        $pr = $p.node.SelectSingleNode('p:nvPicPr/p:cNvPr', $nsm)
-        $txt = ([string]$ed.text -replace '\s+', ' ').Trim()
-        if ($ed.dec) { Set-Decorative $p.node $nsm $doc; $decor++; $touched[$p.part] = $true }
-        elseif ($txt) {
-            Remove-DecorativeMark $p.node $nsm
-            [void]$pr.SetAttribute('descr', $txt); $done++; $touched[$p.part] = $true
-        } else { $skipped++ }
-    }
-    $zip = [IO.Compression.ZipFile]::Open($pptxOut, 'Update')
+function Get-Thumbnails([string]$pptx, $pics) {
+    $thumbs = @{}; $slideThumbs = @{}
+    $tmp = Join-Path ([IO.Path]::GetTempPath()) ('altmatch_' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force $tmp | Out-Null
+    $app = $null; $pres = $null
+    $wasRunning = [bool](Get-Process -Name POWERPNT -ErrorAction SilentlyContinue)
     try {
-        foreach ($part in $touched.Keys) {
-            $e = $zip.GetEntry($part); if ($e) { $e.Delete() }
-            $ne = $zip.CreateEntry($part)
-            $sw = New-Object IO.StreamWriter($ne.Open(), (New-Object Text.UTF8Encoding($false)))
-            try { $sw.Write($docs[$part].OuterXml) } finally { $sw.Dispose() }
+        $app = New-Object -ComObject PowerPoint.Application
+        $pres = $app.Presentations.Open($pptx, $true, $false, $false)
+        foreach ($p in $pics) {
+            try {
+                $slide = $pres.Slides.Item($p.Slide)
+                $sh = Find-ShapeById $slide.Shapes ([int]$p.ShapeId)
+                if (-not $sh) { continue }
+                $f = Join-Path $tmp ('p' + $p.Slide + '_' + $p.ShapeId + '.png')
+                $sh.Export($f, 2)
+                if (Test-Path -LiteralPath $f) { $thumbs["$($p.Slide)|$($p.ShapeId)"] = [Convert]::ToBase64String([IO.File]::ReadAllBytes($f)) }
+            } catch { }
         }
-    } finally { $zip.Dispose() }
-    $chk = [IO.Compression.ZipFile]::OpenRead($pptxOut); $chk.Dispose()
-    return @{ done = $done; decor = $decor; skipped = $skipped }
+        # One image of the whole slide, as it actually looks in PowerPoint -
+        # exported once per slide even when a slide has more than one picture.
+        foreach ($slideNo in @($pics | Select-Object -ExpandProperty Slide -Unique)) {
+            try {
+                $slide = $pres.Slides.Item($slideNo)
+                $fs = Join-Path $tmp ('s' + $slideNo + '.png')
+                $slide.Export($fs, 'PNG', 1280, 720)
+                if (Test-Path -LiteralPath $fs) { $slideThumbs["$slideNo"] = [Convert]::ToBase64String([IO.File]::ReadAllBytes($fs)) }
+            } catch { }
+        }
+    } catch {
+        Write-Host ('Pictures could not be previewed (PowerPoint was not available): ' + $_.Exception.Message)
+    } finally {
+        if ($pres) { try { $pres.Close() } catch { } }
+        if ($app -and -not $wasRunning) { try { $app.Quit() } catch { } }
+        try { Remove-Item -LiteralPath $tmp -Recurse -Force } catch { }
+    }
+    return @{ Pics = $thumbs; Slides = $slideThumbs }
 }
 
-# ----------------------------------------------------------------- review page
-function Build-Page($items, $list, [string]$deckName, [string]$token) {
-    $itemJson = '[' + (($items | ForEach-Object { $_ | ConvertTo-Json -Compress }) -join ',') + ']'
-    $listJson = '[' + (($list | ForEach-Object { $_ | ConvertTo-Json -Compress }) -join ',') + ']'
-    $itemJson = $itemJson.Replace('</', '<\/'); $listJson = $listJson.Replace('</', '<\/')
+# ---------- word comparison for the suggestions ----------
+$stop = @('a','an','the','of','in','on','at','to','and','or','with','by','is','are','as','for','from','showing','photo','illustration','shows','that','its','their','table','titled','its','it','this','be','read','reads','reading')
+function Get-Stem([string]$w) {
+    $w = ($w.ToLowerInvariant() -replace '[^a-z0-9]', '')
+    if ($w.Length -gt 6 -and $w.EndsWith('ers')) { $w = $w.Substring(0, $w.Length - 3) }
+    elseif ($w.Length -gt 5 -and $w.EndsWith('er')) { $w = $w.Substring(0, $w.Length - 2) }
+    elseif ($w.Length -gt 5 -and $w.EndsWith('ing')) { $w = $w.Substring(0, $w.Length - 3) }
+    elseif ($w.Length -gt 5 -and $w.EndsWith('ed')) { $w = $w.Substring(0, $w.Length - 2) }
+    elseif ($w.Length -gt 3 -and $w.EndsWith('s')) { $w = $w.Substring(0, $w.Length - 1) }
+    if ($w.Length -ge 2 -and $w[$w.Length - 1] -eq $w[$w.Length - 2] -and $w[$w.Length - 1] -match '[a-z]' -and $w -notmatch '(ll|ss|ff|zz)$') { $w = $w.Substring(0, $w.Length - 1) }
+    if ($w.Length -gt 4 -and $w.EndsWith('e')) { $w = $w.Substring(0, $w.Length - 1) }
+    return $w
+}
+$generic = @('ambulance','vehicle','emergency','road','driver','person','people','picture','image','figure','photo','illustration') | ForEach-Object { Get-Stem $_ }
+function Get-Tokens([string]$s) {
+    $x = ($s.ToLowerInvariant() -replace '\bad\b', 'additional duty') -replace '[^a-z0-9 ]', ' '
+    $out = New-Object System.Collections.Generic.List[string]
+    foreach ($w in $x.Split(' ', [StringSplitOptions]::RemoveEmptyEntries)) {
+        if ($stop -contains $w) { continue }
+        $st = Get-Stem $w
+        if ($st.Length -gt 0 -and -not $out.Contains($st)) { $out.Add($st) }
+    }
+    return @($out.ToArray())
+}
+function Get-Score($a, $b) {
+    if ($a.Count -eq 0 -or $b.Count -eq 0) { return 0.0 }
+    $inter = @($a | Where-Object { $b -contains $_ }).Count
+    $uni = @($a + $b | Select-Object -Unique).Count
+    return [double]$inter / [double]$uni
+}
+
+function Html($s) { return [System.Net.WebUtility]::HtmlEncode([string]$s) }
+
+# =====================================================================
+# Step 1: review page
+# =====================================================================
+function Make-ReviewPage([string]$pptx, [string]$xlsx, [string]$chapter) {
+    Write-Host 'Reading the Excel file...'
+    $rows = Get-AltRows $xlsx
+    $chap = Norm-Chapter $chapter
+    $opts = @($rows | Where-Object { $_.Chapter -eq $chap -and ($_.Short -or $_.Long -or $_.Decorative) })
+    if ($opts.Count -eq 0) { throw "No alt text rows found for chapter $chapter in the Excel file." }
+    Write-Host ("Excel rows for chapter " + $chapter + ": " + $opts.Count)
+
+    Write-Host 'Reading the pictures in the deck...'
+    $allPics = Get-DeckPictures $pptx
+    $pics = @($allPics | Where-Object { -not $_.IsVideo })
+    Write-Host ("Pictures in the deck: " + $pics.Count)
+    Write-Host 'Making previews (PowerPoint opens the file quietly)...'
+    $thumbResult = Get-Thumbnails $pptx $pics
+    $thumbs = $thumbResult.Pics
+    $slideThumbs = $thumbResult.Slides
+    # Where PowerPoint could not make a preview, show the picture stored in the file (PNG, JPEG, GIF) instead.
+    $missingPrev = @($pics | Where-Object { -not $thumbs.ContainsKey("$($_.Slide)|$($_.ShapeId)") -and $_.Embed })
+    if ($missingPrev.Count -gt 0) {
+        try {
+            $zp = [IO.Compression.ZipFile]::OpenRead($pptx)
+            try {
+                foreach ($p in $missingPrev) {
+                    try {
+                        $relText = Read-ZipText $zp (([IO.Path]::GetDirectoryName($p.Part.Replace('/', '\')).Replace('\', '/')) + '/_rels/' + ($p.Part.Split('/')[-1]) + '.rels')
+                        if (-not $relText) { continue }
+                        $rd = New-Object Xml.XmlDocument; $rd.LoadXml($relText)
+                        $tgt = $null
+                        foreach ($rl in $rd.DocumentElement.ChildNodes) { if ($rl.NodeType -eq 'Element' -and $rl.GetAttribute('Id') -eq $p.Embed) { $tgt = $rl.GetAttribute('Target') } }
+                        if (-not $tgt) { continue }
+                        $mp = Resolve-Part $p.Part $tgt
+                        if ($mp -notmatch '(?i)\.(png|jpe?g|gif)$') { continue }
+                        $ent = $zp.GetEntry($mp)
+                        if (-not $ent -or $ent.Length -gt 3000000) { continue }
+                        $st = $ent.Open(); $ms = New-Object IO.MemoryStream; $st.CopyTo($ms); $st.Dispose()
+                        $thumbs["$($p.Slide)|$($p.ShapeId)"] = [Convert]::ToBase64String($ms.ToArray())
+                    } catch { }
+                }
+            } finally { $zp.Dispose() }
+        } catch { }
+    }
+
+    $optShort = @{}; $optLong = @{}
+    foreach ($o in $opts) {
+        $tx = $o.Short; if (-not $tx) { $tx = $o.Long }
+        $optShort[$o.Id] = @(Get-Tokens $tx)
+        $optLong[$o.Id] = @(Get-Tokens $o.Long)
+    }
+    $js = { param($s) (ConvertTo-Json -InputObject ([string]$s) -Compress).Replace('<', ([string][char]92 + 'u003c')) }
+
+    $optJson = New-Object System.Collections.Generic.List[string]
+    foreach ($o in $opts) {
+        $full = $o.Short
+        if ($o.Long) { $full = ($full + ' ' + $o.Long).Trim() }
+        $dec = 'false'; if ($o.Decorative) { $dec = 'true' }
+        $optJson.Add('{"id":' + (& $js $o.Id) + ',"full":' + (& $js $full) + ',"dec":' + $dec + '}')
+    }
+
+    $picJson = New-Object System.Collections.Generic.List[string]
+    $cards = New-Object System.Text.StringBuilder
+    $n = 0
+    foreach ($p in $pics) {
+        # phrases on the slide that the Excel rows are compared with
+        $phr = New-Object System.Collections.Generic.List[object]
+        $titleClean = ([regex]::Replace([string]$p.Title, '\s*\(\d+ of \d+\)\s*$', '')).Trim()
+        $titleTok = @(Get-Tokens $titleClean | Where-Object { $generic -notcontains $_ })
+        if ($titleTok.Count) { $phr.Add([pscustomobject]@{ Text = $titleClean; Tok = $titleTok; Kind = 'title' }) }
+        if ($p.Label) {
+            $lt = @(Get-Tokens $p.Label | Where-Object { $generic -notcontains $_ })
+            if ($lt.Count) { $phr.Add([pscustomobject]@{ Text = $p.Label; Tok = $lt; Kind = 'label' }) }
+        }
+        foreach ($sx in $p.Shorts) {
+            if ($p.Label) { break }
+            $st2 = @(Get-Tokens $sx | Where-Object { $generic -notcontains $_ })
+            if ($st2.Count) { $phr.Add([pscustomobject]@{ Text = $sx; Tok = $st2; Kind = 'text' }) }
+        }
+        # the rest of the slide's own text (bullets, body copy, anything not
+        # already covered above) - a weaker, lower-priority signal, since it
+        # is a much bigger and less targeted block of words than the title,
+        # label or a short caption right next to the picture.
+        if ($p.SlideText) {
+            $slideTok = @(Get-Tokens $p.SlideText | Where-Object { $generic -notcontains $_ })
+            if ($slideTok.Count) { $phr.Add([pscustomobject]@{ Text = $p.SlideText; Tok = $slideTok; Kind = 'slide' }) }
+        }
+        $altTok = @(); if ($p.Alt) { $altTok = @(Get-Tokens $p.Alt) }
+
+        $found = New-Object System.Collections.Generic.List[object]
+        $order = 0
+        foreach ($o in $opts) {
+            $order++
+            $sT = $optShort[$o.Id]; $lT = $optLong[$o.Id]
+            $best = $null
+            foreach ($ph in $phr) {
+                $nn = $ph.Tok.Count
+                $ms = @($ph.Tok | Where-Object { $sT -contains $_ })
+                $ml = @($ph.Tok | Where-Object { ($lT -contains $_) -and ($sT -notcontains $_) })
+                $maxLen = 0; foreach ($w in $ms) { if ($w.Length -gt $maxLen) { $maxLen = $w.Length } }
+                $need = [Math]::Min(2, $nn)
+                $okShort = ($ms.Count -ge $need) -or ($ms.Count -ge 1 -and $maxLen -ge 8)
+                $cShort = 0.0; if ($okShort) { $cShort = $ms.Count / $nn }
+                $cLong = 0.0
+                if ($ml.Count -gt 0 -and (($ms.Count + $ml.Count) -ge $need)) { $cLong = 0.7 * ($ms.Count + $ml.Count) / $nn }
+                $cWeak = 0.0; if (-not $okShort -and $ms.Count -ge 1 -and $maxLen -ge 4) { $cWeak = 0.4 }
+                $score = [Math]::Max([Math]::Max($cShort, $cLong), $cWeak)
+                $strong = $false
+                if ($cShort -gt 0) {
+                    if ($nn -ge 2 -and $cShort -ge 0.999) { $score = 1.0; $strong = $true }
+                    elseif ($maxLen -ge 8 -and $cShort -ge 0.5 -and $nn -le 2) { $strong = $true }
+                }
+                if ($ph.Kind -eq 'label' -and $ms.Count -ge 2) {
+                    $hyb = 0.5 * ($ms.Count / $sT.Count) + 0.5 * ($ms.Count / ($sT.Count + $nn - $ms.Count))
+                    if ($hyb -gt $score) { $score = $hyb }
+                    if ($hyb -ge 0.45) { $strong = $true }
+                }
+                if ($ph.Kind -eq 'slide' -and $ms.Count -ge 3) {
+                    # The whole slide's text is long and noisy next to a short
+                    # Excel description, so dividing by its own huge word
+                    # count (as cShort does) crushes even a genuinely strong
+                    # overlap. Score by how much of the CANDIDATE's own words
+                    # are corroborated somewhere on the slide instead.
+                    $recall = $ms.Count / $sT.Count
+                    $slideScore = 0.3 + 0.5 * $recall
+                    if ($slideScore -gt $score) { $score = $slideScore }
+                    if ($recall -ge 0.5 -and $ms.Count -ge 4) { $strong = $true }
+                }
+                if ($ph.Kind -eq 'title' -and $p.Label -and -not $strong) { continue }
+                $better = ($null -eq $best) -or ($strong -and -not $best.Strong) -or (($strong -eq $best.Strong) -and ($score -gt $best.Score))
+                if ($score -ge 0.4 -and $better) {
+                    $best = [pscustomobject]@{ Score = $score; Strong = $strong; Words = @($ms + $ml); From = $ph.Text; InLong = ($cShort -lt $cLong -and $ml.Count -gt 0); Kind = $ph.Kind }
+                }
+            }
+            if ($altTok.Count) {
+                $sa = Get-Score $altTok $sT
+                $saStrong = ($sa -ge 0.6)
+                $betterA = ($null -eq $best) -or ($saStrong -and -not $best.Strong) -or (($saStrong -eq $best.Strong) -and ($sa -gt $best.Score))
+                if ($sa -ge 0.34 -and $betterA) {
+                    $best = [pscustomobject]@{ Score = $sa; Strong = ($sa -ge 0.6); Words = @($altTok | Where-Object { $sT -contains $_ }); From = 'its current alt text'; InLong = $false; Kind = 'alt' }
+                }
+            }
+            if ($best -and ($best.Strong -or $o.Id -notmatch '^(CO|C)\d+$')) { $found.Add([pscustomobject]@{ Id = $o.Id; Order = $order; Best = $best }) }
+        }
+        # A weak match that only comes from words shared with the slide's
+        # own title is treated as less trustworthy than a weak match that
+        # comes from the picture's label, a short caption, or the slide's
+        # own body text - title wording (especially a running chapter
+        # title) often repeats across many unrelated rows, so by itself it
+        # is a poor way to tell them apart.
+        $top = @($found | Sort-Object @{ Expression = { if ($_.Best.Strong) { 0 } else { 1 } } }, @{ Expression = { if ((-not $_.Best.Strong) -and $_.Best.Kind -eq 'title') { 1 } else { 0 } } }, @{ Expression = { -$_.Best.Score } }, Order | Select-Object -First 5)
+        if (-not $top.Count) {
+            # nothing is close: offer the rows that share the most words, marked weak
+            $weakList = New-Object System.Collections.Generic.List[object]
+            $order2 = 0
+            foreach ($o in $opts) {
+                $order2++
+                $allTok = New-Object System.Collections.Generic.List[string]
+                foreach ($ph in $phr) { foreach ($w in $ph.Tok) { if (-not $allTok.Contains($w)) { $allTok.Add($w) } } }
+                if ($o.Id -match '^(CO|C)\d+$') { continue }
+                $mw = @($allTok | Where-Object { $_.Length -ge 5 -and (($optShort[$o.Id] -contains $_) -or ($optLong[$o.Id] -contains $_)) })
+                if ($mw.Count -ge 1) { $weakList.Add([pscustomobject]@{ Id = $o.Id; Order = $order2; Best = [pscustomobject]@{ Score = $mw.Count / [Math]::Max(1, $allTok.Count); Strong = $false; Words = $mw; From = 'words on the slide'; InLong = $false } }) }
+            }
+            $top = @($weakList | Sort-Object @{ Expression = { -$_.Best.Score } }, Order | Select-Object -First 3)
+        }
+        $candJson = @()
+        foreach ($c in $top) {
+            $wj = ($c.Best.Words | ForEach-Object { & $js $_ }) -join ','
+            $stj = 'w'; if ($c.Best.Strong) { $stj = 's' }
+            $lg = 'false'; if ($c.Best.InLong) { $lg = 'true' }
+            $candJson += ('{"id":' + (& $js $c.Id) + ',"st":"' + $stj + '","w":[' + $wj + '],"from":' + (& $js $c.Best.From) + ',"sc":' + ([Math]::Round([double]$c.Best.Score, 2).ToString([Globalization.CultureInfo]::InvariantCulture)) + ',"long":' + $lg + '}')
+        }
+        $swStems = @(Get-Tokens $titleClean | Where-Object { $generic -notcontains $_ })
+        $swShow = (($titleClean.ToLowerInvariant() -replace '[^a-z0-9 ]', ' ').Split(' ', [StringSplitOptions]::RemoveEmptyEntries) | Where-Object { ($stop -notcontains $_) -and ($generic -notcontains $_) }) -join ' '
+        $aiJs = 'false'; if ($p.IsAi) { $aiJs = 'true' }
+        $picJson.Add('{"i":' + $n + ',"slide":' + $p.Slide + ',"sid":' + (& $js $p.ShapeId) + ',"name":' + (& $js $p.Name) + ',"title":' + (& $js $p.Title) + ',"alt":' + (& $js $p.Alt) + ',"ai":' + $aiJs + ',"label":' + (& $js $p.Label) + ',"sw":' + (& $js ($swStems -join ' ')) + ',"swt":' + (& $js $swShow) + ',"cand":[' + ($candJson -join ',') + ']}')
+
+        $img = '<div class="noimg">No preview</div>'
+        $key = "$($p.Slide)|$($p.ShapeId)"
+        $hasPicThumb = $thumbs.ContainsKey($key)
+        $hasSlideThumb = $slideThumbs.ContainsKey("$($p.Slide)")
+        if ($hasPicThumb) { $img = '<img src="data:image/png;base64,' + $thumbs[$key] + '" alt="">' }
+        $zh = ''; if ($hasPicThumb -or $hasSlideThumb) { $zh = '<span class="zh">Click to zoom</span>' }
+        [void]$cards.Append('<section class="card" data-i="' + $n + '"><div class="th">' + $img + $zh + '</div><div class="main"></div></section>')
+        $n++
+    }
+
+    $deckName = [IO.Path]::GetFileNameWithoutExtension($pptx)
     $html = @'
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><title>Alt text review</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Alt text review</title>
 <style>
-:root{--g:#e2efda;--a:#fff2cc;--r:#f8cbad;--ink:#1b1f24;--mut:#5b6573;--line:#d5dbe3;--pri:#1f4e78}
-*{box-sizing:border-box}body{margin:0;font:15px/1.45 "Segoe UI",system-ui,sans-serif;color:var(--ink);background:#f4f6f9}
-header{position:sticky;top:0;z-index:5;background:var(--pri);color:#fff;padding:10px 20px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
-header h1{font-size:18px;margin:0;font-weight:600}header .sub{opacity:.85;font-size:13px}
-.bar{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-button{font:inherit;border:1px solid var(--line);background:#fff;border-radius:6px;padding:6px 12px;cursor:pointer}
-button.pri{background:#2e7d32;color:#fff;border-color:#2e7d32;font-weight:600}
-button.f.on{background:#e7eefc;border-color:#7a9ad6}
-main{max-width:1180px;margin:16px auto;padding:0 16px 90px}
-.card{display:grid;grid-template-columns:230px 1fr;gap:16px;background:#fff;border:1px solid var(--line);border-left:8px solid var(--r);border-radius:10px;padding:14px;margin-bottom:14px}
-.card.green{border-left-color:#70ad47}.card.amber{border-left-color:#ffc000}.card.red{border-left-color:#e07a5f}
-.thumb{background:#f0f2f5;border-radius:8px;display:flex;align-items:center;justify-content:center;min-height:130px;overflow:hidden}
-.thumb img{max-width:100%;max-height:200px;display:block}
-.meta{color:var(--mut);font-size:13px}.meta b{color:var(--ink)}
-.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:8px}
-select,textarea,input[type=text]{font:inherit;border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%}
-select{max-width:520px}textarea{min-height:54px;resize:vertical}
-label{font-size:13px}.res{margin-top:8px;padding:8px 10px;border-radius:6px;background:#f6f8fb;border:1px dashed var(--line);white-space:pre-wrap}
-.res.empty{color:#9a3412;background:#fff4ec}.tag{display:inline-block;font-size:12px;padding:1px 8px;border-radius:10px;margin-right:6px}
-.tg{background:var(--g)}.ta{background:var(--a)}.tr{background:var(--r)}
-#done{display:none;position:fixed;left:0;right:0;bottom:0;background:#e8f5e9;border-top:2px solid #2e7d32;padding:14px 20px;z-index:9}
-.hide{display:none!important}
-@media(max-width:800px){.card{grid-template-columns:1fr}}
+:root{--bg:#f4f5f7;--card:#fff;--text:#1b1f23;--muted:#59636e;--line:#d0d7de;--accent:#0b5cad;--accent-bg:#ddeeff;--ok:#1a7f37;--ok-bg:#e6f6ea;--warn:#8a5a00;--warn-bg:#fff3d1;--err:#a40e26;--soft:#eef1f4}
+@media (prefers-color-scheme: dark){:root{--bg:#161b22;--card:#1f2630;--text:#e6edf3;--muted:#9aa4af;--line:#38414d;--accent:#58a6ff;--accent-bg:#14304f;--ok:#56d364;--ok-bg:#12301b;--warn:#e3b341;--warn-bg:#3a2d0b;--err:#ff7b72;--soft:#262e3a}}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Segoe UI",system-ui,Arial,sans-serif;background:var(--bg);color:var(--text);padding-bottom:96px}
+.wrap{max-width:1000px;margin:0 auto;padding:0 16px}
+header{position:sticky;top:0;z-index:5;background:var(--bg);padding:14px 0 10px;border-bottom:1px solid var(--line)}
+.top{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.top h1{margin:0;font-size:18px;font-weight:600}.sub{font-size:13px;color:var(--muted)}
+.prog{width:270px}.prog .t{display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;gap:8px}
+.track{height:8px;border-radius:4px;background:var(--line)}.fillbar{height:8px;border-radius:4px;background:var(--ok);width:0;transition:width .25s}
+.tools{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center}
+.chip{border:1px solid var(--line);background:var(--card);color:var(--muted);border-radius:999px;padding:5px 12px;font-size:13px;cursor:pointer}
+.chip.on{background:var(--accent-bg);color:var(--accent);border-color:var(--accent)}
+.grow{flex:1}.search{padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);font-size:14px;width:230px}
+.card{display:flex;gap:16px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:12px}
+.card.ok{border-color:var(--ok)}.card.own{border-color:var(--accent)}.card.uns{border-color:var(--warn)}
+.th{width:260px;flex:none;text-align:center;cursor:zoom-in;align-self:flex-start}.th img{max-width:260px;max-height:210px;border:1px solid var(--line);border-radius:6px;background:#fff}
+.zh{display:block;font-size:12px;color:var(--accent);margin-top:6px}
+.noimg{height:120px;background:var(--soft);color:var(--muted);display:flex;align-items:center;justify-content:center;border-radius:6px;font-size:13px}
+.main{flex:1;min-width:0}
+.head{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.head b{font-size:15px;font-weight:600}
+.pill{font-size:12px;padding:2px 10px;border-radius:999px}
+.pill.need,.pill.uns{background:var(--warn-bg);color:var(--warn)}.pill.has{background:var(--accent-bg);color:var(--accent)}.pill.ok{background:var(--ok-bg);color:var(--ok)}.pill.own{background:var(--accent-bg);color:var(--accent)}.pill.deco{background:var(--soft);color:var(--muted)}
+.ctx{font-size:13px;color:var(--muted);margin-top:2px}
+.lab{font-size:13px;margin-top:6px}.lab b{font-weight:600}
+.has{font-size:13px;color:var(--muted);margin-top:6px}
+.lbl{font-size:12px;color:var(--muted);margin-top:10px}
+.sgw{margin-top:6px}
+.sg,.opt{display:block;width:100%;text-align:left;font:inherit;font-size:13px;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer;line-height:1.45}
+.sg:hover,.sg:focus,.opt:hover,.opt:focus{background:var(--accent-bg);border-color:var(--accent);outline:none}
+.sg b,.opt b{color:var(--accent);margin-right:6px}.sg i,.opt i{font-style:normal;color:var(--muted);font-size:12px;margin-left:6px}
+.more{font-size:12px;color:var(--accent);margin-left:4px}
+mark{background:var(--warn-bg);color:var(--warn);border-radius:3px;padding:0 2px}
+.why{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.tag{font-size:11px;padding:1px 8px;border-radius:999px;background:var(--soft);color:var(--muted)}
+.why .use{margin:0 0 0 auto;padding:2px 10px;font-size:12px}
+.tag.s{background:var(--ok-bg);color:var(--ok)}.tag.w{background:var(--warn-bg);color:var(--warn)}.tag.o{background:var(--accent-bg);color:var(--accent)}
+.sg.used,.opt.used{border-color:var(--warn);background:var(--warn-bg)}
+.usedbadge{float:right;display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:var(--warn);background:var(--card);border:1px solid var(--warn);border-radius:999px;padding:2px 8px;margin-left:8px}
+.usedbadge svg{width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:3}
+.lbsearchrow{padding:10px 14px;border-bottom:1px solid var(--line);background:var(--soft)}
+.lbsearchrow input{width:100%;padding:8px 10px;font-size:13px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);font-family:inherit}
+.toggle{display:flex;gap:2px;background:var(--soft);border-radius:999px;padding:2px}
+.toggle button{border:none;background:transparent;font:inherit;font-size:13px;padding:6px 12px;border-radius:999px;cursor:pointer;color:var(--muted)}
+.toggle button.on{background:var(--card);color:var(--accent);font-weight:600}
+.small{font:inherit;font-size:13px;margin-top:10px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer}
+.rowsbox{margin-top:8px;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--soft)}
+.flt,.notein{width:100%;padding:8px 10px;font-size:13px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);font-family:inherit}
+.rows{margin-top:8px;max-height:340px;overflow:auto;display:flex;flex-direction:column;gap:6px}
+.owntext{width:100%;min-height:62px;margin-top:6px;padding:8px 10px;font-size:13px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);font-family:inherit;resize:vertical}
+.acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.acts .small{margin-top:0}
+.err{font-size:13px;color:var(--err);margin-top:4px}
+.chosen,.state{margin-top:10px;font-size:13px;border-radius:8px;padding:10px 12px;line-height:1.5}
+.chosen{background:var(--ok-bg);color:var(--ok)}.chosen a{color:var(--ok);margin-left:8px}
+.state.own{background:var(--accent-bg);color:var(--accent)}.state.own a{color:var(--accent);margin-left:8px}
+.state.uns{background:var(--warn-bg);color:var(--warn)}
+.state.deco{background:var(--soft);color:var(--muted)}.state.deco a{color:var(--accent);margin-left:8px}
+.note{font-size:12px;color:var(--muted);margin-top:6px}
+.empty{padding:40px;text-align:center;color:var(--muted)}
+#bar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:12px 16px;z-index:9}
+#bar .in{max-width:1000px;margin:0 auto;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+#bar label{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted);flex:1;min-width:220px}
+#msg{font-size:13px;color:var(--muted)}
+button.btn{font:inherit;font-size:14px;padding:9px 16px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer}
+button.main-btn{background:var(--text);color:var(--card);border-color:var(--text)}
+button:disabled{opacity:.5;cursor:default}
+#panel{position:fixed;left:16px;right:16px;bottom:84px;max-width:968px;margin:0 auto;max-height:60vh;overflow:auto;background:var(--card);border:1px solid var(--ok);border-radius:12px;padding:16px 18px;z-index:10;box-shadow:0 6px 24px rgba(0,0,0,.25)}
+#panel.err{border-color:var(--err)}#panel h2{font-size:16px;margin:0 0 8px}#panel ul{margin:4px 0 10px 18px;padding:0;font-size:13px}#panel .row{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap}
+#lb{position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:20;display:flex;align-items:center;justify-content:center;padding:16px}
+#lb[hidden]{display:none}
+.lbbox{background:var(--card);border-radius:12px;width:min(1100px,100%);max-height:100%;display:flex;flex-direction:column;overflow:hidden}
+.lbtop{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--line)}
+.lbtop b{font-size:15px;font-weight:600}.lbtop .s{font-size:13px;color:var(--muted)}
+.lbtop button{font:inherit;font-size:13px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer}
+#lbzoom{font-size:13px;min-width:44px;text-align:center}
+.lbimg{overflow:auto;flex:1;min-height:200px;background:var(--soft);padding:12px;text-align:center}
+.lbimg img{background:#fff;max-width:none}
+.lbpick{padding:10px 14px;border-top:1px solid var(--line);max-height:34vh;overflow:auto}
+@media (max-width:700px){.card{flex-direction:column}.th{width:auto}}
 </style></head><body>
-<header><div><h1>Alt text review</h1><div class="sub">__DECK__</div></div>
-<div class="bar"><span id="count"></span>
-<button class="f on" data-f="all">All</button><button class="f" data-f="red">Needs a pick</button><button class="f" data-f="amber">Check</button><button class="f" data-f="green">Confident</button>
-<button class="pri" id="apply">Apply and save copy</button></div></header>
-<main id="main"></main>
-<div id="done"></div>
+<header><div class="wrap">
+<div class="top"><div class="grow"><h1>Alt text review</h1><div class="sub">__DECK__ &middot; chapter __CHAPTER__</div></div>
+<div class="prog"><div class="t"><b id="cnt"></b><span id="pct"></span></div><div class="track"><div class="fillbar" id="fill"></div></div></div></div>
+<div class="tools">
+<button class="chip on" data-f="all">All <span id="n-all"></span></button>
+<button class="chip" data-f="need">Needs a match <span id="n-need"></span></button>
+<button class="chip" data-f="done">Matched <span id="n-done"></span></button>
+<button class="chip" data-f="own">Your own text <span id="n-own"></span></button>
+<button class="chip" data-f="uns">Not sure <span id="n-uns"></span></button>
+<button class="chip" data-f="has">Already has alt text <span id="n-has"></span></button>
+<span class="grow"></span><input class="search" id="q" type="search" placeholder="Search slide, name or text" aria-label="Search pictures">
+</div></div></header>
+<div class="wrap" id="list">__CARDS__<div class="empty" id="none" hidden>Nothing here. Try another filter.</div></div>
+<div id="lb" hidden><div class="lbbox" role="dialog" aria-label="Zoomed picture">
+<div class="lbtop"><b id="lbtitle"></b><span class="s" id="lbsub"></span><span class="grow"></span>
+<div class="toggle" role="group" aria-label="View"><button id="lbviewpic" class="on" aria-pressed="true">Picture</button><button id="lbviewslide" aria-pressed="false">Whole slide</button></div>
+<button id="lbminus" aria-label="Zoom out">Zoom out</button><span id="lbzoom">100%</span><button id="lbplus" aria-label="Zoom in">Zoom in</button>
+<button id="lbprev">Previous</button><button id="lbnext">Next</button><button id="lbclose">Close</button></div>
+<div class="lbimg" id="lbimgbox"><img id="lbimg" alt=""></div>
+<div class="lbsearchrow" id="lbsearchrow" hidden><input id="lbsearch" type="search" placeholder="Search all Excel rows, for example crash" aria-label="Search the Excel rows"></div>
+<div class="lbpick" id="lbpick"></div></div></div>
+<div id="panel" hidden></div>
+<div id="bar"><div class="in"><label><input type="checkbox" id="rep"> Replace alt text that is already there</label><span id="msg"></span>
+<button class="btn" id="save">Save mapping</button><button class="btn main-btn" id="apply">Add alt text to the PowerPoint</button></div></div>
 <script>
-var ITEMS=__ITEMS__, LIST=__LIST__, TOKEN="__TOKEN__";
-var byKey={};LIST.forEach(function(r){byKey[r.key]=r;});
-var main=document.getElementById('main');
-function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
-var opts='<option value="">- pick an Element ID -</option>'+LIST.map(function(r){var t=r.short.length>70?r.short.slice(0,70)+'...':r.short;return '<option value="'+esc(r.key)+'">'+esc(r.key)+' - '+esc(t)+'</option>';}).join('');
-function build(){
- ITEMS.forEach(function(it){
-  var c=document.createElement('div');c.className='card '+it.level;c.id='c'+it.i;c.dataset.level=it.level;
-  var tag=it.level==='green'?'<span class="tag tg">Confident</span>':it.level==='amber'?'<span class="tag ta">Check the picture</span>':'<span class="tag tr">Pick the Element ID</span>';
-  var sugg=it.sugg?'Suggested: <b>'+esc(it.sugg)+'</b> (score '+it.score+') '+(it.eid?'':'<a href="#" data-use="'+it.i+'">use it</a>'):'';
-  c.innerHTML='<div class="thumb">'+(it.img?'<img src="/img/'+it.i+'?t='+TOKEN+'" alt="" onerror="this.parentNode.innerHTML=\'(no preview for this picture type)\'">':'(no preview)')+'</div>'+
-  '<div><div>'+tag+'<b>Slide '+it.slide+'</b> &middot; '+esc(it.name)+'</div>'+
-  '<div class="meta">'+(it.title?'<b>Title:</b> '+esc(it.title)+'<br>':'')+(it.near?'<b>Nearby text:</b> '+esc(it.near.slice(0,200))+'<br>':'')+(it.alt?'<b>Existing alt text:</b> '+esc(it.alt)+'<br>':'<b>Existing alt text:</b> (none)<br>')+sugg+'</div>'+
-  '<div class="row"><select id="e'+it.i+'">'+opts+'</select></div>'+
-  '<div class="row"><textarea id="o'+it.i+'" placeholder="Or type your own alt text here (this overrides the Element ID)"></textarea></div>'+
-  '<div class="row"><label><input type="checkbox" id="d'+it.i+'"> Decorative image</label><label><input type="checkbox" id="a'+it.i+'"> Also add the long description</label><span class="meta" id="n'+it.i+'"></span></div>'+
-  '<div class="res" id="r'+it.i+'"></div></div>';
-  main.appendChild(c);
-  document.getElementById('e'+it.i).value=it.eid||'';
-  document.getElementById('d'+it.i).checked=!!it.decor;
-  ['e','o','d','a'].forEach(function(p){var el=document.getElementById(p+it.i);el.addEventListener('input',function(){upd(it.i);});el.addEventListener('change',function(){upd(it.i);});});
-  upd(it.i);
- });
- main.addEventListener('click',function(ev){var u=ev.target.getAttribute&&ev.target.getAttribute('data-use');if(u!==null&&u!==undefined){ev.preventDefault();var it=ITEMS[+u];document.getElementById('e'+u).value=it.sugg;upd(+u);}});
+var OPTS = __OPTS__;
+var PICS = __PICS__;
+var SLIDETHUMBS = __SLIDETHUMBS__;
+var CHAPTER = "__CHAPTER__", DECK = "__DECK__", TOKEN = "__TOKEN__";
+var byId = {}; OPTS.forEach(function(o, k){ o.k = k; o.text = (o.dec ? "(marked decorative in the Excel file) " : "") + o.full; byId[o.id] = o; });
+var S = {}; PICS.forEach(function(p){ S[p.i] = {mode: "none", id: "", text: "", note: "", err: ""}; });
+var filt = "all", query = "", moreSug = {}, openBrowse = {}, fltText = {}, expanded = {}, lbIdx = -1, lbScale = 1, lbBase = 0, lbQuery = "", lbView = "pic";
+var cards = [].slice.call(document.querySelectorAll(".card"));
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function cut(s, n){ s = String(s); return s.length > n ? s.slice(0, n).replace(/\s+\S*$/, "") + "..." : s; }
+function reset(i){ S[i] = {mode: "none", id: "", text: S[i].text || "", note: "", err: ""}; }
+function usedMap(){ var m = {}; PICS.forEach(function(p){ var s = S[p.i]; if(s.mode === "excel"){ (m[s.id] = m[s.id] || []).push(p.slide); } }); return m; }
+function lastKFor(idx){ var k = -1; for(var j = 0; j < idx; j++){ var s = S[PICS[j].i]; if(s.mode === "excel") k = byId[s.id].k; } return k; }
+function nextKFor(idx){ for(var j = idx + 1; j < PICS.length; j++){ var s = S[PICS[j].i]; if(s.mode === "excel") return byId[s.id].k; } return -1; }
+function stem(w){
+  w = String(w).toLowerCase().replace(/[^a-z0-9]/g, "");
+  if(w.length > 6 && /ers$/.test(w)) w = w.slice(0, -3);
+  else if(w.length > 5 && /er$/.test(w)) w = w.slice(0, -2);
+  else if(w.length > 5 && /ing$/.test(w)) w = w.slice(0, -3);
+  else if(w.length > 5 && /ed$/.test(w)) w = w.slice(0, -2);
+  else if(w.length > 3 && /s$/.test(w)) w = w.slice(0, -1);
+  if(/([a-z])\1$/.test(w) && !/(ll|ss|ff|zz)$/.test(w)) w = w.slice(0, -1);
+  if(w.length > 4 && /e$/.test(w)) w = w.slice(0, -1);
+  return w;
 }
-function resultOf(i){
- if(!document.getElementById('d'+i))return {dec:false,text:'x',eid:''};
- var dec=document.getElementById('d'+i).checked,own=document.getElementById('o'+i).value.trim(),k=document.getElementById('e'+i).value,app=document.getElementById('a'+i).checked,txt=own;
- if(!txt&&byKey[k]){txt=byKey[k].short;if(app&&byKey[k].long)txt=(txt+' '+byKey[k].long).trim();}
- return {dec:dec,text:txt.replace(/\s+/g,' ').trim(),eid:k};
+function hl(text, stems){
+  var set = {}; (stems || []).forEach(function(x){ set[x] = 1; });
+  return String(text).split(" ").map(function(w){ var out = esc(w); return set[stem(w)] ? "<mark>" + out + "</mark>" : out; }).join(" ");
 }
-function upd(i){
- var r=resultOf(i),el=document.getElementById('r'+i),n=document.getElementById('n'+i);
- if(r.dec){el.textContent='(marked decorative - screen readers skip it)';el.className='res';}
- else if(r.text){el.textContent=r.text;el.className='res';}
- else{el.textContent='(nothing will be written - the picture keeps its current alt text)';el.className='res empty';}
- n.textContent=(byKey[r.eid]&&byKey[r.eid].dec)?'The log marks this one as decorative.':'';
- var left=ITEMS.filter(function(it){var x=resultOf(it.i);return !x.dec&&!x.text;}).length;
- document.getElementById('count').textContent=ITEMS.length+' pictures - '+left+' still empty';
+function suggest(p, idx, used){
+  var sg = [], seen = {}, lastK = lastKFor(idx), nextK = nextKFor(idx), win = {}, winList = [];
+  if(nextK >= 0){ for(var k = lastK + 1; k < nextK; k++){ var oid = OPTS[k].id; if(!used[oid]){ win[oid] = 1; winList.push(oid); } } }
+  var useWin = winList.length > 0 && winList.length <= 6;
+  (p.cand || []).forEach(function(c){ if(byId[c.id] && !seen[c.id]){ seen[c.id] = 1; sg.push({id: c.id, kind: c.st === "s" ? "strong" : "weak", sc: c.sc || 0, words: c.w || [], from: c.from || "", inLong: !!c.long, between: useWin && !!win[c.id]}); } });
+  if(useWin){ var addB = 0; winList.forEach(function(id){ if(!seen[id] && addB < 3 && !/^(CO|C)\d+$/i.test(id)){ seen[id] = 1; sg.push({id: id, kind: "between", words: [], from: "", inLong: false, between: true}); addB++; } }); }
+  if(nextK < 0){ var add = 0; for(var k2 = lastK + 1; k2 < OPTS.length && add < 2; k2++){ var o2 = OPTS[k2].id; if(!used[o2] && !seen[o2] && !/^(CO|C)\d+$/i.test(o2)){ seen[o2] = 1; sg.push({id: o2, kind: "next", words: [], from: "", inLong: false, between: false}); add++; } } }
+  var base = {strong: 0, weak: 100, between: 200, next: 300};
+  sg.forEach(function(s, n){ s.rank = base[s.kind] + (used[s.id] ? 500 : 0) + (s.between && s.kind !== "between" ? -50 : 0) + n; });
+  sg.sort(function(a, b){ return a.rank - b.rank; });
+  return sg.slice(0, 7);
 }
-document.querySelectorAll('button.f').forEach(function(b){b.addEventListener('click',function(){
- document.querySelectorAll('button.f').forEach(function(x){x.classList.remove('on');});b.classList.add('on');
- var f=b.dataset.f;document.querySelectorAll('.card').forEach(function(c){c.classList.toggle('hide',f!=='all'&&c.dataset.level!==f);});});});
-document.getElementById('apply').addEventListener('click',function(){
- var edits=ITEMS.map(function(it){var r=resultOf(it.i);return {i:it.i,dec:r.dec,text:r.text};});
- var left=edits.filter(function(e){return !e.dec&&!e.text;}).length;
- if(left&&!confirm(left+' picture(s) will be left as they are (no new alt text). Save anyway?'))return;
- var b=this;b.disabled=true;b.textContent='Saving...';
- fetch('/apply',{method:'POST',headers:{'Content-Type':'application/json','X-Token':TOKEN},body:JSON.stringify({edits:edits})})
- .then(function(r){return r.json();}).then(function(j){
-  b.disabled=false;b.textContent='Apply and save copy';var d=document.getElementById('done');d.style.display='block';
-  if(j.error){d.style.background='#fdecea';d.style.borderColor='#c62828';d.textContent='Could not save: '+j.error;return;}
-  d.innerHTML='<b>Saved.</b> Alt text written: '+j.done+' &middot; marked decorative: '+j.decor+' &middot; left as they were: '+j.skipped+'<br>New file: '+esc(j.out)+' &nbsp; <button id="open">Show in folder</button> <button id="fin">Finish and close</button>';
-  document.getElementById('open').onclick=function(){fetch('/open',{method:'POST',headers:{'X-Token':TOKEN}});};
-  document.getElementById('fin').onclick=function(){fetch('/quit',{method:'POST',headers:{'X-Token':TOKEN}}).then(function(){document.body.innerHTML='<p style="padding:30px;font-size:18px">Done. You can close this tab and the command window.</p>';});};
- }).catch(function(e){b.disabled=false;b.textContent='Apply and save copy';alert('Could not reach the tool: '+e);});
+function usedBadge(u){ return u ? '<span class="usedbadge"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>Used on slide ' + esc(u.join(", ")) + '</span>' : ""; }
+function sugItem(p, s, used, winner){
+  var txt = byId[s.id].text, key = p.i + "|" + s.id, long = txt.length > 170, shown = (long && !expanded[key]) ? cut(txt, 170) : txt, u = used[s.id], tags = "";
+  if(s.kind === "strong") tags += '<span class="tag s">strong match</span>';
+  else if(s.kind === "weak") tags += '<span class="tag w">weak match</span>';
+  else if(s.kind === "between") tags += '<span class="tag o">fits between your picks</span>';
+  else tags += '<span class="tag n">next in order</span>';
+  if(s.between && (s.kind === "strong" || s.kind === "weak")) tags += '<span class="tag o">fits between your picks</span>';
+  if(s.from && (s.kind === "strong" || s.kind === "weak")) tags += '<span class="tag n">matches: ' + esc(cut(s.from, 40)) + '</span>';
+  if(s.inLong) tags += '<span class="tag n">found in the long description</span>';
+  var h = '<div class="sgw"><button class="sg' + (u ? ' used' : '') + '" data-i="' + p.i + '" data-id="' + esc(s.id) + '">' + usedBadge(u) + '<b>' + esc(s.id) + '</b>' + hl(shown, s.words) + '</button><div class="why">' + tags;
+  if(winner) h += '<button class="small use" data-i="' + p.i + '" data-id="' + esc(s.id) + '">Use this</button>';
+  h += '</div>';
+  if(long) h += '<a href="#" class="more" data-more="' + esc(key) + '">' + (expanded[key] ? 'Show less' : 'Show more') + '</a>';
+  return h + '</div>';
+}
+function sugHtml(p, idx, used){
+  var sg = suggest(p, idx, used), h = "";
+  if(!sg.length) return '<div class="note">Nothing in the Excel file shares words with this slide. Use Browse all rows or write your own text.</div>';
+  var strongL = sg.filter(function(s){ return s.kind === "strong"; }).slice(0, 3), primary, secondary;
+  if(strongL.length){ primary = strongL; secondary = sg.filter(function(s){ return primary.indexOf(s) < 0; }); }
+  else { primary = sg.slice(0, 3); secondary = sg.slice(3); }
+  var winner = (primary[0].kind === "strong" && (primary.length === 1 || primary[1].kind !== "strong" || (primary[0].sc - primary[1].sc) >= 0.15)) ? primary[0].id : "";
+  h += '<div class="lbl">' + (p.alt ? 'Pick a match only if you want to change the current alt text' : 'Suggested for this picture') + '</div>';
+  primary.forEach(function(s){ h += sugItem(p, s, used, s.id === winner); });
+  if(secondary.length){
+    h += '<a href="#" class="more" data-moresug="' + p.i + '">' + (moreSug[p.i] ? 'Hide the weaker suggestions' : 'Show ' + secondary.length + ' weaker suggestion' + (secondary.length > 1 ? 's' : '')) + '</a>';
+    if(moreSug[p.i]) secondary.forEach(function(s){ h += sugItem(p, s, used, false); });
+  }
+  return h;
+}function terms(q){ return String(q).toLowerCase().split(/\s+/).filter(Boolean); }
+function rowsInner(p, used, q){
+  var ts = terms(q), need = Math.max(1, Math.ceil(ts.length / 2)), list = [];
+  OPTS.forEach(function(o, k){
+    var t = (o.id + " " + o.text).toLowerCase(), c = 0;
+    ts.forEach(function(x){ if(t.indexOf(x) >= 0) c++; });
+    if(!ts.length || c >= need) list.push({o: o, c: c, k: k});
+  });
+  if(ts.length) list.sort(function(a, b){ return (b.c - a.c) || (a.k - b.k); });
+  if(!list.length) return '<div class="note">No rows contain those words.</div>';
+  return list.map(function(r){ var o = r.o, u = used[o.id]; return '<button class="opt' + (u ? ' used' : '') + '" data-i="' + p.i + '" data-id="' + esc(o.id) + '">' + usedBadge(u) + '<b>' + esc(o.id) + '</b>' + esc(cut(o.text, 260)) + '</button>'; }).join("");
+}
+function rowsHtml(p, used){
+  var h = '<div class="acts"><button class="small" data-browse="' + p.i + '">' + (openBrowse[p.i] ? 'Hide all rows' : 'Browse all rows') + '</button>';
+  if(p.sw) h += '<button class="small" data-sw="' + p.i + '">Search these words: ' + esc(p.swt || p.sw) + '</button>';
+  h += '</div>';
+  if(openBrowse[p.i]){
+    h += '<div class="rowsbox"><input class="flt" data-flt="' + p.i + '" type="search" value="' + esc(fltText[p.i] || "") + '" placeholder="Search all Excel rows, for example crash" aria-label="Search the Excel rows"><div class="rows">' + rowsInner(p, used, fltText[p.i] || "") + '</div></div>';
+  }
+  return h;
+}
+function ownBoxHtml(p){
+  var s = S[p.i], h = '<div class="lbl">' + (p.alt ? 'Or write new alt text to replace it' : 'Or write your own alt text') + '</div>';
+  h += '<textarea class="owntext" data-own="' + p.i + '" placeholder="Describe what the picture shows" aria-label="Your own alt text">' + esc(s.text) + '</textarea>';
+  if(s.err) h += '<div class="err">' + esc(s.err) + '</div>';
+  h += '<div class="acts"><button class="small" data-useown="' + p.i + '">Use this text</button><button class="small" data-uns="' + p.i + '">Not sure</button><button class="small" data-deco="' + p.i + '">Mark as decorative</button></div>';
+  return h;
+}
+function keepNote(p, rep){ return p.alt ? '<div class="note">' + (rep ? 'The alt text it has now will be replaced.' : 'The alt text it has now will be kept.') + '</div>' : ''; }
+function stateHtml(p, rep){
+  var s = S[p.i], h = "";
+  if(s.mode === "excel") h = '<div class="chosen"><b>' + esc(s.id) + '</b> &middot; ' + esc(byId[s.id].text) + '<a href="#" data-clear="' + p.i + '">Change</a><a href="#" data-edit="' + p.i + '">Edit this text</a></div>' + keepNote(p, rep);
+  else if(s.mode === "own") h = '<div class="state own">Your text: ' + esc(s.text) + '<a href="#" data-clear="' + p.i + '">Change</a></div>' + keepNote(p, rep);
+  else if(s.mode === "unsure") h = '<div class="state uns">Marked to check later. Nothing will be written for this picture.</div><input class="notein" data-note="' + p.i + '" type="text" value="' + esc(s.note) + '" placeholder="Add a note, for example ask the author" aria-label="Note" style="margin-top:8px"><div class="acts"><button class="small" data-clear="' + p.i + '">Undo</button></div>';
+  else if(s.mode === "deco") h = '<div class="state deco">Marked decorative. It gets no alt text and screen readers skip it.<a href="#" data-clear="' + p.i + '">Undo</a></div>' + keepNote(p, rep);
+  return h;
+}
+var PILL = {none: ["need", "Needs a match"], has: ["has", "Has alt text"], excel: ["ok", "Matched"], own: ["own", "Your own text"], unsure: ["uns", "Not sure"], deco: ["deco", "Decorative"]};
+function render(){
+  var used = usedMap(), c = {none: 0, has: 0, excel: 0, own: 0, unsure: 0, deco: 0}, rep = document.getElementById("rep").checked;
+  PICS.forEach(function(p, idx){
+    var card = cards[idx], main = card.querySelector(".main"), s = S[p.i], m = s.mode, key = (m === "none" && p.alt && !p.ai) ? "has" : m, h = "";
+    c[key]++;
+    h += '<div class="head"><b>Slide ' + p.slide + ' &middot; ' + esc(p.name) + '</b><span class="pill ' + PILL[key][0] + '">' + PILL[key][1] + '</span></div>';
+    if(p.title) h += '<div class="ctx">' + esc(p.title) + '</div>';
+    if(p.label) h += '<div class="lab">Label on the slide: <b>' + esc(p.label) + '</b></div>';
+    if(p.alt) h += '<div class="has">' + (p.ai ? 'AI-generated alt text already there (not yet reviewed): ' : 'Current alt text: ') + esc(p.alt) + '</div>';
+    if(m === "none") h += sugHtml(p, idx, used) + rowsHtml(p, used) + ownBoxHtml(p);
+    else h += stateHtml(p, rep);
+    main.innerHTML = h;
+    card.className = "card" + (m === "excel" || m === "deco" ? " ok" : m === "own" ? " own" : m === "unsure" ? " uns" : "");
+    var vis = true, hay = (p.slide + " " + p.name + " " + p.title + " " + p.label + " " + p.alt).toLowerCase();
+    if(filt === "need" && key !== "none") vis = false; if(filt === "done" && m !== "excel" && m !== "deco") vis = false;
+    if(filt === "own" && m !== "own") vis = false; if(filt === "uns" && m !== "unsure") vis = false; if(filt === "has" && key !== "has") vis = false;
+    if(query && hay.indexOf(query) < 0) vis = false;
+    card.style.display = vis ? "" : "none";
+    card.setAttribute("data-vis", vis ? "1" : "0");
+  });
+  var total = PICS.length, done = c.excel + c.own + c.deco + c.has, pc = total ? Math.round(done / total * 100) : 0;
+  document.getElementById("cnt").textContent = done + " of " + total + " done" + (c.unsure ? " - " + c.unsure + " not sure" : "");
+  document.getElementById("pct").textContent = pc + "%";
+  document.getElementById("fill").style.width = pc + "%";
+  document.getElementById("n-all").textContent = total; document.getElementById("n-need").textContent = c.none;
+  document.getElementById("n-done").textContent = c.excel + c.deco; document.getElementById("n-own").textContent = c.own;
+  document.getElementById("n-uns").textContent = c.unsure; document.getElementById("n-has").textContent = c.has;
+  document.getElementById("none").hidden = cards.some(function(x){ return x.getAttribute("data-vis") === "1"; });
+  if(lbIdx >= 0) renderLb();
+}function doPick(i, id){ S[i] = {mode: "excel", id: id, text: "", note: "", err: ""}; render(); }
+function lbImg(){ return document.getElementById("lbimg"); }
+function applyScale(){ var im = lbImg(); if(lbBase){ im.style.width = Math.round(lbBase * lbScale) + "px"; } document.getElementById("lbzoom").textContent = Math.round(lbScale * 100) + "%"; }
+function loadLbImage(){
+  var p = PICS[lbIdx], im = lbImg(), box = document.getElementById("lbimgbox");
+  lbScale = 1;
+  document.getElementById("lbviewpic").classList.toggle("on", lbView === "pic");
+  document.getElementById("lbviewpic").setAttribute("aria-pressed", lbView === "pic" ? "true" : "false");
+  document.getElementById("lbviewslide").classList.toggle("on", lbView === "slide");
+  document.getElementById("lbviewslide").setAttribute("aria-pressed", lbView === "slide" ? "true" : "false");
+  if(lbView === "slide"){
+    var data = SLIDETHUMBS[String(p.slide)];
+    if(!data){ box.innerHTML = '<div class="noimg">No preview of the whole slide</div>'; return; }
+    box.innerHTML = '<img id="lbimg" alt="">'; im = lbImg();
+    im.onload = function(){ lbBase = Math.min(im.naturalWidth, Math.round(window.innerWidth * 0.85)); applyScale(); };
+    im.src = "data:image/png;base64," + data; if(im.complete && im.naturalWidth){ im.onload(); }
+  } else {
+    var src = cards[lbIdx].querySelector(".th img");
+    if(!src){ box.innerHTML = '<div class="noimg">No preview</div>'; return; }
+    box.innerHTML = '<img id="lbimg" alt="">'; im = lbImg();
+    im.onload = function(){ lbBase = Math.min(im.naturalWidth, Math.round(window.innerWidth * 0.85)); applyScale(); };
+    im.src = src.src; if(im.complete && im.naturalWidth){ im.onload(); }
+  }
+}
+function setLbView(v){ lbView = v; loadLbImage(); }
+function openZoom(idx){
+  if(!hasAnyPreview(idx)) return;
+  lbIdx = idx; lbQuery = ""; lbView = cards[idx].querySelector(".th img") ? "pic" : "slide";
+  loadLbImage();
+  document.getElementById("lb").hidden = false; renderLb();
+}
+function renderLb(){
+  var p = PICS[lbIdx], used = usedMap(), s = S[p.i], rep = document.getElementById("rep").checked;
+  document.getElementById("lbtitle").textContent = "Slide " + p.slide + " - " + p.name;
+  document.getElementById("lbsub").textContent = p.label ? ("Label: " + p.label) : p.title;
+  var row = document.getElementById("lbsearchrow");
+  if(s.mode === "none"){
+    row.hidden = false;
+    var si = document.getElementById("lbsearch"); if(document.activeElement !== si) si.value = lbQuery;
+    if(lbQuery.trim()){
+      document.getElementById("lbpick").innerHTML = '<div class="rows">' + rowsInner(p, used, lbQuery) + '</div><div class="note">To write your own text or mark it not sure, close this window and use the card.</div>';
+    } else {
+      document.getElementById("lbpick").innerHTML = sugHtml(p, lbIdx, used) + '<div class="note">To write your own text or mark it not sure, close this window and use the card.</div>';
+    }
+  } else {
+    row.hidden = true;
+    document.getElementById("lbpick").innerHTML = stateHtml(p, rep);
+  }
+}
+function closeZoom(){ lbIdx = -1; document.getElementById("lb").hidden = true; }
+function hasAnyPreview(idx){ return !!(cards[idx].querySelector(".th img") || SLIDETHUMBS[String(PICS[idx].slide)]); }
+function stepZoom(d){ var n = lbIdx + d; while(n >= 0 && n < PICS.length && !hasAnyPreview(n)) n += d; if(n >= 0 && n < PICS.length) openZoom(n); }
+document.addEventListener("click", function(e){
+  var t = e.target;
+  var th = t.closest(".th"); if(th){ openZoom(parseInt(th.parentNode.getAttribute("data-i"), 10)); return; }
+  var b = t.closest(".sg, .opt, .use"); if(b){ doPick(b.getAttribute("data-i"), b.getAttribute("data-id")); return; }
+  var ms = t.closest("[data-moresug]"); if(ms){ e.preventDefault(); var i0 = ms.getAttribute("data-moresug"); moreSug[i0] = !moreSug[i0]; render(); return; }
+  var m = t.closest("[data-more]"); if(m){ e.preventDefault(); var k = m.getAttribute("data-more"); expanded[k] = !expanded[k]; render(); return; }
+  var sw = t.closest("[data-sw]"); if(sw){ var i1 = sw.getAttribute("data-sw"); openBrowse[i1] = true; fltText[i1] = PICS[i1].sw; render(); return; }
+  var br = t.closest("[data-browse]"); if(br){ var i2 = br.getAttribute("data-browse"); openBrowse[i2] = !openBrowse[i2]; render(); return; }
+  var uo = t.closest("[data-useown]"); if(uo){ var i3 = uo.getAttribute("data-useown"), tv = (S[i3].text || "").replace(/\s*[\r\n]+\s*/g, " ").trim(); if(!tv){ S[i3].err = "Type some text first"; render(); return; } S[i3] = {mode: "own", id: "", text: tv, note: "", err: ""}; render(); return; }
+  var un = t.closest("[data-uns]"); if(un){ var i4 = un.getAttribute("data-uns"); S[i4] = {mode: "unsure", id: "", text: S[i4].text || "", note: "", err: ""}; render(); return; }
+  var dc = t.closest("[data-deco]"); if(dc){ var i5 = dc.getAttribute("data-deco"); S[i5] = {mode: "deco", id: "", text: S[i5].text || "", note: "", err: ""}; render(); return; }
+  var ed = t.closest("[data-edit]"); if(ed){ e.preventDefault(); var i6 = ed.getAttribute("data-edit"); S[i6] = {mode: "none", id: "", text: byId[S[i6].id].full, note: "", err: ""}; render(); return; }
+  var a = t.closest("[data-clear]"); if(a){ e.preventDefault(); var i7 = a.getAttribute("data-clear"); S[i7] = {mode: "none", id: "", text: (S[i7].mode === "own" ? S[i7].text : S[i7].text) || "", note: "", err: ""}; render(); return; }
+  if(t.id === "lbclose" || t.id === "lb"){ closeZoom(); return; }
+  if(t.id === "lbviewpic"){ setLbView("pic"); return; }
+  if(t.id === "lbviewslide"){ setLbView("slide"); return; }
+  if(t.id === "lbplus"){ lbScale = Math.min(6, lbScale * 1.25); applyScale(); return; }
+  if(t.id === "lbminus"){ lbScale = Math.max(0.3, lbScale / 1.25); applyScale(); return; }
+  if(t.id === "lbprev"){ stepZoom(-1); return; }
+  if(t.id === "lbnext"){ stepZoom(1); return; }
 });
-build();upd(0);
+document.addEventListener("keydown", function(e){
+  if(lbIdx < 0) return;
+  if(e.key === "Escape"){ closeZoom(); }
+  else if(e.key === "ArrowRight"){ stepZoom(1); }
+  else if(e.key === "ArrowLeft"){ stepZoom(-1); }
+  else if(e.key === "+" || e.key === "="){ lbScale = Math.min(6, lbScale * 1.25); applyScale(); }
+  else if(e.key === "-"){ lbScale = Math.max(0.3, lbScale / 1.25); applyScale(); }
+});
+document.addEventListener("input", function(e){
+  var el = e.target; if(!el.closest) return;
+  if(el.id === "lbsearch"){
+    lbQuery = el.value;
+    renderLb();
+    var si2 = document.getElementById("lbsearch"); si2.focus(); si2.setSelectionRange(si2.value.length, si2.value.length);
+    return;
+  }
+  var f = el.closest(".flt");
+  if(f){
+    var i8 = f.getAttribute("data-flt"); fltText[i8] = f.value;
+    f.parentNode.querySelector(".rows").innerHTML = rowsInner(PICS[i8], usedMap(), f.value);
+    return;
+  }
+  var ow = el.closest(".owntext"); if(ow){ var i9 = ow.getAttribute("data-own"); S[i9].text = ow.value; S[i9].err = ""; return; }
+  var nt = el.closest(".notein"); if(nt){ S[nt.getAttribute("data-note")].note = nt.value; }
+});
+document.addEventListener("change", function(e){ if(e.target.id === "rep") render(); });
+[].slice.call(document.querySelectorAll(".chip")).forEach(function(c){ c.addEventListener("click", function(){ filt = c.getAttribute("data-f"); [].slice.call(document.querySelectorAll(".chip")).forEach(function(x){ x.classList.toggle("on", x === c); }); render(); }); });
+document.getElementById("q").addEventListener("input", function(e){ query = e.target.value.toLowerCase(); render(); });
+function list(items){ return items.length ? "<ul>" + items.map(function(x){ return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>" : ""; }
+function post(path, body){
+  return fetch(path, {method: "POST", headers: {"Content-Type": "application/json", "X-Token": TOKEN}, body: JSON.stringify(body || {})})
+    .then(function(r){ return r.json().then(function(j){ if(!r.ok){ throw new Error(j.error || r.statusText); } return j; }); });
+}
+function showPanel(html, isErr){ var p = document.getElementById("panel"); p.hidden = false; p.className = isErr ? "err" : ""; p.innerHTML = html; }
+function rowsPayload(){
+  return PICS.map(function(p){ var s = S[p.i]; return {Chapter: CHAPTER, Slide: p.slide, ShapeId: p.sid, PictureName: p.name, ExcelId: s.mode === "excel" ? s.id : "", Mode: s.mode, CustomText: s.mode === "own" ? s.text : "", Note: s.mode === "unsure" ? s.note : ""}; });
+}
+document.getElementById("apply").addEventListener("click", function(){
+  if(location.protocol === "file:" || !TOKEN){
+    showPanel("<h2>This page needs the CMD window</h2><p>This is only a saved copy. Run AltText Matcher.cmd, choose Yes, and use the page it opens (its address starts with http://localhost). You can still press Save mapping here.</p>", true); return;
+  }
+  var n = {excel: 0, own: 0, deco: 0, unsure: 0}; PICS.forEach(function(p){ var m = S[p.i].mode; if(n[m] !== undefined) n[m]++; });
+  if(!(n.excel + n.own + n.deco)){ showPanel("<h2>Nothing is done yet</h2><p>Pick a match, write your own text or mark a picture decorative first.</p>", true); return; }
+  var rep = document.getElementById("rep").checked;
+  if(!confirm("From Excel: " + n.excel + "\nYour own text: " + n.own + "\nDecorative: " + n.deco + "\nNot sure (nothing written): " + n.unsure + "\n\nThe alt text is written into a copy of the PowerPoint. The original is not changed.\n" + (rep ? "Alt text that is already there will be replaced." : "Pictures that already have alt text keep it.") + "\n\nContinue?")) return;
+  var btn = document.getElementById("apply"); btn.disabled = true; document.getElementById("msg").textContent = "Writing...";
+  post("/apply", {mapping: rowsPayload(), replace: rep}).then(function(r){
+    document.getElementById("msg").textContent = "Done";
+    showPanel("<h2>Saved: " + esc(r.OutFile) + "</h2><p>From Excel: <b>" + r.Filled + "</b> &middot; your own text: <b>" + r.Own + "</b> &middot; marked decorative: <b>" + r.Decor + "</b> &middot; replaced: <b>" + r.Replaced + "</b> &middot; kept as they were: <b>" + r.Kept + "</b> &middot; problems: <b>" + r.Problems + "</b></p>" +
+      (r.Kept ? "<p>Kept their existing alt text:</p>" + list(r.KeptList) : "") +
+      (r.Issues.length ? "<p>Problems:</p>" + list(r.Issues) : "") +
+      (r.NotSure.length ? "<p>Marked not sure, nothing written:</p>" + list(r.NotSure) : "") +
+      (r.Unmatched.length ? "<p>Still without a match (write these by hand):</p>" + list(r.Unmatched) : "") +
+      '<div class="row"><button class="btn main-btn" id="openf">Open the folder</button><button class="btn" id="finish">Finish and close the helper</button><button class="btn" id="hide">Hide this</button></div>', false);
+    document.getElementById("openf").onclick = function(){ post("/open"); };
+    document.getElementById("hide").onclick = function(){ document.getElementById("panel").hidden = true; };
+    document.getElementById("finish").onclick = function(){ post("/quit").then(function(){ document.getElementById("msg").textContent = "The helper window has stopped. You can close this page."; document.getElementById("apply").disabled = true; }); };
+  }).catch(function(e){
+    document.getElementById("msg").textContent = "";
+    showPanel("<h2>It did not work</h2><p>" + esc(e.message) + "</p><p>If the CMD window was closed, run AltText Matcher.cmd again. If the deck or its copy is open in PowerPoint, close it and press the button again.</p>", true);
+  }).then(function(){ btn.disabled = false; });
+});
+function q(v){ return '"' + String(v).replace(/"/g, '""') + '"'; }
+document.getElementById("save").addEventListener("click", function(){
+  var rep = document.getElementById("rep").checked ? "TRUE" : "FALSE";
+  var lines = ["Chapter,Slide,ShapeId,PictureName,ExcelId,Replace,Mode,CustomText,Note"];
+  rowsPayload().forEach(function(r){ lines.push([q(r.Chapter), r.Slide, r.ShapeId, q(r.PictureName), q(r.ExcelId), rep, q(r.Mode), q(String(r.CustomText).replace(/\s*[\r\n]+\s*/g, " ")), q(String(r.Note).replace(/\s*[\r\n]+\s*/g, " "))].join(",")); });
+  var blob = new Blob([String.fromCharCode(65279) + lines.join("\r\n")], {type: "text/csv"});
+  var a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = "AltText_Mapping " + DECK + ".csv"; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+});
+render();
 </script></body></html>
 '@
-    return $html.Replace('__ITEMS__', $itemJson).Replace('__LIST__', $listJson).Replace('__TOKEN__', $token).Replace('__DECK__', [Net.WebUtility]::HtmlEncode($deckName))
-}
-
-function Start-ReviewServer([string]$html, [string]$token, $pics, [string]$pptx, $docs, [string]$out) {
-    $port = 0; $listener = $null
-    foreach ($try in 1..30) {
-        $port = Get-Random -Minimum 49200 -Maximum 65000
-        $l = New-Object Net.HttpListener
-        $l.Prefixes.Add("http://127.0.0.1:$port/")
-        try { $l.Start(); $listener = $l; break } catch { try { $l.Close() } catch { } }
-    }
-    if ($null -eq $listener) { throw 'Could not start the local review page (no free port).' }
-    $url = "http://127.0.0.1:$port/"
-    if ($env:ALT_PORTFILE) { Set-Content -LiteralPath $env:ALT_PORTFILE -Value "$port|$token" -Encoding ASCII } else { Start-Process $url }
+    $html = $html.Replace('__DECK__', (Html $deckName)).Replace('__CHAPTER__', (Html $chap)).Replace('__CARDS__', $cards.ToString())
+    $slideThumbJson = New-Object System.Collections.Generic.List[string]
+    foreach ($k in $slideThumbs.Keys) { $slideThumbJson.Add((& $js $k) + ':' + (& $js $slideThumbs[$k])) }
+    $html = $html.Replace('__OPTS__', ('[' + ($optJson -join ',') + ']')).Replace('__PICS__', ('[' + ($picJson -join ',') + ']')).Replace('__SLIDETHUMBS__', ('{' + ($slideThumbJson -join ',') + '}'))
+    $outHtml = Join-Path (Split-Path -Parent $pptx) ($deckName + ' AltText Review.html')
+    [IO.File]::WriteAllText($outHtml, $html.Replace('__TOKEN__', ''), (New-Object Text.UTF8Encoding($false)))
     Write-Host ''
-    Write-Host 'The review page is open in your browser.' -ForegroundColor Green
-    Write-Host ('If it did not open, go to: ' + $url)
-    Write-Host 'Check the pictures, then press "Apply and save copy". Keep this window open until you finish.'
-    $enc = New-Object Text.UTF8Encoding($false)
-    $quit = $false
-    try {
-        while (-not $quit -and $listener.IsListening) {
-            $ctx = $listener.GetContext()
-            $req = $ctx.Request; $resp = $ctx.Response
-            try {
-                $path = $req.Url.AbsolutePath
-                $okTok = ($req.Headers['X-Token'] -eq $token) -or ($req.QueryString['t'] -eq $token)
-                if ($req.HttpMethod -eq 'GET' -and $path -eq '/') {
-                    $b = $enc.GetBytes($html); $resp.ContentType = 'text/html; charset=utf-8'; $resp.OutputStream.Write($b, 0, $b.Length)
-                } elseif ($req.HttpMethod -eq 'GET' -and $path -like '/img/*' -and $okTok) {
-                    $i = [int]($path.Substring(5))
-                    $p = $pics[$i]
-                    if ($p.blob -and $p.mime) { $resp.ContentType = $p.mime; $resp.OutputStream.Write($p.blob, 0, $p.blob.Length) } else { $resp.StatusCode = 404 }
-                } elseif ($req.HttpMethod -eq 'POST' -and $okTok -and $path -eq '/apply') {
-                    $sr = New-Object IO.StreamReader($req.InputStream, [Text.Encoding]::UTF8); $body = $sr.ReadToEnd(); $sr.Close()
-                    try {
-                        $data = $body | ConvertFrom-Json
-                        $edits = @(); foreach ($e in @($data.edits)) { $edits += ,$e }
-                        $r = Save-WithAlt $pptx $out $pics $docs $edits
-                        $json = '{"done":' + $r.done + ',"decor":' + $r.decor + ',"skipped":' + $r.skipped + ',"out":' + (ConvertTo-Json ([string]$out) -Compress) + '}'
-                        Write-Host ('Saved: ' + $out + '  (written ' + $r.done + ', decorative ' + $r.decor + ', left as they were ' + $r.skipped + ')') -ForegroundColor Green
-                    } catch { $json = '{"error":' + (ConvertTo-Json ([string]$_.Exception.Message) -Compress) + '}' }
-                    $b = $enc.GetBytes($json); $resp.ContentType = 'application/json'; $resp.OutputStream.Write($b, 0, $b.Length)
-                } elseif ($req.HttpMethod -eq 'POST' -and $okTok -and $path -eq '/open') {
-                    if (Test-Path -LiteralPath $out) { Start-Process -FilePath 'explorer.exe' -ArgumentList ('/select,"' + $out + '"') }
-                } elseif ($req.HttpMethod -eq 'POST' -and $okTok -and $path -eq '/quit') {
-                    $quit = $true
-                } else { $resp.StatusCode = 404 }
-            } catch { try { $resp.StatusCode = 500 } catch { } }
-            finally { try { $resp.Close() } catch { } }
-        }
-    } finally { try { $listener.Stop(); $listener.Close() } catch { } }
+    Write-Host ('Review page saved as a backup copy: ' + $outHtml)
+    if ($env:ALTMATCH_NOSERVE) { return }
+    $token = [guid]::NewGuid().ToString('N')
+    $lookup = Get-Lookup $rows
+    Start-ReviewServer $html.Replace('__TOKEN__', $token) $token $pptx $lookup
 }
 
-# ----------------------------------------------------------------- main
-Write-Host ('PPT Alt-Text Filler - running version ' + $ALT_VERSION) -ForegroundColor Cyan
-Write-Host ''
-try {
-    $pptx = $env:ALT_PPTX; $xlsx = $env:ALT_XLSX
-    if (-not $pptx -and $args.Count -ge 1) { $pptx = [string]$args[0] }
-    if (-not $xlsx -and $args.Count -ge 2) { $xlsx = [string]$args[1] }
-    function Pick-One([string]$title, [string]$filter) {
-        Add-Type -AssemblyName System.Windows.Forms
-        $owner = New-Object System.Windows.Forms.Form; $owner.TopMost = $true
-        $dlg = New-Object System.Windows.Forms.OpenFileDialog
-        $dlg.Title = $title; $dlg.Filter = $filter
-        if ($dlg.ShowDialog($owner) -eq 'OK') { return $dlg.FileName } else { return $null }
-    }
-    if (-not $pptx) { Write-Host 'Choose the PowerPoint file...'; $pptx = Pick-One 'Select the PowerPoint file (.pptx)' 'PowerPoint (*.pptx)|*.pptx' }
-    if (-not $pptx) { Write-Host 'No file selected.'; return }
-    if (-not $xlsx) { Write-Host 'Choose the Alt-Text Excel file...'; $xlsx = Pick-One 'Select the Alt-Text Excel log (.xlsx)' 'Excel (*.xlsx)|*.xlsx' }
-    if (-not $xlsx) { Write-Host 'No Excel file selected.'; return }
-    $pptx = [IO.Path]::GetFullPath($pptx.Trim().Trim('"')); $xlsx = [IO.Path]::GetFullPath($xlsx.Trim().Trim('"'))
+# =====================================================================
+# Apply (used by Step 2 and by the button on the review page)
+# =====================================================================
+function Invoke-Apply([string]$pptx, $lookup, $map, [string]$outPath, [bool]$replace = $false) {
+    Copy-Item -LiteralPath $pptx -Destination $outPath -Force
+    $issues = New-Object System.Collections.Generic.List[string]
+    $keptList = New-Object System.Collections.Generic.List[string]
+    $unmatched = New-Object System.Collections.Generic.List[string]
+    $notSure = New-Object System.Collections.Generic.List[string]
+    $filled = 0; $own = 0; $kept = 0; $decor = 0; $missing = 0; $replaced = 0
 
-    $ch = $env:ALT_CHAPTER
-    if (-not $ch) {
-        $ch = Get-Chapter $pptx
-        if (-not $env:ALT_NOPROMPT) {
-            $x = (Read-Host ('Chapter number to use [' + $(if ($ch) { $ch } else { 'all' }) + '] (Enter to accept, or type e.g. 05, or "all")')).Trim()
-            if ($x) { if ($x -match '^\d+$') { $ch = $x.PadLeft(2, '0') } elseif ($x.ToLowerInvariant() -eq 'all') { $ch = $null } }
+    $zip = [IO.Compression.ZipFile]::Open($outPath, 'Update')
+    try {
+        $parts = Get-SlideParts $zip
+        $docs = @{}
+        foreach ($row in $map) {
+            $slideNo = [int]$row.Slide
+            if ($slideNo -lt 1 -or $slideNo -gt $parts.Count) { continue }
+            if (([string]$row.ShapeId) -notmatch '^\d+$') { continue }
+            if (-not $docs.ContainsKey($slideNo)) {
+                $d = New-Object Xml.XmlDocument; $d.PreserveWhitespace = $true; $d.LoadXml((Read-ZipText $zip $parts[$slideNo - 1]))
+                $docs[$slideNo] = @{ Doc = $d; Ns = (New-SlideNs $d); Changed = $false }
+            }
+            $entry = $docs[$slideNo]
+            $pic = $entry.Doc.SelectSingleNode('//p:pic[p:nvPicPr/p:cNvPr/@id="' + $row.ShapeId + '"]', $entry.Ns)
+            if (-not $pic) { $issues.Add("Slide $slideNo : picture id $($row.ShapeId) not found, skipped"); $missing++; continue }
+            $nv = $pic.SelectSingleNode('p:nvPicPr/p:cNvPr', $entry.Ns)
+            $where = "Slide $slideNo $($nv.GetAttribute('name'))"
+
+            $mode = ''
+            if ($row.PSObject.Properties['Mode'] -and $row.Mode) { $mode = ([string]$row.Mode).ToLowerInvariant() }
+            elseif ($row.ExcelId) { $mode = 'excel' }
+            else { $mode = 'none' }
+            $custom = ''; if ($row.PSObject.Properties['CustomText']) { $custom = [string]$row.CustomText }
+            $noteTxt = ''; if ($row.PSObject.Properties['Note']) { $noteTxt = ([string]$row.Note).Trim() }
+
+            if ($mode -eq 'unsure') { if ($noteTxt) { $notSure.Add("$where ($noteTxt)") } else { $notSure.Add($where) }; continue }
+            if ($mode -eq 'none') { $curAlt = $nv.GetAttribute('descr'); if (-not ($curAlt -and $curAlt.Trim().Length -gt 0)) { $unmatched.Add($where) }; continue }
+
+            $alt = ''; $isDeco = $false; $src = ''
+            if ($mode -eq 'excel') {
+                $key = (Norm-Chapter $row.Chapter) + '|' + $row.ExcelId
+                if (-not $lookup.ContainsKey($key)) { $issues.Add("$where : Excel row $($row.ExcelId) not found, skipped"); $missing++; continue }
+                $x = $lookup[$key]
+                $src = "Excel row $($row.ExcelId)"
+                if ($x.Decorative) { $isDeco = $true }
+                else { $alt = $x.Short; if ($x.Long) { $alt = ($alt + ' ' + $x.Long).Trim() } }
+            }
+            elseif ($mode -eq 'own') { $alt = $custom.Trim(); $src = 'your own text' }
+            elseif ($mode -eq 'deco') { $isDeco = $true; $src = 'decorative' }
+            else { $issues.Add("$where : unknown choice '$mode', skipped"); $missing++; continue }
+
+            if (-not $isDeco -and -not $alt) { $issues.Add("$where : $src has no alt text, skipped"); $missing++; continue }
+
+            $existing = $nv.GetAttribute('descr')
+            $hasExisting = [bool]($existing -and $existing.Trim().Length -gt 0)
+            if ($hasExisting -and -not $replace) { $kept++; $keptList.Add("$where ($src not used)"); continue }
+
+            if ($isDeco) {
+                $nv.SetAttribute('descr', '')
+                $ext = $nv.SelectSingleNode('a:extLst', $entry.Ns)
+                if (-not $ext) { $ext = $entry.Doc.CreateElement('a', 'extLst', $NS_A); $null = $nv.AppendChild($ext) }
+                if (-not $ext.SelectSingleNode('a:ext[@uri="' + $DEC_URI + '"]', $entry.Ns)) {
+                    $e = $entry.Doc.CreateElement('a', 'ext', $NS_A)
+                    $e.SetAttribute('uri', $DEC_URI)
+                    $dnode = $entry.Doc.CreateElement('adec', 'decorative', $NS_DEC)
+                    $dnode.SetAttribute('val', '1')
+                    $null = $e.AppendChild($dnode)
+                    $null = $ext.AppendChild($e)
+                }
+                if ($hasExisting) { $replaced++ }
+                $decor++
+            } else {
+                $nv.SetAttribute('descr', $alt)
+                $oldDec = $nv.SelectSingleNode('a:extLst/a:ext[@uri="' + $DEC_URI + '"]', $entry.Ns)
+                if ($oldDec) { $null = $oldDec.ParentNode.RemoveChild($oldDec) }
+                if ($hasExisting) { $replaced++ }
+                if ($mode -eq 'own') { $own++ } else { $filled++ }
+            }
+            $entry.Changed = $true
         }
-    } elseif ($ch.ToLowerInvariant() -eq 'all') { $ch = $null }
+        foreach ($k in $docs.Keys) {
+            if ($docs[$k].Changed) {
+                $name = $parts[$k - 1]
+                $e = $zip.GetEntry($name); if ($e) { $e.Delete() }
+                $ne = $zip.CreateEntry($name)
+                $sw = New-Object IO.StreamWriter($ne.Open(), (New-Object Text.UTF8Encoding($false)))
+                $docs[$k].Doc.Save($sw)
+                $sw.Close()
+            }
+        }
+    } finally { $zip.Dispose() }
 
-    Write-Host 'Reading the Excel log...'
-    $rows = Import-Log $xlsx
-    if ($ch) {
-        $sub = @($rows | Where-Object { $_.ch -eq $ch -or $_.ch.TrimStart('0') -eq $ch.TrimStart('0') })
-        Write-Host ("Chapter $ch" + ': ' + $sub.Count + ' Excel rows (of ' + $rows.Count + ' total)')
-        if ($sub.Count -gt 0) { $rows = $sub }
-    }
-    Write-Host 'Reading the PowerPoint...'
-    $deck = Import-Deck $pptx
-    $pics = $deck.pics
-    Write-Host ('Found ' + $pics.Count + ' pictures in ' + $deck.slides + ' slides.')
-    if ($pics.Count -eq 0) { Write-Host 'No pictures in this deck - nothing to do.'; return }
+    $summary = "From Excel: $filled ; your own text: $own ; decorative: $decor ; replaced: $replaced ; kept as they were: $kept ; problems: $missing ; marked not sure: $($notSure.Count) ; still without a match: $($unmatched.Count)"
+    $report = New-Object System.Collections.Generic.List[string]
+    $report.Add($summary)
+    foreach ($k in $keptList) { $report.Add('Kept its existing alt text: ' + $k) }
+    foreach ($i in $issues) { $report.Add($i) }
+    if ($notSure.Count) { $report.Add('Marked not sure, nothing written: ' + ($notSure -join ' ; ')) }
+    if ($unmatched.Count) { $report.Add('Still without a match (write these by hand): ' + ($unmatched -join ' ; ')) }
+    $repPath = Join-Path (Split-Path -Parent $outPath) ([IO.Path]::GetFileNameWithoutExtension($outPath) + ' report.txt')
+    $report | Set-Content -LiteralPath $repPath -Encoding UTF8
 
-    $m = Invoke-Match $pics $rows
-    $items = New-Object System.Collections.Generic.List[object]
-    $auto = 0
-    for ($i = 0; $i -lt $pics.Count; $i++) {
-        $p = $pics[$i]; $r = $m.res[$i]
-        $isAuto = ($null -ne $r) -and ($r.score -ge $AUTO_THRESHOLD) -and ($r.margin -ge $MARGIN)
-        if ($isAuto) { $auto++ }
-        $level = if ($isAuto -and $r.score -ge 0.8) { 'green' } elseif ($isAuto) { 'amber' } else { 'red' }
-        $items.Add([pscustomobject]@{
-            i = $i; slide = $p.slide; id = $p.id; name = $p.name; alt = $p.alt; decor = $p.decor; title = $p.title; near = $p.near
-            sugg = $(if ($r) { $r.row.key } else { '' }); score = $(if ($r) { [math]::Round($r.score, 2) } else { 0 })
-            eid = $(if ($isAuto) { $r.row.key } else { '' }); level = $level; img = [bool]($p.blob -and $p.mime)
-        })
+    return [pscustomobject]@{
+        Filled = $filled; Own = $own; Replaced = $replaced; Decor = $decor; Kept = $kept; Problems = $missing
+        KeptList = $keptList.ToArray(); Issues = $issues.ToArray(); Unmatched = $unmatched.ToArray(); NotSure = $notSure.ToArray()
+        OutPath = $outPath; OutFile = (Split-Path -Leaf $outPath); Summary = $summary
     }
-    Write-Host ("Auto-matched $auto/" + $pics.Count + '; the rest need a manual look.')
-    $list = @($m.cands | ForEach-Object { [pscustomobject]@{ key = $_.key; page = $_.page; usage = $_.usage; short = $_.short; long = $_.long; dec = [bool]$_.dec } })
-    $token = [guid]::NewGuid().ToString('N')
-    $html = Build-Page $items $list ([IO.Path]::GetFileName($pptx)) $token
-    $out = [IO.Path]::Combine([IO.Path]::GetDirectoryName($pptx), [IO.Path]::GetFileNameWithoutExtension($pptx) + '_with_alt.pptx')
-    if ($env:ALT_DUMP) { Set-Content -LiteralPath $env:ALT_DUMP -Value ($items | ConvertTo-Json -Depth 4) -Encoding UTF8 }
-    if ($env:ALT_NOSERVE) { Set-Content -LiteralPath ($out + '.review.html') -Value $html -Encoding UTF8; return }
-    Start-ReviewServer $html $token $pics $pptx $deck.docs $out
+}
+
+function Get-Lookup($rows) {
+    $lookup = @{}
+    foreach ($r in $rows) { $lookup[($r.Chapter + '|' + $r.Id)] = $r }
+    return $lookup
+}
+
+function Get-OutPath([string]$pptx) {
+    return (Join-Path (Split-Path -Parent $pptx) ([IO.Path]::GetFileNameWithoutExtension($pptx) + ' AltText.pptx'))
+}
+
+# =====================================================================
+# Step 2: apply a saved mapping file
+# =====================================================================
+function Apply-AltText([string]$pptx, [string]$xlsx, [string]$mapPath) {
+    $rows = Get-AltRows $xlsx
+    $lookup = Get-Lookup $rows
+    $map = @(Import-Csv -LiteralPath $mapPath -Encoding UTF8)
+    if ($map.Count -eq 0) { throw 'The mapping file is empty.' }
+    $rep = $false
+    if ($map[0].PSObject.Properties['Replace'] -and ([string]$map[0].Replace).ToUpperInvariant() -eq 'TRUE') { $rep = $true }
+    $res = Invoke-Apply $pptx $lookup $map (Get-OutPath $pptx) $rep
+    Write-Host $res.Summary
+    foreach ($k in $res.KeptList) { Write-Host ('Kept its existing alt text: ' + $k) }
+    foreach ($i in $res.Issues) { Write-Host $i }
+    if ($res.NotSure.Count) { Write-Host ('Marked not sure, nothing written: ' + ($res.NotSure -join ' ; ')) }
+    if ($res.Unmatched.Count) { Write-Host ('Still without a match (write these by hand): ' + ($res.Unmatched -join ' ; ')) }
+    Write-Host ''
+    Write-Host ('Saved: ' + $res.OutPath)
+}
+
+# =====================================================================
+# The review page is served from this window so its button can write the deck
+# =====================================================================
+function Start-ReviewServer([string]$html, [string]$token, [string]$pptx, $lookup) {
+    $listener = $null; $port = 0
+    foreach ($try in 1..40) {
+        $port = Get-Random -Minimum 49200 -Maximum 49900
+        $l = New-Object System.Net.HttpListener
+        $l.Prefixes.Add("http://localhost:$port/")
+        try { $l.Start(); $listener = $l; break } catch { $l.Close() }
+    }
+    if (-not $listener) { throw 'Could not start the local page server.' }
+    $url = "http://localhost:$port/"
+    $outPath = Get-OutPath $pptx
+    if ($env:ALTMATCH_PORTFILE) { Set-Content -LiteralPath $env:ALTMATCH_PORTFILE -Value "$port|$token" -Encoding ASCII }
+    else { Start-Process $url }
+    Write-Host ''
+    Write-Host ('The review page is open at ' + $url)
+    Write-Host 'Leave this window open while you use the page. Close it when you are finished.'
+    $quit = $false
+    while ($listener.IsListening -and -not $quit) {
+        $ctx = $listener.GetContext()
+        $req = $ctx.Request; $res = $ctx.Response
+        $status = 200; $ctype = 'application/json; charset=utf-8'; $body = ''
+        try {
+            $path = $req.Url.AbsolutePath
+            if ($req.HttpMethod -eq 'GET' -and $path -eq '/') { $ctype = 'text/html; charset=utf-8'; $body = $html }
+            elseif ($req.HttpMethod -eq 'POST') {
+                if ($req.Headers['X-Token'] -ne $token) { $status = 403; $body = '{"error":"Not allowed"}' }
+                else {
+                    $sr = New-Object IO.StreamReader($req.InputStream, [Text.Encoding]::UTF8)
+                    $raw = $sr.ReadToEnd(); $sr.Close()
+                    if ($path -eq '/apply') {
+                        $data = $raw | ConvertFrom-Json
+                        $result = Invoke-Apply $pptx $lookup @($data.mapping) $outPath ([bool]$data.replace)
+                        Write-Host ('Applied: ' + $result.Summary)
+                        $body = $result | ConvertTo-Json -Depth 4 -Compress
+                    }
+                    elseif ($path -eq '/open') {
+                        if (Test-Path -LiteralPath $outPath) { Start-Process -FilePath 'explorer.exe' -ArgumentList ('/select,"' + $outPath + '"') }
+                        $body = '{"ok":true}'
+                    }
+                    elseif ($path -eq '/quit') { $body = '{"ok":true}'; $quit = $true }
+                    else { $status = 404; $body = '{"error":"Not found"}' }
+                }
+            }
+            else { $status = 404; $body = '{"error":"Not found"}' }
+        } catch {
+            $status = 500
+            $body = (@{ error = $_.Exception.Message } | ConvertTo-Json -Compress)
+        }
+        $bytes = [Text.Encoding]::UTF8.GetBytes($body)
+        $res.StatusCode = $status; $res.ContentType = $ctype; $res.ContentLength64 = $bytes.Length
+        $res.OutputStream.Write($bytes, 0, $bytes.Length)
+        $res.OutputStream.Close()
+    }
+    $listener.Stop()
+    Write-Host 'Page closed.'
+}
+# =====================================================================
+# main
+# =====================================================================
+try {
+    $mode = $env:ALTMATCH_MODE
+    if (-not $mode) {
+        $owner = New-Object System.Windows.Forms.Form
+        $owner.TopMost = $true
+        $ans = [System.Windows.Forms.MessageBox]::Show($owner, "Yes = Step 1: make the review page (pick the matches)`r`nNo = Step 2: apply the saved matches to the deck`r`nCancel = close", 'Alt text matcher', 'YesNoCancel', 'Question')
+        if ($ans -eq 'Yes') { $mode = '1' } elseif ($ans -eq 'No') { $mode = '2' } else { Write-Host 'Closed.'; $mode = '' }
+    }
+    if ($mode -eq '1' -or $mode -eq '2') {
+        $pptx = $env:ALTMATCH_PPTX; if (-not $pptx) { $pptx = Pick-File 'Select the PowerPoint file' 'PowerPoint presentations (*.pptx)|*.pptx' }
+        if (-not $pptx) { throw 'No PowerPoint file selected.' }
+        $xlsx = $env:ALTMATCH_XLSX; if (-not $xlsx) { $xlsx = Pick-File 'Select the alt text Excel file' 'Excel files (*.xlsx)|*.xlsx' }
+        if (-not $xlsx) { throw 'No Excel file selected.' }
+        if ($mode -eq '1') {
+            $chapter = $env:ALTMATCH_CHAPTER
+            if (-not $chapter) {
+                $guess = [regex]::Match([IO.Path]::GetFileNameWithoutExtension($pptx), '(\d{1,2})(?=\D*$)').Value
+                $chapter = [Microsoft.VisualBasic.Interaction]::InputBox('Which chapter number is this deck? (as written in the Excel Chapter Number column, for example 05)', 'Chapter', $guess)
+            }
+            if (-not $chapter) { throw 'No chapter number given.' }
+            Make-ReviewPage $pptx $xlsx $chapter
+        } else {
+            $mp = $env:ALTMATCH_MAP; if (-not $mp) { $mp = Pick-File 'Select the saved mapping file (AltText_Mapping ... .csv)' 'Mapping files (*.csv)|*.csv' }
+            if (-not $mp) { throw 'No mapping file selected.' }
+            Apply-AltText $pptx $xlsx $mp
+        }
+    }
 } catch {
     Write-Host ('FAILED: ' + $_.Exception.Message) -ForegroundColor Red
-    Write-Host ('  (version ' + $ALT_VERSION + ', at line ' + $_.InvocationInfo.ScriptLineNumber + ': ' + ($_.InvocationInfo.Line + '').Trim() + ')') -ForegroundColor DarkGray
 }
