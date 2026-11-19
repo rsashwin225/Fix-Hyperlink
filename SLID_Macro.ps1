@@ -1,6 +1,7 @@
 # SLID Macro - numbers repeated slide titles (1 of 4), renames shapes, fixes language tags.
 # Saves a remediated copy next to the original. (Self-updates from GitHub via SLID_Update.ps1.)
 # SLID MACRO SCRIPT
+$SLID_VERSION = '1.0'   # shown at the start of the window; the updater compares this number with GitHub
 function Fix-Deck {
 param([string]$Path,[string]$OutPath)
 $ErrorActionPreference = 'Stop'
@@ -385,6 +386,8 @@ $report | ForEach-Object { Write-Host $_ }
 Write-Host "Saved: $OutPath"
 }
 
+Write-Host "SLID Macro - running version $SLID_VERSION" -ForegroundColor Cyan
+Write-Host ''
 if ($env:FIXDECK_FILE) {
     $files = @($env:FIXDECK_FILE)
 } else {
