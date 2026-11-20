@@ -1304,12 +1304,17 @@ try {
     elseif ($args.Count -gt 0) { $files = @($args) }
     else {
         Add-Type -AssemblyName System.Windows.Forms
+        Add-Type -AssemblyName System.Drawing
         $owner = New-Object System.Windows.Forms.Form; $owner.TopMost = $true
         $dlg = New-Object System.Windows.Forms.OpenFileDialog
         $dlg.Title = 'Select the Word file(s) to fix'; $dlg.Filter = 'Word documents (*.docx)|*.docx'; $dlg.Multiselect = $true
+        # a tiny invisible window in front of everything, so the file window opens on top (not behind other windows)
+        $owner.ShowInTaskbar = $false; $owner.StartPosition = 'Manual'; $owner.Location = New-Object Drawing.Point(-2000, -2000); $owner.Size = New-Object Drawing.Size(1, 1)
+        $owner.Show(); $owner.Activate()
         if ($dlg.ShowDialog($owner) -eq 'OK') { $files = $dlg.FileNames }
+        $owner.Close()
     }
-    if ($files.Count -eq 0) { Write-Host 'No file selected.' }
+    if ($files.Count -eq 0) { Write-Host 'No file selected. (If no file window appeared, it may have opened behind other windows - run Word Fixer again.)' }
     foreach ($f in $files) {
         $f = [IO.Path]::GetFullPath($f)
         Write-Host ('Fixing: ' + [IO.Path]::GetFileName($f))
