@@ -12,7 +12,7 @@
 #   6. The file's Title (File > Info) is set from the title lines.
 #
 # The original file is never changed: the result is saved as "<name> Fixed.docx" with a report next to it.
-$WF_VERSION = '1.3'   # shown at the start of the window; the updater compares this number with GitHub
+$WF_VERSION = '1.4'   # shown at the start of the window; the updater compares this number with GitHub
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression
@@ -1303,18 +1303,28 @@ try {
     if ($env:WF_FILES) { $files = @($env:WF_FILES.Split(';') | Where-Object { $_ }) }
     elseif ($args.Count -gt 0) { $files = @($args) }
     else {
-        Add-Type -AssemblyName System.Windows.Forms
-        Add-Type -AssemblyName System.Drawing
-        $owner = New-Object System.Windows.Forms.Form; $owner.TopMost = $true
-        $dlg = New-Object System.Windows.Forms.OpenFileDialog
-        $dlg.Title = 'Select the Word file(s) to fix'; $dlg.Filter = 'Word documents (*.docx)|*.docx'; $dlg.Multiselect = $true
-        # a tiny invisible window in front of everything, so the file window opens on top (not behind other windows)
-        $owner.ShowInTaskbar = $false; $owner.StartPosition = 'Manual'; $owner.Location = New-Object Drawing.Point(-2000, -2000); $owner.Size = New-Object Drawing.Size(1, 1)
-        $owner.Show(); $owner.Activate()
-        if ($dlg.ShowDialog($owner) -eq 'OK') { $files = $dlg.FileNames }
-        $owner.Close()
+        try {
+            Add-Type -AssemblyName System.Windows.Forms
+            Add-Type -AssemblyName System.Drawing
+            $owner = New-Object System.Windows.Forms.Form; $owner.TopMost = $true
+            $dlg = New-Object System.Windows.Forms.OpenFileDialog
+            $dlg.Title = 'Select the Word file(s) to fix'; $dlg.Filter = 'Word documents (*.docx)|*.docx'; $dlg.Multiselect = $true
+            # a tiny invisible window in front of everything, so the file window opens on top (not behind other windows)
+            $owner.ShowInTaskbar = $false; $owner.StartPosition = 'Manual'; $owner.Location = New-Object Drawing.Point(-2000, -2000); $owner.Size = New-Object Drawing.Size(1, 1)
+            $owner.Show(); $owner.Activate()
+            if ($dlg.ShowDialog($owner) -eq 'OK') { $files = $dlg.FileNames }
+            $owner.Close()
+        } catch { }
     }
-    if ($files.Count -eq 0) { Write-Host 'No file selected. (If no file window appeared, it may have opened behind other windows - run Word Fixer again.)' }
+    if ($files.Count -eq 0 -and -not $env:WF_FILES) {
+        # no file window, or it was closed: the files can also be dragged into this window
+        Write-Host 'The file window did not give a file.' -ForegroundColor Yellow
+        Write-Host 'Drag one or more Word files into this window (or type the full path) and press Enter.'
+        Write-Host 'Leave it empty and press Enter to stop.'
+        $line = Read-Host 'Files'
+        if ($line) { $files = @([regex]::Matches($line, '"([^"]+)"|(\S+\.docx)') | ForEach-Object { if ($_.Groups[1].Success) { $_.Groups[1].Value } else { $_.Groups[2].Value } } | Where-Object { Test-Path -LiteralPath $_ }) }
+    }
+    if ($files.Count -eq 0) { Write-Host 'No file selected.' }
     foreach ($f in $files) {
         $f = [IO.Path]::GetFullPath($f)
         Write-Host ('Fixing: ' + [IO.Path]::GetFileName($f))
