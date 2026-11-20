@@ -1,6 +1,6 @@
 # ALT TEXT TOOL SCRIPT
 # PPT Alt-Text Filler (S4Carlisle). Self-updates from GitHub through AltText_Update.ps1.
-$ALT_VERSION = '3.0'   # shown at the start of the window; the updater compares this number with GitHub
+$ALT_VERSION = '3.1'   # shown at the start of the window; the updater compares this number with GitHub
 Write-Host ('PPT Alt-Text Filler - running version ' + $ALT_VERSION) -ForegroundColor Cyan
 Write-Host ''
 # AltText_Matcher.ps1
@@ -601,6 +601,14 @@ mark{background:var(--warn-bg);color:var(--warn);border-radius:3px;padding:0 2px
 button.btn{font:inherit;font-size:14px;padding:9px 16px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer}
 button.main-btn{background:var(--text);color:var(--card);border-color:var(--text)}
 button:disabled{opacity:.5;cursor:default}
+#cf{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:30;display:flex;align-items:center;justify-content:center;padding:16px}
+#cf[hidden]{display:none}
+.cfbox{background:var(--card);color:var(--text);border-radius:12px;max-width:620px;width:100%;padding:18px 20px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+.cfbox h2{font-size:17px;margin:0 0 4px}.cfsub{font-size:13px;color:var(--muted);margin:0 0 10px}
+.cflbl{font-size:12px;color:var(--muted);margin-top:10px}
+.cfold,.cfnew{font-size:13px;line-height:1.5;border-radius:8px;padding:8px 10px;margin-top:4px;max-height:160px;overflow:auto}
+.cfold{background:var(--soft);text-decoration:line-through;text-decoration-color:var(--muted)}.cfnew{background:var(--ok-bg);color:var(--ok)}
+.cfrow{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
 #panel{position:fixed;left:16px;right:16px;bottom:84px;max-width:968px;margin:0 auto;max-height:60vh;overflow:auto;background:var(--card);border:1px solid var(--ok);border-radius:12px;padding:16px 18px;z-index:10;box-shadow:0 6px 24px rgba(0,0,0,.25)}
 #panel.err{border-color:var(--err)}#panel h2{font-size:16px;margin:0 0 8px}#panel ul{margin:4px 0 10px 18px;padding:0;font-size:13px}#panel .row{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap}
 #lb{position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:20;display:flex;align-items:center;justify-content:center;padding:16px}
@@ -637,7 +645,12 @@ button:disabled{opacity:.5;cursor:default}
 <div class="lbsearchrow" id="lbsearchrow" hidden><input id="lbsearch" type="search" placeholder="Search all Excel rows, for example crash" aria-label="Search the Excel rows"></div>
 <div class="lbpick" id="lbpick"></div></div></div>
 <div id="panel" hidden></div>
-<div id="bar"><div class="in"><label><input type="checkbox" id="rep"> Replace alt text that is already there</label><span id="msg"></span>
+<div id="cf" hidden><div class="cfbox" role="dialog" aria-modal="true" aria-labelledby="cft">
+<h2 id="cft">Replace the alt text?</h2><p class="cfsub" id="cfsub"></p>
+<div class="cflbl">Alt text it has now</div><div class="cfold" id="cfold"></div>
+<div class="cflbl">New alt text</div><div class="cfnew" id="cfnew"></div>
+<div class="cfrow"><button class="btn main-btn" id="cfyes">Replace it</button><button class="btn" id="cfno">Keep the current alt text</button></div></div></div>
+<div id="bar"><div class="in"><span class="grow" id="msg"></span>
 <button class="btn" id="save">Save mapping</button><button class="btn main-btn" id="apply">Add alt text to the PowerPoint</button></div></div>
 <script>
 var OPTS = __OPTS__;
@@ -739,7 +752,7 @@ function ownBoxHtml(p){
   h += '<div class="acts"><button class="small" data-useown="' + p.i + '">Use this text</button><button class="small" data-uns="' + p.i + '">Not sure</button><button class="small" data-deco="' + p.i + '">Mark as decorative</button></div>';
   return h;
 }
-function keepNote(p, rep){ return p.alt ? '<div class="note">' + (rep ? 'The alt text it has now will be replaced.' : 'The alt text it has now will be kept.') + '</div>' : ''; }
+function keepNote(p, rep){ return p.alt ? '<div class="note">You chose to replace the alt text it had: ' + esc(cut(p.alt, 120)) + '</div>' : ''; }
 function stateHtml(p, rep){
   var s = S[p.i], h = "";
   if(s.mode === "excel") h = '<div class="chosen"><b>' + esc(s.id) + '</b> &middot; ' + esc(byId[s.id].text) + '<a href="#" data-clear="' + p.i + '">Change</a><a href="#" data-edit="' + p.i + '">Edit this text</a></div>' + keepNote(p, rep);
@@ -750,7 +763,7 @@ function stateHtml(p, rep){
 }
 var PILL = {none: ["need", "Needs a match"], has: ["has", "Has alt text"], excel: ["ok", "Matched"], own: ["own", "Your own text"], unsure: ["uns", "Not sure"], deco: ["deco", "Decorative"]};
 function render(){
-  var used = usedMap(), c = {none: 0, has: 0, excel: 0, own: 0, unsure: 0, deco: 0}, rep = document.getElementById("rep").checked;
+  var used = usedMap(), c = {none: 0, has: 0, excel: 0, own: 0, unsure: 0, deco: 0}, rep = true;
   PICS.forEach(function(p, idx){
     var card = cards[idx], main = card.querySelector(".main"), s = S[p.i], m = s.mode, key = (m === "none" && p.alt && !p.ai) ? "has" : m, h = "";
     c[key]++;
@@ -778,7 +791,19 @@ function render(){
   document.getElementById("n-uns").textContent = c.unsure; document.getElementById("n-has").textContent = c.has;
   document.getElementById("none").hidden = cards.some(function(x){ return x.getAttribute("data-vis") === "1"; });
   if(lbIdx >= 0) renderLb();
-}function doPick(i, id){ S[i] = {mode: "excel", id: id, text: "", note: "", err: ""}; render(); }
+}var cfYes = null;
+function askReplace(i, newText, yes){
+  var p = PICS[i];
+  if(!p.alt){ yes(); return; }
+  cfYes = yes;
+  document.getElementById("cfsub").textContent = "Slide " + p.slide + " - " + p.name + " already has alt text.";
+  document.getElementById("cfold").textContent = p.alt;
+  document.getElementById("cfnew").textContent = newText;
+  document.getElementById("cf").hidden = false;
+  document.getElementById("cfyes").focus();
+}
+function closeAsk(ok){ var f = cfYes; cfYes = null; document.getElementById("cf").hidden = true; if(ok && f) f(); }
+function doPick(i, id){ askReplace(i, byId[id].dec ? "(marked decorative in the Excel file - no alt text, screen readers skip the picture)" : byId[id].full, function(){ S[i] = {mode: "excel", id: id, text: "", note: "", err: ""}; render(); }); }
 function lbImg(){ return document.getElementById("lbimg"); }
 function applyScale(){ var im = lbImg(); if(lbBase){ im.style.width = Math.round(lbBase * lbScale) + "px"; } document.getElementById("lbzoom").textContent = Math.round(lbScale * 100) + "%"; }
 function loadLbImage(){
@@ -810,7 +835,7 @@ function openZoom(idx){
   document.getElementById("lb").hidden = false; renderLb();
 }
 function renderLb(){
-  var p = PICS[lbIdx], used = usedMap(), s = S[p.i], rep = document.getElementById("rep").checked;
+  var p = PICS[lbIdx], used = usedMap(), s = S[p.i], rep = true;
   document.getElementById("lbtitle").textContent = "Slide " + p.slide + " - " + p.name;
   document.getElementById("lbsub").textContent = p.label ? ("Label: " + p.label) : p.title;
   var row = document.getElementById("lbsearchrow");
@@ -832,15 +857,17 @@ function hasAnyPreview(idx){ return !!(cards[idx].querySelector(".th img") || SL
 function stepZoom(d){ var n = lbIdx + d; while(n >= 0 && n < PICS.length && !hasAnyPreview(n)) n += d; if(n >= 0 && n < PICS.length) openZoom(n); }
 document.addEventListener("click", function(e){
   var t = e.target;
+  if(t.id === "cfyes"){ closeAsk(true); return; }
+  if(t.id === "cfno" || t.id === "cf"){ closeAsk(false); return; }
   var th = t.closest(".th"); if(th){ openZoom(parseInt(th.parentNode.getAttribute("data-i"), 10)); return; }
   var b = t.closest(".sg, .opt, .use"); if(b){ doPick(b.getAttribute("data-i"), b.getAttribute("data-id")); return; }
   var ms = t.closest("[data-moresug]"); if(ms){ e.preventDefault(); var i0 = ms.getAttribute("data-moresug"); moreSug[i0] = !moreSug[i0]; render(); return; }
   var m = t.closest("[data-more]"); if(m){ e.preventDefault(); var k = m.getAttribute("data-more"); expanded[k] = !expanded[k]; render(); return; }
   var sw = t.closest("[data-sw]"); if(sw){ var i1 = sw.getAttribute("data-sw"); openBrowse[i1] = true; fltText[i1] = PICS[i1].sw; render(); return; }
   var br = t.closest("[data-browse]"); if(br){ var i2 = br.getAttribute("data-browse"); openBrowse[i2] = !openBrowse[i2]; render(); return; }
-  var uo = t.closest("[data-useown]"); if(uo){ var i3 = uo.getAttribute("data-useown"), tv = (S[i3].text || "").replace(/\s*[\r\n]+\s*/g, " ").trim(); if(!tv){ S[i3].err = "Type some text first"; render(); return; } S[i3] = {mode: "own", id: "", text: tv, note: "", err: ""}; render(); return; }
+  var uo = t.closest("[data-useown]"); if(uo){ var i3 = uo.getAttribute("data-useown"), tv = (S[i3].text || "").replace(/\s*[\r\n]+\s*/g, " ").trim(); if(!tv){ S[i3].err = "Type some text first"; render(); return; } askReplace(i3, tv, function(){ S[i3] = {mode: "own", id: "", text: tv, note: "", err: ""}; render(); }); return; }
   var un = t.closest("[data-uns]"); if(un){ var i4 = un.getAttribute("data-uns"); S[i4] = {mode: "unsure", id: "", text: S[i4].text || "", note: "", err: ""}; render(); return; }
-  var dc = t.closest("[data-deco]"); if(dc){ var i5 = dc.getAttribute("data-deco"); S[i5] = {mode: "deco", id: "", text: S[i5].text || "", note: "", err: ""}; render(); return; }
+  var dc = t.closest("[data-deco]"); if(dc){ var i5 = dc.getAttribute("data-deco"); askReplace(i5, "(decorative - no alt text, screen readers skip the picture)", function(){ S[i5] = {mode: "deco", id: "", text: S[i5].text || "", note: "", err: ""}; render(); }); return; }
   var ed = t.closest("[data-edit]"); if(ed){ e.preventDefault(); var i6 = ed.getAttribute("data-edit"); S[i6] = {mode: "none", id: "", text: byId[S[i6].id].full, note: "", err: ""}; render(); return; }
   var a = t.closest("[data-clear]"); if(a){ e.preventDefault(); var i7 = a.getAttribute("data-clear"); S[i7] = {mode: "none", id: "", text: (S[i7].mode === "own" ? S[i7].text : S[i7].text) || "", note: "", err: ""}; render(); return; }
   if(t.id === "lbclose" || t.id === "lb"){ closeZoom(); return; }
@@ -852,6 +879,7 @@ document.addEventListener("click", function(e){
   if(t.id === "lbnext"){ stepZoom(1); return; }
 });
 document.addEventListener("keydown", function(e){
+  if(!document.getElementById("cf").hidden){ if(e.key === "Escape"){ closeAsk(false); } return; }
   if(lbIdx < 0) return;
   if(e.key === "Escape"){ closeZoom(); }
   else if(e.key === "ArrowRight"){ stepZoom(1); }
@@ -876,7 +904,6 @@ document.addEventListener("input", function(e){
   var ow = el.closest(".owntext"); if(ow){ var i9 = ow.getAttribute("data-own"); S[i9].text = ow.value; S[i9].err = ""; return; }
   var nt = el.closest(".notein"); if(nt){ S[nt.getAttribute("data-note")].note = nt.value; }
 });
-document.addEventListener("change", function(e){ if(e.target.id === "rep") render(); });
 [].slice.call(document.querySelectorAll(".chip")).forEach(function(c){ c.addEventListener("click", function(){ filt = c.getAttribute("data-f"); [].slice.call(document.querySelectorAll(".chip")).forEach(function(x){ x.classList.toggle("on", x === c); }); render(); }); });
 document.getElementById("q").addEventListener("input", function(e){ query = e.target.value.toLowerCase(); render(); });
 function list(items){ return items.length ? "<ul>" + items.map(function(x){ return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>" : ""; }
@@ -894,8 +921,8 @@ document.getElementById("apply").addEventListener("click", function(){
   }
   var n = {excel: 0, own: 0, deco: 0, unsure: 0}; PICS.forEach(function(p){ var m = S[p.i].mode; if(n[m] !== undefined) n[m]++; });
   if(!(n.excel + n.own + n.deco)){ showPanel("<h2>Nothing is done yet</h2><p>Pick a match, write your own text or mark a picture decorative first.</p>", true); return; }
-  var rep = document.getElementById("rep").checked;
-  if(!confirm("From Excel: " + n.excel + "\nYour own text: " + n.own + "\nDecorative: " + n.deco + "\nNot sure (nothing written): " + n.unsure + "\n\nThe alt text is written into a copy of the PowerPoint. The original is not changed.\n" + (rep ? "Alt text that is already there will be replaced." : "Pictures that already have alt text keep it.") + "\n\nContinue?")) return;
+  var rep = true;
+  if(!confirm("From Excel: " + n.excel + "\nYour own text: " + n.own + "\nDecorative: " + n.deco + "\nNot sure (nothing written): " + n.unsure + "\n\nThe alt text is written into a copy of the PowerPoint. The original is not changed.\n" + "Pictures you gave a choice get it, also when they already had alt text (you confirmed each one). Pictures without a choice keep their alt text." + "\n\nContinue?")) return;
   var btn = document.getElementById("apply"); btn.disabled = true; document.getElementById("msg").textContent = "Writing...";
   post("/apply", {mapping: rowsPayload(), replace: rep}).then(function(r){
     document.getElementById("msg").textContent = "Done";
@@ -915,7 +942,7 @@ document.getElementById("apply").addEventListener("click", function(){
 });
 function q(v){ return '"' + String(v).replace(/"/g, '""') + '"'; }
 document.getElementById("save").addEventListener("click", function(){
-  var rep = document.getElementById("rep").checked ? "TRUE" : "FALSE";
+  var rep = "TRUE";
   var lines = ["Chapter,Slide,ShapeId,PictureName,ExcelId,Replace,Mode,CustomText,Note"];
   rowsPayload().forEach(function(r){ lines.push([q(r.Chapter), r.Slide, r.ShapeId, q(r.PictureName), q(r.ExcelId), rep, q(r.Mode), q(String(r.CustomText).replace(/\s*[\r\n]+\s*/g, " ")), q(String(r.Note).replace(/\s*[\r\n]+\s*/g, " "))].join(",")); });
   var blob = new Blob([String.fromCharCode(65279) + lines.join("\r\n")], {type: "text/csv"});
