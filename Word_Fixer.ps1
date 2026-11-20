@@ -12,7 +12,7 @@
 #   6. The file's Title (File > Info) is set from the title lines.
 #
 # The original file is never changed: the result is saved as "<name> Fixed.docx" with a report next to it.
-$WF_VERSION = '1.2'   # shown at the start of the window; the updater compares this number with GitHub
+$WF_VERSION = '1.3'   # shown at the start of the window; the updater compares this number with GitHub
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression
