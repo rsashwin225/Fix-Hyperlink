@@ -15,7 +15,7 @@
 #      text combined with its Subtitle text, after step 1 has run.
 #
 # A backup copy is saved first, next to the original (name_BEFORE_SLIDfix.pptx).
-$IMBK_VERSION = '4.1'   # shown at the start of the window; the updater compares this number with GitHub
+$IMBK_VERSION = '4.2'   # shown at the start of the window; the updater compares this number with GitHub
 
 
 $ErrorActionPreference = 'Stop'
@@ -534,6 +534,38 @@ function Get-TitleStyleDefaults($zip, [string]$slideName, $nsm) {
     return $result
 }
 
+# The caption text box is made just tall enough for its text, the way PowerPoint itself sizes an
+# auto-fitting box once you click into it - so it does not look squeezed when the file is opened.
+function Set-CaptionBoxHeight([Xml.XmlElement]$sp, $nsm) {
+    $ext = $sp.SelectSingleNode('p:spPr/a:xfrm/a:ext', $nsm)
+    if ($null -eq $ext) { return $false }
+    $PT = 12700.0
+    $run = $sp.SelectSingleNode('.//a:r/a:rPr', $nsm)
+    $sz = 18.0
+    if ($run -and $run.GetAttribute('sz')) { $sz = [double]$run.GetAttribute('sz') / 100.0 }
+    $body = $sp.SelectSingleNode('p:txBody/a:bodyPr', $nsm)
+    $insL = 91440; $insR = 91440; $insT = 45720; $insB = 45720
+    if ($body) {
+        if ($body.GetAttribute('lIns')) { $insL = [double]$body.GetAttribute('lIns') }
+        if ($body.GetAttribute('rIns')) { $insR = [double]$body.GetAttribute('rIns') }
+        if ($body.GetAttribute('tIns')) { $insT = [double]$body.GetAttribute('tIns') }
+        if ($body.GetAttribute('bIns')) { $insB = [double]$body.GetAttribute('bIns') }
+    }
+    $w = [double]$ext.GetAttribute('cx') - $insL - $insR
+    if ($w -le 0) { return $false }
+    $lines = 0
+    foreach ($para in $sp.SelectNodes('p:txBody/a:p', $nsm)) {
+        $txt = (($para.SelectNodes('.//a:t', $nsm) | ForEach-Object { $_.InnerText }) -join '')
+        $textW = $txt.Length * $sz * 0.5 * $PT
+        $lines += [Math]::Max(1, [Math]::Ceiling($textW / $w))
+    }
+    if ($lines -lt 1) { $lines = 1 }
+    $h = [long]([Math]::Ceiling($lines * $sz * 1.2 * $PT + $insT + $insB))
+    if ([Math]::Abs([double]$ext.GetAttribute('cy') - $h) -lt 6350) { return $false }
+    [void]$ext.SetAttribute('cy', [string]$h)
+    return $true
+}
+
 function Invoke-ImbkLayout($zip, [string]$slideName, [Xml.XmlDocument]$doc, $nsm, [double]$slideW, [double]$slideH, [bool]$hideTopTitle) {
     $PT = 12700.0  # EMU per point
     $spTree = $doc.SelectSingleNode('//p:cSld/p:spTree', $nsm)
@@ -585,6 +617,8 @@ function Invoke-ImbkLayout($zip, [string]$slideName, [Xml.XmlDocument]$doc, $nsm
         if ($elem.LocalName -ne 'sp') { continue }
         $t2 = (Get-SlideText $elem $nsm).Trim()
         if ($t2 -eq $figNum) {
+            # a caption box made by an earlier run: give it the right height too
+            if ($cap.SelectSingleNode('p:txBody/a:bodyPr/a:spAutoFit', $nsm)) { if (Set-CaptionBoxHeight $cap $nsm) { $script:BoxesResized++ } }
             $alreadyMarked = $elem.SelectSingleNode('.//p:cNvPr[@hidden="1"]', $nsm)
             if ($hideTopTitle -and (-not $alreadyMarked)) {
                 Set-ShapeDecorativeHidden $elem $nsm
@@ -704,6 +738,7 @@ function Invoke-ImbkLayout($zip, [string]$slideName, [Xml.XmlDocument]$doc, $nsm
         [void]$nbRPr.AppendChild($latinEl)
     }
     [void]$spTree.AppendChild($nbNode)
+    [void](Set-CaptionBoxHeight $nbNode $nsm)
 
     # Original caption frame keeps only the figure number.
     $capTextNode = $cap.SelectNodes('.//a:t', $nsm) | Select-Object -First 1
@@ -727,9 +762,20 @@ function Invoke-ImbkLayout($zip, [string]$slideName, [Xml.XmlDocument]$doc, $nsm
     # bottom edge - the picture itself is never touched.
     $picBottom = $picOff.y + $picExt.cy
     $nbTop = $picBottom + $GAP_BELOW
-    $nbH = 20.0 * $PT   # conservative single-line estimate; refined by autofit in PowerPoint on open
+    $nbH = [double]$nbNode.SelectSingleNode('p:spPr/a:xfrm/a:ext', $nsm).GetAttribute('cy')
 
+    $nbTop0 = $nbTop
     if (($nbTop + $nbH + 4 * $PT) -gt $creditTop) {
+        # tight space: close the gap under the picture as far as needed, but never overlap it
+        $tight = $creditTop - $nbH - 1 * $PT
+        if ($tight -ge $picBottom) { $nbTop = $tight }
+        elseif (($nbTop0 + 24 * $PT) -le $creditTop) {
+            # still no room for the full height: use the space there is (as earlier versions did)
+            $nbTop = $nbTop0; $nbH = $creditTop - $nbTop0 - 2 * $PT
+            Set-ShapeExt $nbNode 'p:spPr' $nsm ([long]$nbW) ([long]$nbH)
+        }
+    }
+    if (($nbTop + $nbH) -gt $creditTop) {
         # Not enough room between the picture and the credit line: put everything back.
         $capTextNode.InnerText = $fullText
         [void]$spTree.RemoveChild($nbNode)
@@ -870,6 +916,7 @@ function Fix-One([string]$path) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return "$path : file not found" }
     $path = (Resolve-Path -LiteralPath $path).Path
     $name = Split-Path $path -Leaf
+    $script:BoxesResized = 0
     $bak = Backup-Name $path "_BEFORE_IMBKfix"
     Copy-Item $path $bak
     try {
@@ -912,7 +959,7 @@ function Fix-One([string]$path) {
         $check = [IO.Compression.ZipFile]::OpenRead($path); [void]$check.Dispose()
         $titleMsg = if ($titleSet) { "set to '$docTitleText'" } else { "not changed (no title found on slide 1)" }
         $reviewMsg = if ($imbkResult.review.Count -gt 0) { ", slides to check by hand: " + ($imbkResult.review -join ',') } else { "" }
-        return "$name : figures laid out $($imbkResult.done), already done $($imbkResult.already), accessibility marking added $($imbkResult.markedOnly)$reviewMsg, titles numbered $($dedupResult.changed), caption boxes made placeholders $phCount, language tags changed $langCount, document title $titleMsg. Backup: $(Split-Path $bak -Leaf)"
+        return "$name : figures laid out $($imbkResult.done), caption boxes resized $($script:BoxesResized), already done $($imbkResult.already), accessibility marking added $($imbkResult.markedOnly)$reviewMsg, titles numbered $($dedupResult.changed), caption boxes made placeholders $phCount, language tags changed $langCount, document title $titleMsg. Backup: $(Split-Path $bak -Leaf)"
     }
     catch {
         try { [void]$zip.Dispose() } catch {}
