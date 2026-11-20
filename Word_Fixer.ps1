@@ -12,7 +12,7 @@
 #   6. The file's Title (File > Info) is set from the title lines.
 #
 # The original file is never changed: the result is saved as "<name> Fixed.docx" with a report next to it.
-$WF_VERSION = '1.4'   # shown at the start of the window; the updater compares this number with GitHub
+$WF_VERSION = '1.8'   # shown at the start of the window; the updater compares this number with GitHub
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression
@@ -322,6 +322,7 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
         $pStyleOf = { param($p) $v = WAttr (SSN $p 'w:pPr/w:pStyle' $nsm) 'val'; if ($v) { $v } else { $defStyle } }
         $usedIds = @{}; foreach ($p in $paras) { $usedIds[(& $pStyleOf $p)] = $true }
 
+        Write-Host ('    ' + 'Reading the document and finding headings...') -ForegroundColor DarkGray
         # ---- 1. custom heading styles -> real headings
         $headingMap = @{}
         foreach ($sid in @($usedIds.Keys)) {
@@ -374,6 +375,7 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
         if ($emptyH) { $report.Add("Headings: $emptyH empty paragraph(s) in a heading style made plain paragraphs (empty headings confuse screen readers)") }
         $usedIds = @{}; foreach ($p in $paras) { $usedIds[(& $pStyleOf $p)] = $true }
 
+        Write-Host ('    ' + 'Checking lines that look like headings...') -ForegroundColor DarkGray
         # ---- 1b. lines that only LOOK like headings (bold / italic / bigger text, but no heading style)
         $isListPara = { param($p) $n0 = WAttr (SSN $p 'w:pPr/w:numPr/w:numId' $nsm) 'val'; if ($n0) { return ($n0 -ne '0') }; return [bool](Get-StyleChainValue $info (& $pStyleOf $p) 'numPr') }
         $isHeadPara = { param($p) $sid = & $pStyleOf $p; $ol = Get-StyleChainValue $info $sid 'outline'; $pol = WAttr (SSN $p 'w:pPr/w:outlineLvl' $nsm) 'val'; (($null -ne $ol -and [int]$ol -le 8) -or ($null -ne $pol -and [int]$pol -le 8)) }
@@ -542,6 +544,7 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
             $titleText = ($parts -join ' ').Trim()
         }
 
+        Write-Host ('    ' + 'Working on the lists (the longest step)...') -ForegroundColor DarkGray
         # ---- 3. lists
         if ($num) {
             $numToAbs = @{}
@@ -996,6 +999,7 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
             }
         }
 
+        Write-Host ('    ' + 'Turning typed numbers into real lists...') -ForegroundColor DarkGray
         # ---- 3d. lists typed by hand ("1. U", "2. C" ...): they become real numbered lists. The number shown stays
         #      exactly the same (also where a list carries on after a heading, e.g. 27, 28 ...).
         $script:Absorbed = @{}
@@ -1243,6 +1247,7 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
             }
         }
 
+        Write-Host ('    ' + 'Safety check: comparing every paragraph with the original...') -ForegroundColor DarkGray
         # ---- safety check: the text must be exactly the same (only typed list numbers may have become real
         #      numbering); any list number / bullet the reader sees that changed is listed to check
         $absorbedSet = @{}; foreach ($h in $script:Absorbed.Keys) { foreach ($x in $script:Absorbed[$h]) { $absorbedSet[$x] = $true } }
