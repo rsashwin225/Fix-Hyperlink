@@ -12,7 +12,7 @@
 #   6. The file's Title (File > Info) is set from the title lines.
 #
 # The original file is never changed: the result is saved as "<name> Fixed.docx" with a report next to it.
-$WF_VERSION = '2.0'   # shown at the start of the window; the updater compares this number with GitHub
+$WF_VERSION = '2.1'   # shown at the start of the window; the updater compares this number with GitHub
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression
@@ -355,7 +355,7 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
         $defStyle = Get-DefaultParaStyle $sty $snsm
         $body = $doc.SelectSingleNode('/w:document/w:body', $nsm)
         $paras = @($body.SelectNodes('.//w:p', $nsm))
-        $script:OutlineStripped = 0; $script:TypedRemoved = @{}; $script:Adopted = @{}; $script:LookOf = @{}; $script:Absorbed = @{}; $script:NewNumbering = $false; $script:MarkerAdded = @{}
+        $script:OutlineStripped = 0; $script:OrigStyleName = @{}; $script:TypedRemoved = @{}; $script:Adopted = @{}; $script:LookOf = @{}; $script:Absorbed = @{}; $script:NewNumbering = $false; $script:MarkerAdded = @{}
         # what the reader sees before the fix: text and list number of every paragraph
         $textBefore = @{}; foreach ($p in $paras) { $textBefore[$p] = Get-ParaText $p $nsm }
         $labelsBefore = Get-ListLabels $paras $nsm $sty $snsm $num $nnsm $defStyle
@@ -443,7 +443,7 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
         if ($runL.Count -ge 2) { foreach ($x in $runL) { $typedRun[$x] = $true } }
         $nHead = 0
         $refText = @{}   # old style name -> text of its first paragraph (for STYLEREF fields in headers/footers)
-        foreach ($p in $paras) { $sid = & $pStyleOf $p; if ($headingMap.ContainsKey($sid) -and -not $typedRun.ContainsKey($p)) { if (-not $refText.ContainsKey($info[$sid].name)) { $refText[$info[$sid].name] = (Get-ParaText $p $nsm).Trim() }; Set-StyleKeepLook $p $nsm $info $snsm $sty $sid $headingMap[$sid] $defStyle; foreach ($x in @($p.SelectNodes('w:pPr/w:outlineLvl', $nsm))) { [void]$x.ParentNode.RemoveChild($x) }; $nHead++ } }
+        foreach ($p in $paras) { $sid = & $pStyleOf $p; if ($headingMap.ContainsKey($sid) -and -not $typedRun.ContainsKey($p)) { $script:OrigStyleName[$p] = [string]$info[$sid].name; if (-not $refText.ContainsKey($info[$sid].name)) { $refText[$info[$sid].name] = (Get-ParaText $p $nsm).Trim() }; Set-StyleKeepLook $p $nsm $info $snsm $sty $sid $headingMap[$sid] $defStyle; foreach ($x in @($p.SelectNodes('w:pPr/w:outlineLvl', $nsm))) { [void]$x.ParentNode.RemoveChild($x) }; $nHead++ } }
         foreach ($k in @($styleOrder | Where-Object { $headingMap.ContainsKey($_) })) { $report.Add("Headings: style '" + $info[$k].name + "' changed to '" + $info[$headingMap[$k]].name + "'") }
         # empty paragraphs in a heading style are read out as empty headings: make them plain paragraphs (same look)
         $emptyH = 0
@@ -601,6 +601,17 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
                     $tId = Use-BuiltinStyle $sty $snsm $info 'Title' 'Title' $null $usedIds
                     Set-StyleKeepLook $firstP $nsm $info $snsm $sty $s1 $tId $defStyle
                     $report.Add("Title: '" + (Get-ParaText $firstP $nsm).Trim() + "' (the first line, a heading 1) set to the Title style")
+                    # the title lines right under it that came from a title style ("Chapter_Title") are part of the title too
+                    $cntT = 0; $seenF = $false
+                    foreach ($q in $paras) {
+                        if ($seenF) {
+                            if (-not (Get-ParaText $q $nsm).Trim()) { continue }
+                            if ($cntT -ge 2 -or -not $script:OrigStyleName.ContainsKey($q) -or $script:OrigStyleName[$q] -notmatch '(?i)(title|ttl)' -or -not ($info.ContainsKey((& $pStyleOf $q)) -and $info[(& $pStyleOf $q)].name -ieq 'heading 1')) { break }
+                            Set-StyleKeepLook $q $nsm $info $snsm $sty (& $pStyleOf $q) $tId $defStyle
+                            $report.Add("Title: '" + (Get-ParaText $q $nsm).Trim() + "' (a title line under it) set to the Title style"); $cntT++
+                        }
+                        if ([object]::ReferenceEquals($q, $firstP)) { $seenF = $true }
+                    }
                 }
             }
         }
@@ -1141,7 +1152,7 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
             if (& $isHeadPara $p) { if ($t.Trim()) { $curG = $null }; continue }
             if (-not $t.Trim()) { continue }
             if (& $isListPara $p) { continue }
-            $mk = & $markOf $t
+            $mk = @(& $markOf $t)
             if ($null -eq $curG) { $curG = @{ items = (New-Object System.Collections.Generic.List[object]); total = 0 }; $outGroups.Add($curG) }
             $curG.total++
             if ($mk.Count -gt 0) { $curG.items.Add(@{ p = $p; cands = $mk }) }
@@ -1219,18 +1230,17 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
                 $id = [string]$script:nxN; $script:nxN++; return $id
             }
             $script:nxN = $nextN; $script:nxA = $nextA
-            $seenLv = @{}; $itemsSinceParent = @{}
+            $seenLv = @{}; $parentSince = @{}   # parentSince[level]: an item of a higher level came after the last item of this level
             foreach ($it in $g.items) {
                 $lv = $it.lv; $first = $it.pick
                 $needNew = $false; $startAt = @{}
                 if (-not $curNum) { $needNew = $true; if ($first.value -ne 1) { $startAt[$lv] = $first.value } }
-                elseif ($it.restart -and -not $itemsSinceParent.ContainsKey($lv) -and $seenLv.ContainsKey($lv)) { $needNew = $true; $startAt[$lv] = 1 }
                 elseif ($it.jump) { $needNew = $true; $startAt[$lv] = $first.value }
+                elseif ($it.restart -and $seenLv.ContainsKey($lv) -and -not $parentSince[$lv]) { $needNew = $true; $startAt[$lv] = 1 }
                 if ($needNew) { $curNum = & $newNum $startAt; $segCount++ }
                 $seenLv[$lv] = $true
-                # an item at a higher level lets the deeper levels start again by themselves
-                foreach ($k in @($itemsSinceParent.Keys)) { if ($k -gt $lv) { [void]$itemsSinceParent.Remove($k) } }
-                if ($lv -gt 0) { $itemsSinceParent[$lv - 1] = $true }
+                for ($k = $lv + 1; $k -le 8; $k++) { $parentSince[$k] = $true }
+                $parentSince[$lv] = $false
                 $p = $it.p
                 $script:TypedRemoved[$p] = (Get-ParaText $p $nsm).Substring(0, $first.len)
                 Remove-LeadingChars $p $nsm $first.len
