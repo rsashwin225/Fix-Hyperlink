@@ -12,7 +12,7 @@
 #   6. The file's Title (File > Info) is set from the title lines.
 #
 # The original file is never changed: the result is saved as "<name> Fixed.docx" with a report next to it.
-$WF_VERSION = '1.8'   # shown at the start of the window; the updater compares this number with GitHub
+$WF_VERSION = '2.0'   # shown at the start of the window; the updater compares this number with GitHub
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression
@@ -230,9 +230,17 @@ function Remove-LeadingChars($p, $nsm, [int]$count) {
         if ($s.Length -le $count) { $count -= $s.Length; $t.InnerText = '' }
         else { $t.InnerText = $s.Substring($count); $count = 0 }
     }
-    # strip any tab left right after the typed number
-    $first = $p.SelectSingleNode('.//w:r[w:t[string-length(.)>0] or w:tab]', $nsm)
-    if ($first -and $first.SelectSingleNode('w:tab', $nsm) -and -not $first.SelectSingleNode('w:t[string-length(.)>0]', $nsm)) { [void]$first.ParentNode.RemoveChild($first) }
+    # strip any tab (and empty text) left right after the typed number, so no gap is left in front of the text
+    $done = $false
+    foreach ($r in @($p.SelectNodes('.//w:r', $nsm))) {
+        if ($done) { break }
+        foreach ($ch in @($r.ChildNodes)) {
+            if ($ch.LocalName -eq 'rPr') { continue }
+            if ($ch.LocalName -eq 'tab' -or ($ch.LocalName -eq 't' -and $ch.InnerText.Length -eq 0)) { [void]$r.RemoveChild($ch); continue }
+            $done = $true; break
+        }
+        if (-not $done -and -not @($r.ChildNodes | Where-Object { $_.LocalName -ne 'rPr' }).Count) { [void]$r.ParentNode.RemoveChild($r) }
+    }
 }
 function Format-Number([string]$kind, [int]$n) {
     switch ($kind) {
@@ -252,52 +260,84 @@ function ConvertTo-Roman([int]$n) {
 # ----------------------------------------------------------------- safety check: what the reader sees
 # Works out, for every paragraph, the list number / bullet Word shows in front of it (the same way for the file
 # before and after the fix), so the two can be compared.
-function Get-ListLabels($paras, $nsm, $sty, $snsm, $num, $nnsm, [string]$defStyle) {
-    $labels = @{}
-    if (-not $num) { foreach ($p in $paras) { $labels[$p] = '' }; return $labels }
-    $sInfo = Get-StyleInfo $sty $snsm
-    $numToAbs = @{}; $starts = @{}
-    foreach ($n in $num.SelectNodes('/w:numbering/w:num', $nnsm)) {
-        $id = WAttr $n 'numId'; $numToAbs[$id] = WAttr (SSN $n 'w:abstractNumId' $nnsm) 'val'
-        $starts[$id] = @{}
-        foreach ($ov in $n.SelectNodes('w:lvlOverride', $nnsm)) { $so = SSN $ov 'w:startOverride' $nnsm; if ($so) { $starts[$id][[int](WAttr $ov 'ilvl')] = [int](WAttr $so 'val') } }
+function Get-ListLabels($paras, $nsm, $sty, $snsm, $num, $nnsm, [string]$defStyle, $sInfoIn = $null) {
+    $state = New-LabelState
+    Step-ListLabels $state $paras $paras.Count $nsm $sty $snsm $num $nnsm $defStyle $sInfoIn
+    return $state.labels
+}
+
+# The same work done in steps: the numbers are worked out from the start of the document up to a paragraph,
+# and later carried on from there (used while lists are being added, so the document is not read again each time).
+function New-LabelState { return @{ pos = 0; counters = @{}; seenNum = @{}; labels = @{}; styleNum = @{}; defKey = '' } }
+function Step-ListLabels($state, $paras, [int]$upTo, $nsm, $sty, $snsm, $num, $nnsm, [string]$defStyle, $sInfoIn = $null) {
+    $labels = $state.labels
+    if (-not $num) { for ($i = $state.pos; $i -lt $upTo; $i++) { $labels[$paras[$i]] = '' }; $state.pos = [math]::Max($state.pos, $upTo); return }
+    $sInfo = if ($sInfoIn) { $sInfoIn } else { Get-StyleInfo $sty $snsm }
+    # the list definitions are read again only when lists were added since the last step
+    $nNum = $num.SelectNodes('/w:numbering/w:num', $nnsm).Count; $nAbs = $num.SelectNodes('/w:numbering/w:abstractNum', $nnsm).Count
+    if ($state.defKey -ne "$nNum|$nAbs") {
+        $numToAbs = @{}; $starts = @{}
+        foreach ($n in $num.SelectNodes('/w:numbering/w:num', $nnsm)) {
+            $id = WAttr $n 'numId'; $numToAbs[$id] = WAttr (SSN $n 'w:abstractNumId' $nnsm) 'val'
+            $starts[$id] = @{}
+            foreach ($ov in $n.SelectNodes('w:lvlOverride', $nnsm)) { $so = SSN $ov 'w:startOverride' $nnsm; if ($so) { $starts[$id][[int](WAttr $ov 'ilvl')] = [int](WAttr $so 'val') } }
+        }
+        # every list level is read once (start number, number format, text such as "%1.")
+        $lvlInfo = @{}
+        foreach ($an in $num.SelectNodes('/w:numbering/w:abstractNum', $nnsm)) {
+            $aid = WAttr $an 'abstractNumId'; $m = @{}
+            foreach ($lv in $an.SelectNodes('w:lvl', $nnsm)) {
+                $m[[int](WAttr $lv 'ilvl')] = @{ start = (WAttr (SSN $lv 'w:start' $nnsm) 'val'); txt = [string](WAttr (SSN $lv 'w:lvlText' $nnsm) 'val'); fmt = (WAttr (SSN $lv 'w:numFmt' $nnsm) 'val') }
+            }
+            $lvlInfo[$aid] = $m
+        }
+        $state.numToAbs = $numToAbs; $state.starts = $starts; $state.lvlInfo = $lvlInfo; $state.defKey = "$nNum|$nAbs"
     }
-    $absNode = @{}; foreach ($an in $num.SelectNodes('/w:numbering/w:abstractNum', $nnsm)) { $absNode[(WAttr $an 'abstractNumId')] = $an }
-    $counters = @{}; $seenNum = @{}
-    foreach ($p in $paras) {
+    $numToAbs = $state.numToAbs; $starts = $state.starts; $lvlInfo = $state.lvlInfo
+    $styleNum = $state.styleNum; $counters = $state.counters; $seenNum = $state.seenNum
+    for ($i = $state.pos; $i -lt $upTo; $i++) {
+        $p = $paras[$i]
+        if (-not $p.ParentNode) { continue }
         $labels[$p] = ''
-        $sid = WAttr (SSN $p 'w:pPr/w:pStyle' $nsm) 'val'; if (-not $sid) { $sid = $defStyle }
-        $pn = SSN $p 'w:pPr/w:numPr' $nsm
-        $sn = Get-StyleChainValue $sInfo $sid 'numPr'
-        $nid = WAttr (SSN $pn 'w:numId' $nsm) 'val'; $il = WAttr (SSN $pn 'w:ilvl' $nsm) 'val'
-        if (-not $nid -and $sn) { $nid = WAttr (SSN $sn 'w:numId' $snsm) 'val' }
-        if (-not $il -and $sn -and -not (WAttr (SSN $pn 'w:numId' $nsm) 'val')) { $il = WAttr (SSN $sn 'w:ilvl' $snsm) 'val' }
+        $pPr = $p.SelectSingleNode('w:pPr', $nsm)
+        $sid = $null; $pn = $null
+        if ($pPr) { $sid = WAttr (SSN $pPr 'w:pStyle' $nsm) 'val'; $pn = SSN $pPr 'w:numPr' $nsm }
+        if (-not $sid) { $sid = $defStyle }
+        if (-not $styleNum.ContainsKey($sid)) {
+            $sn = Get-StyleChainValue $sInfo $sid 'numPr'
+            $styleNum[$sid] = if ($sn) { @{ nid = (WAttr (SSN $sn 'w:numId' $snsm) 'val'); il = (WAttr (SSN $sn 'w:ilvl' $snsm) 'val') } } else { $null }
+        }
+        $sn = $styleNum[$sid]
+        $pnid = $null; $il = $null
+        if ($pn) { $pnid = WAttr (SSN $pn 'w:numId' $nsm) 'val'; $il = WAttr (SSN $pn 'w:ilvl' $nsm) 'val' }
+        $nid = $pnid
+        if (-not $nid -and $sn) { $nid = $sn.nid }
+        if (-not $il -and $sn -and -not $pnid) { $il = $sn.il }
         if (-not $il) { $il = '0' }
         if (-not $nid -or $nid -eq '0' -or -not $numToAbs.ContainsKey($nid)) { continue }
-        $a = $numToAbs[$nid]; if (-not $absNode.ContainsKey($a)) { continue }
-        $an = $absNode[$a]; $L = [int]$il
+        $a = $numToAbs[$nid]; if (-not $lvlInfo.ContainsKey($a)) { continue }
+        $li = $lvlInfo[$a]; $L = [int]$il
         if (-not $counters.ContainsKey($a)) { $counters[$a] = @{} }
         $ctr = $counters[$a]
         if (-not $seenNum.ContainsKey($nid)) { $seenNum[$nid] = $true; foreach ($k in $starts[$nid].Keys) { $ctr[$k] = $starts[$nid][$k] - 1 } }
-        $lv = SSN $an ('w:lvl[@w:ilvl="' + $L + '"]') $nnsm
-        if (-not $lv) { continue }
-        $st = WAttr (SSN $lv 'w:start' $nnsm) 'val'; if (-not $st) { $st = '0' }
+        if (-not $li.ContainsKey($L)) { continue }
+        $lvI = $li[$L]
+        $st = $lvI.start; if (-not $st) { $st = '0' }
         if (-not $ctr.ContainsKey($L)) { $ctr[$L] = [int]$st - 1 }
         $ctr[$L] = $ctr[$L] + 1
         foreach ($k in @($ctr.Keys)) { if ($k -gt $L) { [void]$ctr.Remove($k) } }
-        $txt = [string](WAttr (SSN $lv 'w:lvlText' $nnsm) 'val')
-        $fmt = WAttr (SSN $lv 'w:numFmt' $nnsm) 'val'
-        if ($fmt -eq 'bullet') { $labels[$p] = $txt; continue }
+        $txt = $lvI.txt
+        if ($lvI.fmt -eq 'bullet' -or $txt.IndexOf('%') -lt 0) { $labels[$p] = $txt; continue }
         $labels[$p] = [regex]::Replace($txt, '%(\d)', {
             param($mm)
             $k = [int]$mm.Groups[1].Value - 1
-            $l2 = SSN $an ('w:lvl[@w:ilvl="' + $k + '"]') $nnsm
-            $f2 = WAttr (SSN $l2 'w:numFmt' $nnsm) 'val'
-            $v = if ($ctr.ContainsKey($k)) { $ctr[$k] } else { $s2 = WAttr (SSN $l2 'w:start' $nnsm) 'val'; if ($s2) { [int]$s2 } else { 1 } }
+            $l2 = if ($li.ContainsKey($k)) { $li[$k] } else { $null }
+            $f2 = if ($l2) { $l2.fmt } else { $null }
+            $v = if ($ctr.ContainsKey($k)) { $ctr[$k] } else { $s2 = if ($l2) { $l2.start } else { $null }; if ($s2) { [int]$s2 } else { 1 } }
             switch ($f2) { 'none' { '' } 'upperRoman' { ConvertTo-Roman $v } 'lowerRoman' { (ConvertTo-Roman $v).ToLowerInvariant() } 'upperLetter' { [string][char](64 + (($v - 1) % 26) + 1) } 'lowerLetter' { [string][char](96 + (($v - 1) % 26) + 1) } default { [string]$v } }
         })
     }
-    return $labels
+    $state.pos = [math]::Max($state.pos, $upTo)
 }
 
 # ----------------------------------------------------------------- the fix
@@ -315,7 +355,7 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
         $defStyle = Get-DefaultParaStyle $sty $snsm
         $body = $doc.SelectSingleNode('/w:document/w:body', $nsm)
         $paras = @($body.SelectNodes('.//w:p', $nsm))
-        $script:TypedRemoved = @{}; $script:Adopted = @{}; $script:LookOf = @{}; $script:Absorbed = @{}; $script:NewNumbering = $false; $script:MarkerAdded = @{}
+        $script:OutlineStripped = 0; $script:TypedRemoved = @{}; $script:Adopted = @{}; $script:LookOf = @{}; $script:Absorbed = @{}; $script:NewNumbering = $false; $script:MarkerAdded = @{}
         # what the reader sees before the fix: text and list number of every paragraph
         $textBefore = @{}; foreach ($p in $paras) { $textBefore[$p] = Get-ParaText $p $nsm }
         $labelsBefore = Get-ListLabels $paras $nsm $sty $snsm $num $nnsm $defStyle
@@ -325,14 +365,56 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
         Write-Host ('    ' + 'Reading the document and finding headings...') -ForegroundColor DarkGray
         # ---- 1. custom heading styles -> real headings
         $headingMap = @{}
-        foreach ($sid in @($usedIds.Keys)) {
+        # styles whose lines all start with a typed Roman numeral / letter ("I. Approaching the Scene", "A. ...") are LIST
+        # items, not headings, even when the style carries an outline level: they stay out of the headings
+        $typedStyle = @{}; $bySid = @{}
+        foreach ($p in $paras) { $t0 = (Get-ParaText $p $nsm).Trim(); if (-not $t0 -or $p.SelectSingleNode('ancestor::w:tbl|ancestor::w:txbxContent', $nsm)) { continue }; $s0 = & $pStyleOf $p; if (-not $bySid.ContainsKey($s0)) { $bySid[$s0] = New-Object System.Collections.Generic.List[object] }; $bySid[$s0].Add($p) }
+        foreach ($sid in $bySid.Keys) {
+            $lst = $bySid[$sid]; if ($lst.Count -lt 2) { continue }
+            $hit = @($lst | Where-Object { (Get-ParaText $_ $nsm).Trim() -cmatch '^(?:[IVXL]{1,6}|[A-Z])[\.\)](?:\s|(?=[A-Za-z]))' }).Count
+            if ($hit -ge 2 -and $hit -ge [math]::Ceiling($lst.Count * 0.6)) { $typedStyle[$sid] = $true }
+        }
+        $noOutline = 0
+        foreach ($sid in $typedStyle.Keys) { foreach ($p in $bySid[$sid]) {
+            if ($true) {
+                $ol0 = Get-StyleChainValue $info $sid 'outline'; $pol0 = SSN $p 'w:pPr/w:outlineLvl' $nsm
+                if (($null -ne $ol0 -and [int]$ol0 -le 8) -or $pol0) {
+                    $pPr = $p.SelectSingleNode('w:pPr', $nsm); if (-not $pPr) { $pPr = New-W $doc 'pPr'; [void]$p.PrependChild($pPr) }
+                    foreach ($x in @($pPr.SelectNodes('w:outlineLvl', $nsm))) { [void]$pPr.RemoveChild($x) }
+                    $o9 = New-W $doc 'outlineLvl'; Set-WAttr $o9 'val' '9'; [void]$pPr.AppendChild($o9); Sort-Kids $pPr $PPR_ORDER; $noOutline++
+                }
+            }
+        } }
+        if ($noOutline) { $report.Add("Headings: $noOutline line(s) numbered I., II. ... / A., B. ... are list items, not headings - taken out of the headings (they become list items below)") }
+        # a style whose lines are short and where some of them carry a heading level of their own (Chapter Summary,
+        # Lecture ...) is a heading style: all its lines become headings of that level
+        $declStyle = @{}
+        foreach ($sid in $bySid.Keys) {
+            if ($typedStyle.ContainsKey($sid) -or -not $info.ContainsKey($sid)) { continue }
+            $nm0 = [string]$info[$sid].name
+            if ((Test-BuiltinHeading $nm0) -or $nm0 -ieq 'Title' -or $sid -eq $defStyle -or $nm0 -match '(?i)^(normal|text|body text|list|toc|index|caption|header|footer)') { continue }
+            if (Get-StyleChainValue $info $sid 'numPr') { continue }
+            $lst = $bySid[$sid]
+            $levels = @($lst | ForEach-Object { WAttr (SSN $_ 'w:pPr/w:outlineLvl' $nsm) 'val' } | Where-Object { $null -ne $_ -and $_ -ne '' -and [int]$_ -le 8 } | ForEach-Object { [int]$_ })
+            if ($levels.Count -eq 0) { continue }
+            $bad = @($lst | Where-Object { (Get-ParaText $_ $nsm).Trim().Length -gt 120 -or ((WAttr (SSN $_ 'w:pPr/w:numPr/w:numId' $nsm) 'val') -notin @($null, '0')) })
+            if ($bad.Count -gt 0) { continue }
+            $declStyle[$sid] = 1 + ($levels | Measure-Object -Minimum).Minimum
+        }
+        # styles are taken in the order they first appear in the document, so every run gives the same result
+        $styleOrder = New-Object System.Collections.Generic.List[string]; $seenSid = @{}
+        foreach ($p in $paras) { $sid0 = & $pStyleOf $p; if (-not $seenSid.ContainsKey($sid0)) { $seenSid[$sid0] = $true; $styleOrder.Add($sid0) } }
+        foreach ($sid in @($usedIds.Keys)) { if (-not $seenSid.ContainsKey($sid)) { $styleOrder.Add($sid) } }
+        foreach ($sid in $styleOrder) {
             if (-not $info.ContainsKey($sid)) { continue }
+            if ($typedStyle.ContainsKey($sid)) { continue }
             if (Test-BuiltinHeading $info[$sid].name) { continue }
             if ($info[$sid].name -ieq 'Title') { continue }
             if ($info[$sid].name -match '(?i)^(toc|index|caption|header|footer|footnote|endnote)') { continue }
             if (Get-StyleChainValue $info $sid 'numPr') { continue }   # numbered outline styles are lists, not headings
             $ol = Get-StyleChainValue $info $sid 'outline'
-            if ($null -ne $ol -and [int]$ol -le 8) { $lvl = [int]$ol + 1 }
+            if ($declStyle.ContainsKey($sid)) { $lvl = $declStyle[$sid]; $ol = [string]($lvl - 1) }
+            elseif ($null -ne $ol -and [int]$ol -le 8) { $lvl = [int]$ol + 1 }
             else {
                 # a heading style that was never marked as one: its name says so (H1, OBJ_H2, Head2, Heading A ...)
                 $mh = [regex]::Match($info[$sid].name, '(?i)(?:^|[_\s\-])(?:h|head|heading)\s?([1-6])(?=$|[_\s\-])')
@@ -361,8 +443,8 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
         if ($runL.Count -ge 2) { foreach ($x in $runL) { $typedRun[$x] = $true } }
         $nHead = 0
         $refText = @{}   # old style name -> text of its first paragraph (for STYLEREF fields in headers/footers)
-        foreach ($p in $paras) { $sid = & $pStyleOf $p; if ($headingMap.ContainsKey($sid) -and -not $typedRun.ContainsKey($p)) { if (-not $refText.ContainsKey($info[$sid].name)) { $refText[$info[$sid].name] = (Get-ParaText $p $nsm).Trim() }; Set-StyleKeepLook $p $nsm $info $snsm $sty $sid $headingMap[$sid] $defStyle; $nHead++ } }
-        foreach ($k in $headingMap.Keys) { $report.Add("Headings: style '" + $info[$k].name + "' changed to '" + $info[$headingMap[$k]].name + "'") }
+        foreach ($p in $paras) { $sid = & $pStyleOf $p; if ($headingMap.ContainsKey($sid) -and -not $typedRun.ContainsKey($p)) { if (-not $refText.ContainsKey($info[$sid].name)) { $refText[$info[$sid].name] = (Get-ParaText $p $nsm).Trim() }; Set-StyleKeepLook $p $nsm $info $snsm $sty $sid $headingMap[$sid] $defStyle; foreach ($x in @($p.SelectNodes('w:pPr/w:outlineLvl', $nsm))) { [void]$x.ParentNode.RemoveChild($x) }; $nHead++ } }
+        foreach ($k in @($styleOrder | Where-Object { $headingMap.ContainsKey($_) })) { $report.Add("Headings: style '" + $info[$k].name + "' changed to '" + $info[$headingMap[$k]].name + "'") }
         # empty paragraphs in a heading style are read out as empty headings: make them plain paragraphs (same look)
         $emptyH = 0
         foreach ($p in $paras) {
@@ -378,7 +460,7 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
         Write-Host ('    ' + 'Checking lines that look like headings...') -ForegroundColor DarkGray
         # ---- 1b. lines that only LOOK like headings (bold / italic / bigger text, but no heading style)
         $isListPara = { param($p) $n0 = WAttr (SSN $p 'w:pPr/w:numPr/w:numId' $nsm) 'val'; if ($n0) { return ($n0 -ne '0') }; return [bool](Get-StyleChainValue $info (& $pStyleOf $p) 'numPr') }
-        $isHeadPara = { param($p) $sid = & $pStyleOf $p; $ol = Get-StyleChainValue $info $sid 'outline'; $pol = WAttr (SSN $p 'w:pPr/w:outlineLvl' $nsm) 'val'; (($null -ne $ol -and [int]$ol -le 8) -or ($null -ne $pol -and [int]$pol -le 8)) }
+        $isHeadPara = { param($p) $sid = & $pStyleOf $p; $ol = Get-StyleChainValue $info $sid 'outline'; $pol = WAttr (SSN $p 'w:pPr/w:outlineLvl' $nsm) 'val'; if ($null -ne $pol -and $pol -ne '') { return ([int]$pol -le 8) }; return ($null -ne $ol -and [int]$ol -le 8) }
         $inBox = { param($p) [bool]$p.SelectSingleNode('ancestor::w:tbl|ancestor::w:txbxContent', $nsm) }
         $docDefSz = 20; $dd = $sty.SelectSingleNode('/w:styles/w:docDefaults/w:rPrDefault/w:rPr/w:sz', $snsm); if ($dd) { $docDefSz = [int](WAttr $dd 'val') }
         $onOff = { param($node) if ($null -eq $node) { return $null }; $v = WAttr $node 'val'; return -not ($v -in @('0', 'false', 'off')) }
@@ -410,9 +492,20 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
         for ($ix = 0; $ix -lt $nonEmpty.Count; $ix++) {
             $p = $nonEmpty[$ix]
             $t = (Get-ParaText $p $nsm).Trim()
-            if ($t.Length -lt 2 -or $t.Length -gt 100 -or $t -match '[\.,;]$' -or $t -match '^\s*(\d{1,3}|[A-Za-z])[\.\)]') { continue }
-            if (& $inBox $p) { continue }; if (& $isListPara $p) { continue }; if (& $isHeadPara $p) { continue }
+            # a line that carries a heading level of its own (outline level set on the paragraph) in a style that is not a heading
             $sid = & $pStyleOf $p; $sn = [string]$info[$sid].name
+            $pol = WAttr (SSN $p 'w:pPr/w:outlineLvl' $nsm) 'val'
+            $isDecl = ($null -ne $pol -and $pol -ne '' -and [int]$pol -le 8 -and -not (Test-BuiltinHeading $sn) -and $sn -ine 'Title' -and -not $typedStyle.ContainsKey($sid) -and $t.Length -ge 2 -and $t.Length -le 100 -and $t -notmatch '[\.,;:]$' -and -not (& $inBox $p) -and -not (& $isListPara $p))
+            if (-not $isDecl -and $null -ne $pol -and $pol -ne '' -and [int]$pol -le 8 -and -not (Test-BuiltinHeading $sn) -and $sn -ine 'Title' -and -not $typedStyle.ContainsKey($sid) -and -not (& $inBox $p)) {
+                # a long sentence marked as a heading level by mistake: plain text again
+                foreach ($x in @($p.SelectNodes('w:pPr/w:outlineLvl', $nsm))) { [void]$x.ParentNode.RemoveChild($x) }; $script:OutlineStripped++
+            }
+            if ($isDecl) {
+                $lkd = & $paraLook $p; if (-not $lkd) { $lkd = @{ b = $false; i = $false; caps = $false; sz = $bodySz } }
+                $cands.Add(@{ p = $p; ix = $ix; sig = ('{0:D3}|{1}|{2}|{3}' -f $lkd.sz, [int]$lkd.b, [int]$lkd.i, [int]$lkd.caps); look = $lkd; decl = $true }); continue
+            }
+            if ($t.Length -lt 2 -or $t.Length -gt 100 -or $t -match '[\.,;]$' -or $t -match '^\s*(\d{1,3}|[A-Za-z]|[IVXLCivxlc]{2,6})[\.\)]' -or $typedStyle.ContainsKey($sid)) { continue }
+            if (& $inBox $p) { continue }; if (& $isListPara $p) { continue }; if (& $isHeadPara $p) { continue }
             if ($sn -match '(?i)(title|ttl|chapter|chap|_num|ch_?no|\bnum\b|caption|toc|header|footer|table|figure|note|quote|list)') { continue }
             if (Get-StyleChainValue $info $sid 'numPr') { continue }   # a list style whose number is switched off
             if ($ix -eq $nonEmpty.Count - 1) { continue }
@@ -420,6 +513,7 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
             if (-not ($lk.b -or $lk.i -or $lk.sz -ge $bodySz + 4)) { continue }
             $cands.Add(@{ p = $p; ix = $ix; sig = ('{0:D3}|{1}|{2}|{3}' -f $lk.sz, [int]$lk.b, [int]$lk.i, [int]$lk.caps); look = $lk })
         }
+        if ($script:OutlineStripped) { $report.Add("Headings: " + $script:OutlineStripped + " long sentence(s) wrongly marked as a heading level made plain text") }
         # three or more formatted lines in a row are a block of text, not headings
         $drop = @{}
         for ($k = 0; $k -lt $cands.Count; $k++) {
@@ -431,11 +525,17 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
         $hasTitle = @($paras | Where-Object { $info.ContainsKey((& $pStyleOf $_)) -and $info[(& $pStyleOf $_)].name -ieq 'Title' }).Count -gt 0
         if (-not $hasTitle -and $cands.Count -gt 1 -and $cands[0].ix -eq 0) {
             $first = $cands[0]; $others = @($cands | Select-Object -Skip 1)
-            if (@($others | Where-Object { $_.sig -eq $first.sig }).Count -eq 0 -and $first.look.sz -ge (($others | ForEach-Object { $_.look.sz } | Measure-Object -Maximum).Maximum)) {
+            if (@($others | Where-Object { $_.sig -eq $first.sig -and $_.ix -ne 1 }).Count -eq 0 -and $first.look.sz -ge (($others | ForEach-Object { $_.look.sz } | Measure-Object -Maximum).Maximum)) {
                 $tId = Use-BuiltinStyle $sty $snsm $info 'Title' 'Title' $null $usedIds
                 Set-StyleKeepLook $first.p $nsm $info $snsm $sty (& $pStyleOf $first.p) $tId $defStyle
                 $report.Add("Title: '" + (Get-ParaText $first.p $nsm).Trim() + "' set to the Title style")
                 $cands = $others; $hasTitle = $true
+                # a second, centered / big line right under it ("Chapter 55" / "Crime Scene Awareness") is part of the title too
+                if ($cands.Count -gt 1 -and $cands[0].ix -eq 1 -and $cands[0].look.sz -ge $first.look.sz - 4 -and $cands[0].look.sz -gt $bodySz) {
+                    Set-StyleKeepLook $cands[0].p $nsm $info $snsm $sty (& $pStyleOf $cands[0].p) $tId $defStyle
+                    $report.Add("Title: '" + (Get-ParaText $cands[0].p $nsm).Trim() + "' set to the Title style")
+                    $cands = @($cands | Select-Object -Skip 1)
+                }
             }
         }
         if ($cands.Count -gt 0) {
@@ -448,6 +548,7 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
                     $lvl = [math]::Min(6, $base + $rankOf[$candSet[$p].sig])
                     $tId = Use-BuiltinStyle $sty $snsm $info ('heading ' + $lvl) ('Heading' + $lvl) $null $usedIds ($lvl - 1)
                     Set-StyleKeepLook $p $nsm $info $snsm $sty (& $pStyleOf $p) $tId $defStyle
+                    foreach ($x in @($p.SelectNodes('w:pPr/w:outlineLvl', $nsm))) { [void]$x.ParentNode.RemoveChild($x) }
                     $made++
                     continue
                 }
@@ -506,7 +607,7 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
         $usedIds = @{}; foreach ($p in $paras) { $usedIds[(& $pStyleOf $p)] = $true }
 
         # ---- 2. title lines at the top
-        $isHeading = { param($p) $sid = & $pStyleOf $p; $ol = Get-StyleChainValue $info $sid 'outline'; $pol = WAttr (SSN $p 'w:pPr/w:outlineLvl' $nsm) 'val'; (($null -ne $ol -and [int]$ol -le 8) -or ($null -ne $pol -and [int]$pol -le 8)) }
+        $isHeading = { param($p) $sid = & $pStyleOf $p; $ol = Get-StyleChainValue $info $sid 'outline'; $pol = WAttr (SSN $p 'w:pPr/w:outlineLvl' $nsm) 'val'; if ($null -ne $pol -and $pol -ne '') { return ([int]$pol -le 8) }; return ($null -ne $ol -and [int]$ol -le 8) }
         $titleParas = @()
         foreach ($p in $paras) {
             $txt = (Get-ParaText $p $nsm).Trim()
@@ -829,11 +930,11 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
                 $ks = @($u.Keys | Sort-Object); for ($i = 1; $i -lt $ks.Count; $i++) { if ($u[$ks[$i]] -le $u[$ks[$i - 1]]) { return $null } }
                 return $u
             }
-            foreach ($a in @($mapsOfAbs.Keys)) {
+            foreach ($a in @($mapsOfAbs.Keys | Sort-Object { [int]$_ })) {
                 if (-not $absNode.ContainsKey($a)) { continue }
                 $an = $absNode[$a]
                 if ($an.SelectNodes('w:lvl', $nnsm).Count -eq 0) { continue }   # list defined by a list style elsewhere
-                $keys = @($mapsOfAbs[$a].Keys | Sort-Object { - [int]$countOfKey[$a + '#' + $_] })
+                $keys = @($mapsOfAbs[$a].Keys | Sort-Object { - [int]$countOfKey[$a + '#' + $_] }, { [string]$_ })
                 $clusters = New-Object System.Collections.Generic.List[object]
                 foreach ($k in $keys) {
                     $done = $false
@@ -999,6 +1100,150 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
             }
         }
 
+
+        Write-Host ('    ' + 'Turning typed outlines (I. / A. / 1. / a. / i.) into real multilevel lists...') -ForegroundColor DarkGray
+        # ---- 3c2. typed outlines: lines that start with a typed I. / A. / 1. / a. / i. / (a) / (i) and sit one under the other
+        #      become ONE real multilevel list: the first kind of marker after a heading is list level 1, the kind that
+        #      comes under it level 2, and so on (Roman -> A -> 1 -> a -> i -> (a) -> (i)). The numbers shown stay the same.
+        $markOf = {
+            param($t)
+            $r = New-Object System.Collections.Generic.List[object]
+            $m = [regex]::Match($t, '^\s*\(([a-z]{1,4}|\d{1,3})\)\s*(?=\S)')
+            if ($m.Success) {
+                $g = $m.Groups[1].Value
+                if ($g -cmatch '^[ivxlc]+$') { $r.Add(@{ kind = 'pLowerRoman'; value = (ConvertFrom-Roman $g); len = $m.Length }) }
+                if ($g -cmatch '^[a-z]$') { $r.Add(@{ kind = 'pLowerLetter'; value = ([int][char]$g - 96); len = $m.Length }) }
+                return $r
+            }
+            $m = [regex]::Match($t, '^\s*(\d{1,3})[\.\)](?:\s+|(?=[^\d\s]))(?=\S)')
+            if ($m.Success) { $r.Add(@{ kind = 'decimal'; value = [int]$m.Groups[1].Value; len = $m.Length }); return $r }
+            $m = [regex]::Match($t, '^\s*([IVXLC]+|[A-Z])[\.\)](?:\s+|(?=[A-Za-z]))(?![A-Z][\.\)])(?=\S)')
+            if ($m.Success) {
+                $g = $m.Groups[1].Value
+                if ($g.Length -eq 1 -or $g -cmatch '^[IVXLC]+$') { if ($g -cmatch '^[IVXLC]+$') { $r.Add(@{ kind = 'upperRoman'; value = (ConvertFrom-Roman $g); len = $m.Length }) } }
+                if ($g.Length -eq 1) { $r.Add(@{ kind = 'upperLetter'; value = ([int][char]$g - 64); len = $m.Length }) }
+                return $r
+            }
+            $m = [regex]::Match($t, '^\s*([ivxlc]+|[a-z])[\.\)](?:\s+|(?=[A-Za-z]))(?![a-z][\.\)])(?=\S)')
+            if ($m.Success) {
+                $g = $m.Groups[1].Value
+                if ($g -cmatch '^[ivxlc]+$') { $r.Add(@{ kind = 'lowerRoman'; value = (ConvertFrom-Roman $g); len = $m.Length }) }
+                if ($g.Length -eq 1) { $r.Add(@{ kind = 'lowerLetter'; value = ([int][char]$g - 96); len = $m.Length }) }
+                return $r
+            }
+            return $r
+        }
+        $outGroups = New-Object System.Collections.Generic.List[object]; $curG = $null
+        foreach ($p in $paras) {
+            if (-not $p.ParentNode) { continue }
+            if (& $inBox $p) { continue }
+            $t = Get-ParaText $p $nsm
+            if (& $isHeadPara $p) { if ($t.Trim()) { $curG = $null }; continue }
+            if (-not $t.Trim()) { continue }
+            if (& $isListPara $p) { continue }
+            $mk = & $markOf $t
+            if ($null -eq $curG) { $curG = @{ items = (New-Object System.Collections.Generic.List[object]); total = 0 }; $outGroups.Add($curG) }
+            $curG.total++
+            if ($mk.Count -gt 0) { $curG.items.Add(@{ p = $p; cands = $mk }) }
+        }
+        $nOutline = 0
+        foreach ($g in $outGroups) {
+            if ($g.items.Count -lt 4 -or $g.items.Count -lt [math]::Ceiling($g.total * 0.5)) { continue }
+            # work out the level of every marker line: a marker that carries on a level (next number / letter) stays on it;
+            # a new kind of marker starting at 1/A/i goes one level deeper; a kind seen before starts again at its level
+            $stack = New-Object System.Collections.Generic.List[object]; $levelKind = @{}; $ok = $true
+            foreach ($it in $g.items) {
+                $pick = $null; $lv = -1; $restart = $false; $jump = $false
+                for ($j = $stack.Count - 1; $j -ge 0 -and -not $pick; $j--) { foreach ($c in $it.cands) { if ($c.kind -eq $stack[$j].kind -and $c.value -eq $stack[$j].last + 1) { $pick = $c; $lv = $j; break } } }
+                if (-not $pick) {
+                    foreach ($c in $it.cands) { if ($c.value -eq 1) { $pick = $c; break } }
+                    if ($pick) {
+                        $lv = $stack.Count
+                        for ($j = 0; $j -lt $stack.Count; $j++) { if ($stack[$j].kind -eq $pick.kind) { $lv = $j; $restart = $true; break } }
+                    }
+                }
+                if (-not $pick) {
+                    # numbers that jump (a missing number): stays on the level of that kind if it was used before
+                    foreach ($c in $it.cands) { for ($j = $stack.Count - 1; $j -ge 0; $j--) { if ($stack[$j].kind -eq $c.kind -and $c.value -gt $stack[$j].last) { $pick = $c; $lv = $j; $jump = $true; break } }; if ($pick) { break } }
+                }
+                if (-not $pick) {
+                    # same kind of marker as a level in use (a repeated or out-of-order number): stays on that level
+                    foreach ($c in $it.cands) { for ($j = $stack.Count - 1; $j -ge 0; $j--) { if ($stack[$j].kind -eq $c.kind) { $pick = $c; $lv = $j; $jump = $true; break } }; if ($pick) { break } }
+                }
+                if (-not $pick) { $pick = $it.cands[0]; $lv = $stack.Count; $jump = $true }
+                if ($lv -gt 8) { $ok = $false; break }
+                if ($levelKind.ContainsKey($lv) -and $levelKind[$lv] -ne $pick.kind) { $ok = $false; break }
+                $levelKind[$lv] = $pick.kind
+                while ($stack.Count -gt $lv) { $stack.RemoveAt($stack.Count - 1) }
+                $stack.Add(@{ kind = $pick.kind; last = $pick.value })
+                $it.pick = $pick; $it.lv = $lv; $it.restart = $restart; $it.jump = $jump
+            }
+            if (-not $ok) { continue }
+            $maxLv = ($g.items | ForEach-Object { $_.lv } | Measure-Object -Maximum).Maximum
+            if ($maxLv -lt 1) { continue }   # one kind of marker only: the simpler steps below handle it
+            # a level used again with no item of the level above in between needs its own numbering start
+            if (-not $num) { $num = New-XmlDoc ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:w="' + $NS_W + '"/>'); $nnsm = New-Ns $num; $script:NewNumbering = $true }
+            $nextA = 1 + (@($num.SelectNodes('/w:numbering/w:abstractNum', $nnsm) | ForEach-Object { [int](WAttr $_ 'abstractNumId') }) + 0 | Measure-Object -Maximum).Maximum
+            $nextN = 1 + (@($num.SelectNodes('/w:numbering/w:num', $nnsm) | ForEach-Object { [int](WAttr $_ 'numId') }) + 0 | Measure-Object -Maximum).Maximum
+            $an = $num.CreateElement('w', 'abstractNum', $NS_W); Set-WAttr $an 'abstractNumId' ([string]$nextA)
+            $mt = New-W $num 'multiLevelType'; Set-WAttr $mt 'val' 'multilevel'; [void]$an.AppendChild($mt)
+            $ladder = @('upperRoman', 'upperLetter', 'decimal', 'lowerLetter', 'lowerRoman', 'pLowerLetter', 'pLowerRoman', 'decimal', 'lowerLetter')
+            for ($d = 0; $d -le 8; $d++) {
+                $kd = if ($levelKind.ContainsKey($d)) { $levelKind[$d] } else { $ladder[$d] }
+                $fmtName = switch ($kd) { 'pLowerRoman' { 'lowerRoman' } 'pLowerLetter' { 'lowerLetter' } default { $kd } }
+                $txt = if ($kd -like 'p*') { '(%' + ($d + 1) + ')' } else { '%' + ($d + 1) + '.' }
+                # indent of the first line at this level: the marker sits where the typed one did
+                $rep = $null; foreach ($it in $g.items) { if ($it.lv -eq $d) { $rep = $it.p; break } }
+                $indL = 720 * ($d + 1) / 2; $hang = 360
+                if ($rep) {
+                    $dd = SSN $rep 'w:pPr/w:ind' $nsm
+                    if (-not $dd) { $sp = Get-ChainProps $info $snsm (& $pStyleOf $rep) 'pPr'; if ($sp.ContainsKey('ind')) { $dd = $sp['ind'] } }
+                    if ($dd) { $v = WAttr $dd 'left'; if (-not $v) { $v = WAttr $dd 'start' }; $indL = if ($v) { [int]$v } else { 0 }; $h = WAttr $dd 'hanging'; $hang = if ($h) { [int]$h } else { 0 }; $fl = WAttr $dd 'firstLine'; if (-not $h -and $fl) { $indL += [int]$fl } }
+                }
+                $lv0 = New-W $num 'lvl'; Set-WAttr $lv0 'ilvl' ([string]$d)
+                $sfx = if ($hang -gt 0) { 'tab' } else { 'space' }
+                foreach ($pair in @(@('start', '1'), @('numFmt', $fmtName), @('suff', $sfx), @('lvlText', $txt), @('lvlJc', 'left'))) { $x = New-W $num $pair[0]; Set-WAttr $x 'val' $pair[1]; [void]$lv0.AppendChild($x) }
+                $lp = New-W $num 'pPr'; $ind = New-W $num 'ind'; Set-WAttr $ind 'left' ([string][int]$indL); if ($hang -gt 0) { Set-WAttr $ind 'hanging' ([string]$hang) } else { Set-WAttr $ind 'firstLine' '0' }; [void]$lp.AppendChild($ind); [void]$lv0.AppendChild($lp)
+                [void]$an.AppendChild($lv0)
+            }
+            $firstNum = $num.SelectSingleNode('/w:numbering/w:num', $nnsm)
+            if ($firstNum) { [void]$num.DocumentElement.InsertBefore($an, $firstNum) } else { [void]$num.DocumentElement.AppendChild($an) }
+            $curNum = $null; $lastAtLevel = @{}; $segCount = 0
+            $newNum = {
+                param($startAt)
+                $nn = $num.CreateElement('w', 'num', $NS_W); Set-WAttr $nn 'numId' ([string]$script:nxN)
+                $ai = New-W $num 'abstractNumId'; Set-WAttr $ai 'val' ([string]$script:nxA); [void]$nn.AppendChild($ai)
+                foreach ($k in $startAt.Keys) { $ov = New-W $num 'lvlOverride'; Set-WAttr $ov 'ilvl' ([string]$k); $so = New-W $num 'startOverride'; Set-WAttr $so 'val' ([string]$startAt[$k]); [void]$ov.AppendChild($so); [void]$nn.AppendChild($ov) }
+                $cleanup = $num.SelectSingleNode('/w:numbering/w:numIdMacAtCleanup', $nnsm)
+                if ($cleanup) { [void]$num.DocumentElement.InsertBefore($nn, $cleanup) } else { [void]$num.DocumentElement.AppendChild($nn) }
+                $id = [string]$script:nxN; $script:nxN++; return $id
+            }
+            $script:nxN = $nextN; $script:nxA = $nextA
+            $seenLv = @{}; $itemsSinceParent = @{}
+            foreach ($it in $g.items) {
+                $lv = $it.lv; $first = $it.pick
+                $needNew = $false; $startAt = @{}
+                if (-not $curNum) { $needNew = $true; if ($first.value -ne 1) { $startAt[$lv] = $first.value } }
+                elseif ($it.restart -and -not $itemsSinceParent.ContainsKey($lv) -and $seenLv.ContainsKey($lv)) { $needNew = $true; $startAt[$lv] = 1 }
+                elseif ($it.jump) { $needNew = $true; $startAt[$lv] = $first.value }
+                if ($needNew) { $curNum = & $newNum $startAt; $segCount++ }
+                $seenLv[$lv] = $true
+                # an item at a higher level lets the deeper levels start again by themselves
+                foreach ($k in @($itemsSinceParent.Keys)) { if ($k -gt $lv) { [void]$itemsSinceParent.Remove($k) } }
+                if ($lv -gt 0) { $itemsSinceParent[$lv - 1] = $true }
+                $p = $it.p
+                $script:TypedRemoved[$p] = (Get-ParaText $p $nsm).Substring(0, $first.len)
+                Remove-LeadingChars $p $nsm $first.len
+                $pPr = $p.SelectSingleNode('w:pPr', $nsm); if (-not $pPr) { $pPr = New-W $doc 'pPr'; [void]$p.PrependChild($pPr) }
+                $pn = $pPr.SelectSingleNode('w:numPr', $nsm); if (-not $pn) { $pn = New-W $doc 'numPr'; [void]$pPr.AppendChild($pn); Sort-Kids $pPr $PPR_ORDER }
+                foreach ($x in @($pn.ChildNodes)) { [void]$pn.RemoveChild($x) }
+                $il = New-W $doc 'ilvl'; Set-WAttr $il 'val' ([string]$lv); [void]$pn.AppendChild($il)
+                $ni = New-W $doc 'numId'; Set-WAttr $ni 'val' $curNum; [void]$pn.AppendChild($ni)
+                $nOutline++
+            }
+        }
+        if ($nOutline) { $report.Add("Lists: $nOutline typed outline line(s) (I. / A. / 1. / a. / i. ...) made one real multilevel list - first marker after a heading is level 1, each kind under it one level deeper (same numbers shown)") }
+
         Write-Host ('    ' + 'Turning typed numbers into real lists...') -ForegroundColor DarkGray
         # ---- 3d. lists typed by hand ("1. U", "2. C" ...): they become real numbered lists. The number shown stays
         #      exactly the same (also where a list carries on after a heading, e.g. 27, 28 ...).
@@ -1045,6 +1290,10 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
             $nextN = 1 + (@($num.SelectNodes('/w:numbering/w:num', $nnsm) | ForEach-Object { [int](WAttr $_ 'numId') }) + 0 | Measure-Object -Maximum).Maximum
             $absFor = @{}
             $nItems = 0
+            $paraIdx = New-Object 'System.Collections.Generic.Dictionary[object,int]'
+            for ($qi = 0; $qi -lt $paras.Count; $qi++) { $paraIdx[$paras[$qi]] = $qi }
+            $curLabels = $null; $labState = New-LabelState
+            $sInfo3d = Get-StyleInfo $sty $snsm   # the styles do not change in this step: read them once
             foreach ($c in $toConvert) {
                 $sg = $c.seg
                 if ($sg.items.Count -lt 2) {
@@ -1052,9 +1301,11 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
                     # are a real list and "3." was typed)
                     if ($sg.kind -ne 'decimal' -or $sg.first -lt 2) { continue }
                     $p0 = $sg.items[0].p; $lastReal = $null
-                    foreach ($q in $paras) { if ([object]::ReferenceEquals($q, $p0)) { break }; if ($q.ParentNode -and (& $isRealItem $q) -and ((& $pStyleOf $q) -eq $sg.style)) { $lastReal = $q } }
+                    # look back from the item for the nearest real list item in the same style (fast: no full scan)
+                    for ($qi = $paraIdx[$p0] - 1; $qi -ge 0; $qi--) { $q = $paras[$qi]; if ($q.ParentNode -and ((& $pStyleOf $q) -eq $sg.style) -and (& $isRealItem $q)) { $lastReal = $q; break } }
                     if (-not $lastReal) { continue }
-                    $curLabels = Get-ListLabels @($paras | Where-Object { $_.ParentNode }) $nsm $sty $snsm $num $nnsm $defStyle
+                    # list numbers up to this item (carried on from the last item, not worked out again from the start)
+                    Step-ListLabels $labState $paras $paraIdx[$p0] $nsm $sty $snsm $num $nnsm $defStyle $sInfo3d; $curLabels = $labState.labels
                     $lv = [string]$curLabels[$lastReal]
                     if ($lv -notmatch '^(\d+)\.$' -or [int]$Matches[1] -ne $sg.first - 1) { continue }
                     $pnR = SSN $lastReal 'w:pPr/w:numPr' $nsm; $snR = Get-StyleChainValue $info (& $pStyleOf $lastReal) 'numPr'
