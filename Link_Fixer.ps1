@@ -22,7 +22,34 @@
 # (it must be a Link Fixer script of a higher version that PowerShell can read) and then used for this run, and
 # a copy is kept for when there is no connection. Without an address, or without a connection, the version inside
 # this file is used. Nothing is sent to the address, the tool only reads from it.
-$LF_VERSION = 13
+$LF_VERSION = 14
+# ---- work log: notes each saved file (name, slides or pages) for the daily report in S4C Tools ----
+# Only reads the saved file; never changes it and never stops the tool if something goes wrong.
+function Add-WorkLog([string]$tool, [string]$inPath, [string]$outPath) {
+    try {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $count = ''; $unit = ''
+        $ext = [IO.Path]::GetExtension($outPath).ToLowerInvariant()
+        $z = [IO.Compression.ZipFile]::OpenRead($outPath)
+        try {
+            if ($ext -eq '.pptx') {
+                $unit = 'slides'
+                $e = $z.GetEntry('ppt/presentation.xml')
+                if ($e) { $sr = New-Object IO.StreamReader($e.Open()); $t = $sr.ReadToEnd(); $sr.Close(); $count = [regex]::Matches($t, '<p:sldId\s').Count }
+            } elseif ($ext -eq '.docx') {
+                $unit = 'pages'
+                $e = $z.GetEntry('docProps/app.xml')
+                if ($e) { $sr = New-Object IO.StreamReader($e.Open()); $t = $sr.ReadToEnd(); $sr.Close(); $m = [regex]::Match($t, '<Pages>(\d+)</Pages>'); if ($m.Success) { $count = $m.Groups[1].Value } }
+            }
+        } finally { $z.Dispose() }
+        $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }
+        $dir = Join-Path (Join-Path $base 'S4C_Tools') 'WorkLog'
+        if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+        $ci = [Globalization.CultureInfo]::InvariantCulture; $now = Get-Date
+        $line = @($now.ToString('yyyy-MM-dd', $ci), $now.ToString('HH:mm', $ci), $env:USERNAME, $tool, [IO.Path]::GetFullPath($inPath), [IO.Path]::GetFullPath($outPath), $count, $unit) -join "`t"
+        [IO.File]::AppendAllText((Join-Path $dir 'worklog.tsv'), $line + "`r`n", (New-Object Text.UTF8Encoding($false)))
+    } catch { }
+}
 function Get-LfVersion([string]$text) {
     $m = [regex]::Match($text, '(?m)^\$LF_VERSION\s*=\s*(\d+)\s*$')
     if ($m.Success) { return [int]$m.Groups[1].Value }
@@ -1432,6 +1459,7 @@ function Invoke-ApplyAll($files, $texts) {
         $outPath = Join-Path (Get-FolderOf $f) ([IO.Path]::GetFileNameWithoutExtension($f) + ' Links' + $ext)
         $r = Scan-File $f $true $texts $outPath $fi
         $out.Add([pscustomobject]@{ InFile = (Split-Path -Leaf $f); OutFile = (Split-Path -Leaf $outPath); OutPath = $outPath; Changed = $r.Changed; Skipped = $r.Skipped })
+        Add-WorkLog 'Link Fixer' $f $outPath
     }
     $report = New-Object System.Collections.Generic.List[string]
     foreach ($o in $out) { $report.Add("$($o.InFile) -> $($o.OutFile): $($o.Changed) links changed, $($o.Skipped) left as they are") }

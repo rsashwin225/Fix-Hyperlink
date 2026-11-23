@@ -1,7 +1,34 @@
 # SLID Macro - numbers repeated slide titles (1 of 4), renames shapes, fixes language tags.
 # Saves a remediated copy next to the original. (Self-updates from GitHub via SLID_Update.ps1.)
 # SLID MACRO SCRIPT
-$SLID_VERSION = '1.1'   # shown at the start of the window; the updater compares this number with GitHub
+$SLID_VERSION = '1.3'   # shown at the start of the window; the updater compares this number with GitHub
+# ---- work log: notes each saved file (name, slides or pages) for the daily report in S4C Tools ----
+# Only reads the saved file; never changes it and never stops the tool if something goes wrong.
+function Add-WorkLog([string]$tool, [string]$inPath, [string]$outPath) {
+    try {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $count = ''; $unit = ''
+        $ext = [IO.Path]::GetExtension($outPath).ToLowerInvariant()
+        $z = [IO.Compression.ZipFile]::OpenRead($outPath)
+        try {
+            if ($ext -eq '.pptx') {
+                $unit = 'slides'
+                $e = $z.GetEntry('ppt/presentation.xml')
+                if ($e) { $sr = New-Object IO.StreamReader($e.Open()); $t = $sr.ReadToEnd(); $sr.Close(); $count = [regex]::Matches($t, '<p:sldId\s').Count }
+            } elseif ($ext -eq '.docx') {
+                $unit = 'pages'
+                $e = $z.GetEntry('docProps/app.xml')
+                if ($e) { $sr = New-Object IO.StreamReader($e.Open()); $t = $sr.ReadToEnd(); $sr.Close(); $m = [regex]::Match($t, '<Pages>(\d+)</Pages>'); if ($m.Success) { $count = $m.Groups[1].Value } }
+            }
+        } finally { $z.Dispose() }
+        $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }
+        $dir = Join-Path (Join-Path $base 'S4C_Tools') 'WorkLog'
+        if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+        $ci = [Globalization.CultureInfo]::InvariantCulture; $now = Get-Date
+        $line = @($now.ToString('yyyy-MM-dd', $ci), $now.ToString('HH:mm', $ci), $env:USERNAME, $tool, [IO.Path]::GetFullPath($inPath), [IO.Path]::GetFullPath($outPath), $count, $unit) -join "`t"
+        [IO.File]::AppendAllText((Join-Path $dir 'worklog.tsv'), $line + "`r`n", (New-Object Text.UTF8Encoding($false)))
+    } catch { }
+}
 function Fix-Deck {
 param([string]$Path,[string]$OutPath)
 $ErrorActionPreference = 'Stop'
@@ -405,6 +432,7 @@ $repPath = Join-Path (Split-Path -Parent $OutPath) ([IO.Path]::GetFileNameWithou
 $report | Set-Content -LiteralPath $repPath -Encoding UTF8
 $report | ForEach-Object { Write-Host $_ }
 Write-Host "Saved: $OutPath"
+Add-WorkLog 'SLID Macro' $src $OutPath
 }
 
 Write-Host "SLID Macro - running version $SLID_VERSION" -ForegroundColor Cyan

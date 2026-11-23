@@ -1,6 +1,33 @@
 # ALT TEXT TOOL SCRIPT
 # PPT Alt-Text Filler (S4Carlisle). Self-updates from GitHub through AltText_Update.ps1.
-$ALT_VERSION = '3.3'   # shown at the start of the window; the updater compares this number with GitHub
+$ALT_VERSION = '3.4'   # shown at the start of the window; the updater compares this number with GitHub
+# ---- work log: notes each saved file (name, slides or pages) for the daily report in S4C Tools ----
+# Only reads the saved file; never changes it and never stops the tool if something goes wrong.
+function Add-WorkLog([string]$tool, [string]$inPath, [string]$outPath) {
+    try {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $count = ''; $unit = ''
+        $ext = [IO.Path]::GetExtension($outPath).ToLowerInvariant()
+        $z = [IO.Compression.ZipFile]::OpenRead($outPath)
+        try {
+            if ($ext -eq '.pptx') {
+                $unit = 'slides'
+                $e = $z.GetEntry('ppt/presentation.xml')
+                if ($e) { $sr = New-Object IO.StreamReader($e.Open()); $t = $sr.ReadToEnd(); $sr.Close(); $count = [regex]::Matches($t, '<p:sldId\s').Count }
+            } elseif ($ext -eq '.docx') {
+                $unit = 'pages'
+                $e = $z.GetEntry('docProps/app.xml')
+                if ($e) { $sr = New-Object IO.StreamReader($e.Open()); $t = $sr.ReadToEnd(); $sr.Close(); $m = [regex]::Match($t, '<Pages>(\d+)</Pages>'); if ($m.Success) { $count = $m.Groups[1].Value } }
+            }
+        } finally { $z.Dispose() }
+        $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }
+        $dir = Join-Path (Join-Path $base 'S4C_Tools') 'WorkLog'
+        if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+        $ci = [Globalization.CultureInfo]::InvariantCulture; $now = Get-Date
+        $line = @($now.ToString('yyyy-MM-dd', $ci), $now.ToString('HH:mm', $ci), $env:USERNAME, $tool, [IO.Path]::GetFullPath($inPath), [IO.Path]::GetFullPath($outPath), $count, $unit) -join "`t"
+        [IO.File]::AppendAllText((Join-Path $dir 'worklog.tsv'), $line + "`r`n", (New-Object Text.UTF8Encoding($false)))
+    } catch { }
+}
 Write-Host ('PPT Alt-Text Filler - running version ' + $ALT_VERSION) -ForegroundColor Cyan
 Write-Host ''
 # AltText_Matcher.ps1
@@ -1134,6 +1161,7 @@ function Invoke-Apply([string]$pptx, $lookup, $map, [string]$outPath, [bool]$rep
     if ($unmatched.Count) { $report.Add('Still without a match (write these by hand): ' + ($unmatched -join ' ; ')) }
     $repPath = Join-Path (Split-Path -Parent $outPath) ([IO.Path]::GetFileNameWithoutExtension($outPath) + ' report.txt')
     $report | Set-Content -LiteralPath $repPath -Encoding UTF8
+    Add-WorkLog 'Alt Text Tool' $pptx $outPath
 
     return [pscustomobject]@{
         Filled = $filled; Own = $own; Replaced = $replaced; Decor = $decor; Kept = $kept; Problems = $missing

@@ -15,7 +15,34 @@
 #      text combined with its Subtitle text, after step 1 has run.
 #
 # A backup copy is saved first, next to the original (name_BEFORE_SLIDfix.pptx).
-$IMBK_VERSION = '4.2'   # shown at the start of the window; the updater compares this number with GitHub
+$IMBK_VERSION = '4.3'   # shown at the start of the window; the updater compares this number with GitHub
+# ---- work log: notes each saved file (name, slides or pages) for the daily report in S4C Tools ----
+# Only reads the saved file; never changes it and never stops the tool if something goes wrong.
+function Add-WorkLog([string]$tool, [string]$inPath, [string]$outPath) {
+    try {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $count = ''; $unit = ''
+        $ext = [IO.Path]::GetExtension($outPath).ToLowerInvariant()
+        $z = [IO.Compression.ZipFile]::OpenRead($outPath)
+        try {
+            if ($ext -eq '.pptx') {
+                $unit = 'slides'
+                $e = $z.GetEntry('ppt/presentation.xml')
+                if ($e) { $sr = New-Object IO.StreamReader($e.Open()); $t = $sr.ReadToEnd(); $sr.Close(); $count = [regex]::Matches($t, '<p:sldId\s').Count }
+            } elseif ($ext -eq '.docx') {
+                $unit = 'pages'
+                $e = $z.GetEntry('docProps/app.xml')
+                if ($e) { $sr = New-Object IO.StreamReader($e.Open()); $t = $sr.ReadToEnd(); $sr.Close(); $m = [regex]::Match($t, '<Pages>(\d+)</Pages>'); if ($m.Success) { $count = $m.Groups[1].Value } }
+            }
+        } finally { $z.Dispose() }
+        $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }
+        $dir = Join-Path (Join-Path $base 'S4C_Tools') 'WorkLog'
+        if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+        $ci = [Globalization.CultureInfo]::InvariantCulture; $now = Get-Date
+        $line = @($now.ToString('yyyy-MM-dd', $ci), $now.ToString('HH:mm', $ci), $env:USERNAME, $tool, [IO.Path]::GetFullPath($inPath), [IO.Path]::GetFullPath($outPath), $count, $unit) -join "`t"
+        [IO.File]::AppendAllText((Join-Path $dir 'worklog.tsv'), $line + "`r`n", (New-Object Text.UTF8Encoding($false)))
+    } catch { }
+}
 
 
 $ErrorActionPreference = 'Stop'
@@ -955,6 +982,7 @@ function Fix-One([string]$path) {
             $titleSet = Set-DocTitle $zip $docTitleText
         }
         [void]$zip.Dispose()
+        Add-WorkLog 'IMBK Macro' $path $path
 
         $check = [IO.Compression.ZipFile]::OpenRead($path); [void]$check.Dispose()
         $titleMsg = if ($titleSet) { "set to '$docTitleText'" } else { "not changed (no title found on slide 1)" }

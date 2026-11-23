@@ -12,7 +12,34 @@
 #   6. The file's Title (File > Info) is set from the title lines.
 #
 # The original file is never changed: the result is saved as "<name> Fixed.docx" with a report next to it.
-$WF_VERSION = '2.1'   # shown at the start of the window; the updater compares this number with GitHub
+$WF_VERSION = '2.2'   # shown at the start of the window; the updater compares this number with GitHub
+# ---- work log: notes each saved file (name, slides or pages) for the daily report in S4C Tools ----
+# Only reads the saved file; never changes it and never stops the tool if something goes wrong.
+function Add-WorkLog([string]$tool, [string]$inPath, [string]$outPath) {
+    try {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $count = ''; $unit = ''
+        $ext = [IO.Path]::GetExtension($outPath).ToLowerInvariant()
+        $z = [IO.Compression.ZipFile]::OpenRead($outPath)
+        try {
+            if ($ext -eq '.pptx') {
+                $unit = 'slides'
+                $e = $z.GetEntry('ppt/presentation.xml')
+                if ($e) { $sr = New-Object IO.StreamReader($e.Open()); $t = $sr.ReadToEnd(); $sr.Close(); $count = [regex]::Matches($t, '<p:sldId\s').Count }
+            } elseif ($ext -eq '.docx') {
+                $unit = 'pages'
+                $e = $z.GetEntry('docProps/app.xml')
+                if ($e) { $sr = New-Object IO.StreamReader($e.Open()); $t = $sr.ReadToEnd(); $sr.Close(); $m = [regex]::Match($t, '<Pages>(\d+)</Pages>'); if ($m.Success) { $count = $m.Groups[1].Value } }
+            }
+        } finally { $z.Dispose() }
+        $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }
+        $dir = Join-Path (Join-Path $base 'S4C_Tools') 'WorkLog'
+        if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+        $ci = [Globalization.CultureInfo]::InvariantCulture; $now = Get-Date
+        $line = @($now.ToString('yyyy-MM-dd', $ci), $now.ToString('HH:mm', $ci), $env:USERNAME, $tool, [IO.Path]::GetFullPath($inPath), [IO.Path]::GetFullPath($outPath), $count, $unit) -join "`t"
+        [IO.File]::AppendAllText((Join-Path $dir 'worklog.tsv'), $line + "`r`n", (New-Object Text.UTF8Encoding($false)))
+    } catch { }
+}
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression
@@ -1601,6 +1628,7 @@ try {
             $repPath = [IO.Path]::Combine([IO.Path]::GetDirectoryName($f), [IO.Path]::GetFileNameWithoutExtension($f) + ' Fixed report.txt')
             $rep | Set-Content -LiteralPath $repPath -Encoding UTF8
             Write-Host ('  Saved: ' + $out) -ForegroundColor Green
+            Add-WorkLog 'Word Fixer' $f $out
         } catch {
             Write-Host ('  FAILED: ' + $_.Exception.Message) -ForegroundColor Red
             Write-Host ('  (version ' + $WF_VERSION + ', at line ' + $_.InvocationInfo.ScriptLineNumber + ': ' + ($_.InvocationInfo.Line + '').Trim() + ')') -ForegroundColor DarkGray
