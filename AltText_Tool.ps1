@@ -1,6 +1,6 @@
 # ALT TEXT TOOL SCRIPT
 # PPT Alt-Text Filler (S4Carlisle). Self-updates from GitHub through AltText_Update.ps1.
-$ALT_VERSION = '3.1'   # shown at the start of the window; the updater compares this number with GitHub
+$ALT_VERSION = '3.2'   # shown at the start of the window; the updater compares this number with GitHub
 Write-Host ('PPT Alt-Text Filler - running version ' + $ALT_VERSION) -ForegroundColor Cyan
 Write-Host ''
 # AltText_Matcher.ps1
@@ -64,6 +64,25 @@ function Norm-Chapter([string]$v) {
     $n = 0
     if ([int]::TryParse($t, [ref]$n)) { return [string]$n }
     return $t.ToUpperInvariant()
+}
+
+# a figure / table / equation number written on the slide: "Figure 14.F03", "Table 14.T01", "Figure 14.EQ05"
+$FIG_RX = '(?i)\b(Fig(?:ure)?|Table|Box|Eq(?:uation)?)\.?\s*(\d{1,3})\.([A-Za-z]{1,3}\s?\d{1,3})(?![A-Za-z0-9])'
+function Norm-ElemId([string]$v) {
+    $t = (($v + '') -replace '\s', '').ToUpperInvariant()
+    $m = [regex]::Match($t, '^([A-Z]*)0*(\d+)$')
+    if ($m.Success) { return ($m.Groups[1].Value + $m.Groups[2].Value) }
+    return $t
+}
+function Get-FigRefs([string]$text) {
+    $out = New-Object System.Collections.Generic.List[object]
+    foreach ($m in [regex]::Matches($text, $FIG_RX)) {
+        $ch = Norm-Chapter $m.Groups[2].Value
+        $id = Norm-ElemId $m.Groups[3].Value
+        $dup = $false; foreach ($x in $out) { if ($x.Chapter -eq $ch -and $x.Id -eq $id) { $dup = $true } }
+        if (-not $dup) { $out.Add([pscustomobject]@{ Chapter = $ch; Id = $id; Text = ($m.Groups[1].Value + ' ' + $m.Groups[2].Value + '.' + ($m.Groups[3].Value -replace '\s', '')) }) }
+    }
+    return @($out.ToArray())
 }
 
 # ---------- Excel ----------
@@ -247,6 +266,10 @@ function Get-DeckPictures([string]$pptx) {
                         if ($dist -ge 0 -and $dist -lt $bestD) { $bestD = $dist; $label = $g.Text }
                     }
                 }
+                # the figure number of this picture: in the caption next to it, else the only figure number on the slide
+                $figRef = $null
+                if ($label) { $fr = @(Get-FigRefs $label); if ($fr.Count -ge 1) { $figRef = $fr[0] } }
+                if (-not $figRef) { $fr = @(Get-FigRefs $slideText); if ($fr.Count -eq 1) { $figRef = $fr[0] } }
                 $embed = ''
                 $blipN = $p.SelectSingleNode('p:blipFill/a:blip', $m)
                 if ($blipN) { $embed = $blipN.GetAttribute('embed', $NS_R) }
@@ -254,7 +277,7 @@ function Get-DeckPictures([string]$pptx) {
                     Part = $parts[$i]; Embed = $embed;
                     Slide = $i + 1; Title = $title.Trim(); SlideText = $slideText; ShapeId = $nv.GetAttribute('id'); Name = $nv.GetAttribute('name')
                     Alt = $nv.GetAttribute('descr'); Label = $label; Shorts = $shorts.ToArray(); IsVideo = $isVideo
-                    IsAi = (Test-AiGenerated $nv.GetAttribute('descr'))
+                    IsAi = (Test-AiGenerated $nv.GetAttribute('descr')); FigRef = $figRef
                 })
             }
         }
@@ -349,9 +372,17 @@ function Make-ReviewPage([string]$pptx, [string]$xlsx, [string]$chapter) {
     Write-Host 'Reading the Excel file...'
     $rows = Get-AltRows $xlsx
     $chap = Norm-Chapter $chapter
-    $opts = @($rows | Where-Object { $_.Chapter -eq $chap -and ($_.Short -or $_.Long -or $_.Decorative) })
+    $withText = @($rows | Where-Object { $_.Short -or $_.Long -or $_.Decorative })
+    $opts = @($withText | Where-Object { $_.Chapter -eq $chap })
     if ($opts.Count -eq 0) { throw "No alt text rows found for chapter $chapter in the Excel file." }
-    Write-Host ("Excel rows for chapter " + $chapter + ": " + $opts.Count)
+    # rows of the other chapters: only for Browse all rows and the figure-number match (their key carries the chapter)
+    $others = @($withText | Where-Object { $_.Chapter -ne $chap })
+    foreach ($o in $others) {
+        $cl = if ($o.Chapter -match '^\d+$') { 'Ch ' + $o.Chapter } else { [string]$o.Chapter }
+        $o | Add-Member -NotePropertyName Key -NotePropertyValue ($cl + ' ' + $o.Id) -Force
+    }
+    foreach ($o in $opts) { $o | Add-Member -NotePropertyName Key -NotePropertyValue $o.Id -Force }
+    Write-Host ("Excel rows for chapter " + $chapter + ": " + $opts.Count + " (the whole file has " + $withText.Count + " rows, all can be searched)")
 
     Write-Host 'Reading the pictures in the deck...'
     $allPics = Get-DeckPictures $pptx
@@ -400,7 +431,14 @@ function Make-ReviewPage([string]$pptx, [string]$xlsx, [string]$chapter) {
         $full = $o.Short
         if ($o.Long) { $full = ($full + ' ' + $o.Long).Trim() }
         $dec = 'false'; if ($o.Decorative) { $dec = 'true' }
-        $optJson.Add('{"id":' + (& $js $o.Id) + ',"full":' + (& $js $full) + ',"dec":' + $dec + '}')
+        $optJson.Add('{"id":' + (& $js $o.Id) + ',"ch":' + (& $js $o.Chapter) + ',"ex":' + (& $js $o.Id) + ',"full":' + (& $js $full) + ',"dec":' + $dec + '}')
+    }
+    $othJson = New-Object System.Collections.Generic.List[string]
+    foreach ($o in $others) {
+        $full = $o.Short
+        if ($o.Long) { $full = ($full + ' ' + $o.Long).Trim() }
+        $dec = 'false'; if ($o.Decorative) { $dec = 'true' }
+        $othJson.Add('{"id":' + (& $js $o.Key) + ',"ch":' + (& $js $o.Chapter) + ',"ex":' + (& $js $o.Id) + ',"full":' + (& $js $full) + ',"dec":' + $dec + '}')
     }
 
     $picJson = New-Object System.Collections.Generic.List[string]
@@ -508,6 +546,17 @@ function Make-ReviewPage([string]$pptx, [string]$xlsx, [string]$chapter) {
             $top = @($weakList | Sort-Object @{ Expression = { -$_.Best.Score } }, Order | Select-Object -First 3)
         }
         $candJson = @()
+        # the figure number on the slide ("Figure 14.F03") finds its Excel row first - in any chapter of the file
+        $figJs = '""'; $figMiss = 'false'
+        if ($p.FigRef) {
+            $figJs = (& $js $p.FigRef.Text)
+            $hit = $null
+            foreach ($o in @($opts) + @($others)) { if ($o.Chapter -eq $p.FigRef.Chapter -and (Norm-ElemId $o.Id) -eq $p.FigRef.Id) { $hit = $o; break } }
+            if ($hit) {
+                $candJson += ('{"id":' + (& $js $hit.Key) + ',"st":"s","w":[],"from":' + (& $js ('the figure number ' + $p.FigRef.Text)) + ',"sc":2,"fig":true,"long":false}')
+                $top = @($top | Where-Object { $_.Id -ne $hit.Key })
+            } else { $figMiss = 'true' }
+        }
         foreach ($c in $top) {
             $wj = ($c.Best.Words | ForEach-Object { & $js $_ }) -join ','
             $stj = 'w'; if ($c.Best.Strong) { $stj = 's' }
@@ -517,7 +566,7 @@ function Make-ReviewPage([string]$pptx, [string]$xlsx, [string]$chapter) {
         $swStems = @(Get-Tokens $titleClean | Where-Object { $generic -notcontains $_ })
         $swShow = (($titleClean.ToLowerInvariant() -replace '[^a-z0-9 ]', ' ').Split(' ', [StringSplitOptions]::RemoveEmptyEntries) | Where-Object { ($stop -notcontains $_) -and ($generic -notcontains $_) }) -join ' '
         $aiJs = 'false'; if ($p.IsAi) { $aiJs = 'true' }
-        $picJson.Add('{"i":' + $n + ',"slide":' + $p.Slide + ',"sid":' + (& $js $p.ShapeId) + ',"name":' + (& $js $p.Name) + ',"title":' + (& $js $p.Title) + ',"alt":' + (& $js $p.Alt) + ',"ai":' + $aiJs + ',"label":' + (& $js $p.Label) + ',"sw":' + (& $js ($swStems -join ' ')) + ',"swt":' + (& $js $swShow) + ',"cand":[' + ($candJson -join ',') + ']}')
+        $picJson.Add('{"i":' + $n + ',"slide":' + $p.Slide + ',"sid":' + (& $js $p.ShapeId) + ',"name":' + (& $js $p.Name) + ',"title":' + (& $js $p.Title) + ',"alt":' + (& $js $p.Alt) + ',"ai":' + $aiJs + ',"label":' + (& $js $p.Label) + ',"fig":' + $figJs + ',"figmiss":' + $figMiss + ',"sw":' + (& $js ($swStems -join ' ')) + ',"swt":' + (& $js $swShow) + ',"cand":[' + ($candJson -join ',') + ']}')
 
         $img = '<div class="noimg">No preview</div>'
         $key = "$($p.Slide)|$($p.ShapeId)"
@@ -642,7 +691,7 @@ button:disabled{opacity:.5;cursor:default}
 <button id="lbminus" aria-label="Zoom out">Zoom out</button><span id="lbzoom">100%</span><button id="lbplus" aria-label="Zoom in">Zoom in</button>
 <button id="lbprev">Previous</button><button id="lbnext">Next</button><button id="lbclose">Close</button></div>
 <div class="lbimg" id="lbimgbox"><img id="lbimg" alt=""></div>
-<div class="lbsearchrow" id="lbsearchrow" hidden><input id="lbsearch" type="search" placeholder="Search all Excel rows, for example crash" aria-label="Search the Excel rows"></div>
+<div class="lbsearchrow" id="lbsearchrow" hidden><input id="lbsearch" type="search" placeholder="Search the whole Excel file, for example crash or Figure 14.F03" aria-label="Search the Excel rows"></div>
 <div class="lbpick" id="lbpick"></div></div></div>
 <div id="panel" hidden></div>
 <div id="cf" hidden><div class="cfbox" role="dialog" aria-modal="true" aria-labelledby="cft">
@@ -654,10 +703,13 @@ button:disabled{opacity:.5;cursor:default}
 <button class="btn" id="save">Save mapping</button><button class="btn main-btn" id="apply">Add alt text to the PowerPoint</button></div></div>
 <script>
 var OPTS = __OPTS__;
+var OTHERS = __OTHERS__;
 var PICS = __PICS__;
 var SLIDETHUMBS = __SLIDETHUMBS__;
 var CHAPTER = "__CHAPTER__", DECK = "__DECK__", TOKEN = "__TOKEN__";
-var byId = {}; OPTS.forEach(function(o, k){ o.k = k; o.text = (o.dec ? "(marked decorative in the Excel file) " : "") + o.full; byId[o.id] = o; });
+var byId = {}; OPTS.forEach(function(o, k){ o.k = k; o.ord = k; o.text = (o.dec ? "(marked decorative in the Excel file) " : "") + o.full; byId[o.id] = o; });
+OTHERS.forEach(function(o, k){ o.k = -1; o.ord = OPTS.length + k; o.text = (o.dec ? "(marked decorative in the Excel file) " : "") + o.full; byId[o.id] = o; });
+var ALLOPTS = OPTS.concat(OTHERS);
 var S = {}; PICS.forEach(function(p){ S[p.i] = {mode: "none", id: "", text: "", note: "", err: ""}; });
 var filt = "all", query = "", moreSug = {}, openBrowse = {}, fltText = {}, expanded = {}, lbIdx = -1, lbScale = 1, lbBase = 0, lbQuery = "", lbView = "pic";
 var cards = [].slice.call(document.querySelectorAll(".card"));
@@ -665,8 +717,8 @@ function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").rep
 function cut(s, n){ s = String(s); return s.length > n ? s.slice(0, n).replace(/\s+\S*$/, "") + "..." : s; }
 function reset(i){ S[i] = {mode: "none", id: "", text: S[i].text || "", note: "", err: ""}; }
 function usedMap(){ var m = {}; PICS.forEach(function(p){ var s = S[p.i]; if(s.mode === "excel"){ (m[s.id] = m[s.id] || []).push(p.slide); } }); return m; }
-function lastKFor(idx){ var k = -1; for(var j = 0; j < idx; j++){ var s = S[PICS[j].i]; if(s.mode === "excel") k = byId[s.id].k; } return k; }
-function nextKFor(idx){ for(var j = idx + 1; j < PICS.length; j++){ var s = S[PICS[j].i]; if(s.mode === "excel") return byId[s.id].k; } return -1; }
+function lastKFor(idx){ var k = -1; for(var j = 0; j < idx; j++){ var s = S[PICS[j].i]; if(s.mode === "excel" && byId[s.id].k >= 0) k = byId[s.id].k; } return k; }
+function nextKFor(idx){ for(var j = idx + 1; j < PICS.length; j++){ var s = S[PICS[j].i]; if(s.mode === "excel" && byId[s.id].k >= 0) return byId[s.id].k; } return -1; }
 function stem(w){
   w = String(w).toLowerCase().replace(/[^a-z0-9]/g, "");
   if(w.length > 6 && /ers$/.test(w)) w = w.slice(0, -3);
@@ -686,18 +738,19 @@ function suggest(p, idx, used){
   var sg = [], seen = {}, lastK = lastKFor(idx), nextK = nextKFor(idx), win = {}, winList = [];
   if(nextK >= 0){ for(var k = lastK + 1; k < nextK; k++){ var oid = OPTS[k].id; if(!used[oid]){ win[oid] = 1; winList.push(oid); } } }
   var useWin = winList.length > 0 && winList.length <= 6;
-  (p.cand || []).forEach(function(c){ if(byId[c.id] && !seen[c.id]){ seen[c.id] = 1; sg.push({id: c.id, kind: c.st === "s" ? "strong" : "weak", sc: c.sc || 0, words: c.w || [], from: c.from || "", inLong: !!c.long, between: useWin && !!win[c.id]}); } });
+  (p.cand || []).forEach(function(c){ if(byId[c.id] && !seen[c.id]){ seen[c.id] = 1; sg.push({id: c.id, kind: c.st === "s" ? "strong" : "weak", sc: c.sc || 0, words: c.w || [], from: c.from || "", inLong: !!c.long, fig: !!c.fig, between: useWin && !!win[c.id]}); } });
   if(useWin){ var addB = 0; winList.forEach(function(id){ if(!seen[id] && addB < 3 && !/^(CO|C)\d+$/i.test(id)){ seen[id] = 1; sg.push({id: id, kind: "between", words: [], from: "", inLong: false, between: true}); addB++; } }); }
   if(nextK < 0){ var add = 0; for(var k2 = lastK + 1; k2 < OPTS.length && add < 2; k2++){ var o2 = OPTS[k2].id; if(!used[o2] && !seen[o2] && !/^(CO|C)\d+$/i.test(o2)){ seen[o2] = 1; sg.push({id: o2, kind: "next", words: [], from: "", inLong: false, between: false}); add++; } } }
   var base = {strong: 0, weak: 100, between: 200, next: 300};
-  sg.forEach(function(s, n){ s.rank = base[s.kind] + (used[s.id] ? 500 : 0) + (s.between && s.kind !== "between" ? -50 : 0) + n; });
+  sg.forEach(function(s, n){ s.rank = base[s.kind] + (used[s.id] ? 500 : 0) + (s.between && s.kind !== "between" ? -50 : 0) + n - (s.fig ? 2000 : 0); });
   sg.sort(function(a, b){ return a.rank - b.rank; });
   return sg.slice(0, 7);
 }
 function usedBadge(u){ return u ? '<span class="usedbadge"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>Used on slide ' + esc(u.join(", ")) + '</span>' : ""; }
 function sugItem(p, s, used, winner){
   var txt = byId[s.id].text, key = p.i + "|" + s.id, long = txt.length > 170, shown = (long && !expanded[key]) ? cut(txt, 170) : txt, u = used[s.id], tags = "";
-  if(s.kind === "strong") tags += '<span class="tag s">strong match</span>';
+  if(s.fig) tags += '<span class="tag s">figure number match</span>';
+  else if(s.kind === "strong") tags += '<span class="tag s">strong match</span>';
   else if(s.kind === "weak") tags += '<span class="tag w">weak match</span>';
   else if(s.kind === "between") tags += '<span class="tag o">fits between your picks</span>';
   else tags += '<span class="tag n">next in order</span>';
@@ -724,13 +777,20 @@ function sugHtml(p, idx, used){
     if(moreSug[p.i]) secondary.forEach(function(s){ h += sugItem(p, s, used, false); });
   }
   return h;
-}function terms(q){ return String(q).toLowerCase().split(/\s+/).filter(Boolean); }
+}function terms(q){
+  var s = String(q).toLowerCase(), out = [];
+  // a figure number such as "Figure 14.F03" or "14.f03" finds that row in its chapter (the word Figure is dropped)
+  s = s.replace(/\b(?:fig(?:ure)?|table|box|eq(?:uation)?)\.?\s*(\d{1,3})\.([a-z]{1,3}\s?\d{1,3})/g, function(m, ch, id){ out.push("@" + parseInt(ch, 10) + "." + id.replace(/\s/g, "").replace(/^([a-z]*)0*(\d+)$/, "$1$2")); return " "; });
+  s.split(/\s+/).forEach(function(x){ if(x) out.push(x); });
+  return out;
+}
+function rowKey(o){ return "@" + (/^\d+$/.test(o.ch) ? parseInt(o.ch, 10) : String(o.ch).toLowerCase()) + "." + String(o.ex).toLowerCase().replace(/\s/g, "").replace(/^([a-z]*)0*(\d+)$/, "$1$2"); }
 function rowsInner(p, used, q){
   var ts = terms(q), need = Math.max(1, Math.ceil(ts.length / 2)), list = [];
-  OPTS.forEach(function(o, k){
-    var t = (o.id + " " + o.text).toLowerCase(), c = 0;
-    ts.forEach(function(x){ if(t.indexOf(x) >= 0) c++; });
-    if(!ts.length || c >= need) list.push({o: o, c: c, k: k});
+  ALLOPTS.forEach(function(o){
+    var t = (o.id + " " + o.ch + " " + o.text).toLowerCase(), rk = rowKey(o), c = 0;
+    ts.forEach(function(x){ if(x.charAt(0) === "@") { if(rk === x) c += 3; } else if(t.indexOf(x) >= 0) c++; });
+    if(!ts.length || c >= need) list.push({o: o, c: c, k: o.ord});
   });
   if(ts.length) list.sort(function(a, b){ return (b.c - a.c) || (a.k - b.k); });
   if(!list.length) return '<div class="note">No rows contain those words.</div>';
@@ -741,7 +801,7 @@ function rowsHtml(p, used){
   if(p.sw) h += '<button class="small" data-sw="' + p.i + '">Search these words: ' + esc(p.swt || p.sw) + '</button>';
   h += '</div>';
   if(openBrowse[p.i]){
-    h += '<div class="rowsbox"><input class="flt" data-flt="' + p.i + '" type="search" value="' + esc(fltText[p.i] || "") + '" placeholder="Search all Excel rows, for example crash" aria-label="Search the Excel rows"><div class="rows">' + rowsInner(p, used, fltText[p.i] || "") + '</div></div>';
+    h += '<div class="rowsbox"><input class="flt" data-flt="' + p.i + '" type="search" value="' + esc(fltText[p.i] || "") + '" placeholder="Search the whole Excel file, for example crash or Figure 14.F03" aria-label="Search the Excel rows"><div class="rows">' + rowsInner(p, used, fltText[p.i] || "") + '</div></div>';
   }
   return h;
 }
@@ -770,6 +830,7 @@ function render(){
     h += '<div class="head"><b>Slide ' + p.slide + ' &middot; ' + esc(p.name) + '</b><span class="pill ' + PILL[key][0] + '">' + PILL[key][1] + '</span></div>';
     if(p.title) h += '<div class="ctx">' + esc(p.title) + '</div>';
     if(p.label) h += '<div class="lab">Label on the slide: <b>' + esc(p.label) + '</b></div>';
+    if(p.fig) h += '<div class="lab">Figure number on the slide: <b>' + esc(p.fig) + '</b>' + (p.figmiss ? ' - not in the Excel file, so it could not be matched by number' : '') + '</div>';
     if(p.alt) h += '<div class="has">' + (p.ai ? 'AI-generated alt text already there (not yet reviewed): ' : 'Current alt text: ') + esc(p.alt) + '</div>';
     if(m === "none") h += sugHtml(p, idx, used) + rowsHtml(p, used) + ownBoxHtml(p);
     else h += stateHtml(p, rep);
@@ -913,7 +974,7 @@ function post(path, body){
 }
 function showPanel(html, isErr){ var p = document.getElementById("panel"); p.hidden = false; p.className = isErr ? "err" : ""; p.innerHTML = html; }
 function rowsPayload(){
-  return PICS.map(function(p){ var s = S[p.i]; return {Chapter: CHAPTER, Slide: p.slide, ShapeId: p.sid, PictureName: p.name, ExcelId: s.mode === "excel" ? s.id : "", Mode: s.mode, CustomText: s.mode === "own" ? s.text : "", Note: s.mode === "unsure" ? s.note : ""}; });
+  return PICS.map(function(p){ var s = S[p.i]; var ro = s.mode === "excel" ? byId[s.id] : null; return {Chapter: ro ? ro.ch : CHAPTER, Slide: p.slide, ShapeId: p.sid, PictureName: p.name, ExcelId: ro ? ro.ex : "", Mode: s.mode, CustomText: s.mode === "own" ? s.text : "", Note: s.mode === "unsure" ? s.note : ""}; });
 }
 document.getElementById("apply").addEventListener("click", function(){
   if(location.protocol === "file:" || !TOKEN){
@@ -955,7 +1016,7 @@ render();
     $html = $html.Replace('__DECK__', (Html $deckName)).Replace('__CHAPTER__', (Html $chap)).Replace('__CARDS__', $cards.ToString())
     $slideThumbJson = New-Object System.Collections.Generic.List[string]
     foreach ($k in $slideThumbs.Keys) { $slideThumbJson.Add((& $js $k) + ':' + (& $js $slideThumbs[$k])) }
-    $html = $html.Replace('__OPTS__', ('[' + ($optJson -join ',') + ']')).Replace('__PICS__', ('[' + ($picJson -join ',') + ']')).Replace('__SLIDETHUMBS__', ('{' + ($slideThumbJson -join ',') + '}'))
+    $html = $html.Replace('__OPTS__', ('[' + ($optJson -join ',') + ']')).Replace('__OTHERS__', ('[' + ($othJson -join ',') + ']')).Replace('__PICS__', ('[' + ($picJson -join ',') + ']')).Replace('__SLIDETHUMBS__', ('{' + ($slideThumbJson -join ',') + '}'))
     $outHtml = Join-Path (Split-Path -Parent $pptx) ($deckName + ' AltText Review.html')
     [IO.File]::WriteAllText($outHtml, $html.Replace('__TOKEN__', ''), (New-Object Text.UTF8Encoding($false)))
     Write-Host ''
