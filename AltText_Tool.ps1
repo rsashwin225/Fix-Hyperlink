@@ -1,6 +1,6 @@
 # ALT TEXT TOOL SCRIPT
 # PPT Alt-Text Filler (S4Carlisle). Self-updates from GitHub through AltText_Update.ps1.
-$ALT_VERSION = '3.2'   # shown at the start of the window; the updater compares this number with GitHub
+$ALT_VERSION = '3.3'   # shown at the start of the window; the updater compares this number with GitHub
 Write-Host ('PPT Alt-Text Filler - running version ' + $ALT_VERSION) -ForegroundColor Cyan
 Write-Host ''
 # AltText_Matcher.ps1
@@ -374,7 +374,12 @@ function Make-ReviewPage([string]$pptx, [string]$xlsx, [string]$chapter) {
     $chap = Norm-Chapter $chapter
     $withText = @($rows | Where-Object { $_.Short -or $_.Long -or $_.Decorative })
     $opts = @($withText | Where-Object { $_.Chapter -eq $chap })
-    if ($opts.Count -eq 0) { throw "No alt text rows found for chapter $chapter in the Excel file." }
+    if ($withText.Count -eq 0) { throw 'The Excel file has no rows with alt text.' }
+    if ($opts.Count -eq 0) {
+        $have = (@($withText | ForEach-Object { $_.Chapter } | Select-Object -Unique) -join ', ')
+        Write-Host ("This Excel file has no rows for chapter " + $chapter + ". Chapters in the file: " + $have) -ForegroundColor Yellow
+        Write-Host '  Check that it is the right Excel file for this book. The page still opens: every row of the file can be searched, and a figure number on a slide (for example Figure 14.F03) is matched in any chapter.' -ForegroundColor Yellow
+    }
     # rows of the other chapters: only for Browse all rows and the figure-number match (their key carries the chapter)
     $others = @($withText | Where-Object { $_.Chapter -ne $chap })
     foreach ($o in $others) {

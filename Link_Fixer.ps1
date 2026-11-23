@@ -22,7 +22,7 @@
 # (it must be a Link Fixer script of a higher version that PowerShell can read) and then used for this run, and
 # a copy is kept for when there is no connection. Without an address, or without a connection, the version inside
 # this file is used. Nothing is sent to the address, the tool only reads from it.
-$LF_VERSION = 11
+$LF_VERSION = 13
 function Get-LfVersion([string]$text) {
     $m = [regex]::Match($text, '(?m)^\$LF_VERSION\s*=\s*(\d+)\s*$')
     if ($m.Success) { return [int]$m.Groups[1].Value }
@@ -39,6 +39,8 @@ if (-not $env:LF_UPDATED) {
     $env:LF_UPDATED = '1'
     $lfNew = $null; $lfFrom = ''
     $lfUrl = [string]$env:LF_UPDATE_URL
+    $lfReached = $false
+    if ($lfUrl) { Write-Host 'Link Fixer - checking GitHub for updates...' -ForegroundColor Cyan }
     if ($lfUrl -and ($lfUrl -match '^https://' -or $env:LF_UPDATE_ALLOW_HTTP)) {
         try {
             $lfRq = [Net.HttpWebRequest]::Create($lfUrl)
@@ -46,6 +48,7 @@ if (-not $env:LF_UPDATED) {
             try { $lfRq.Proxy = [Net.WebRequest]::GetSystemWebProxy(); $lfRq.Proxy.Credentials = [Net.CredentialCache]::DefaultCredentials } catch { }
             $lfRs = $lfRq.GetResponse(); $lfSr = New-Object IO.StreamReader($lfRs.GetResponseStream(), [Text.Encoding]::UTF8)
             $lfText = $lfSr.ReadToEnd(); $lfSr.Close(); $lfRs.Close()
+            $lfReached = $true
             if (Test-LfScript $lfText $LF_VERSION) { $lfNew = $lfText; $lfFrom = 'the update address' }
         } catch { }
     }
@@ -57,12 +60,20 @@ if (-not $env:LF_UPDATED) {
         try { $lfC = [IO.File]::ReadAllText($lfCache, [Text.Encoding]::UTF8); if (Test-LfScript $lfC $LF_VERSION) { $lfNew = $lfC; $lfFrom = 'the copy kept on this computer' } } catch { }
     }
     if ($lfNew) {
-        Write-Host ('Link Fixer version ' + (Get-LfVersion $lfNew) + ' (updated from ' + $lfFrom + ')')
+        if ($lfFrom -eq 'the update address') { Write-Host ('  Connected to GitHub. UPDATED: version ' + $LF_VERSION + ' -> ' + (Get-LfVersion $lfNew)) -ForegroundColor Green }
+        else { Write-Host ('  Could not reach GitHub - using the newer copy saved on this computer (version ' + (Get-LfVersion $lfNew) + ').') -ForegroundColor Yellow }
+        Write-Host ''
+        $lfUpdatedRun = $true
         Invoke-Expression $lfNew
         return
     }
 }
-Write-Host ('Link Fixer version ' + $LF_VERSION)
+if ($lfUrl -and -not $lfUpdatedRun) {
+    if ($lfReached) { Write-Host ('  Connected to GitHub. You already have the latest version (' + $LF_VERSION + ').') -ForegroundColor Green }
+    else { Write-Host '  Could not reach GitHub - using the copy already here.' -ForegroundColor Yellow }
+    Write-Host ''
+}
+Write-Host ('Link Fixer - running version ' + $LF_VERSION)
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -82,6 +93,17 @@ if ($env:LF_DIR) { $ToolDir = $env:LF_DIR.TrimEnd('\') }
 elseif ($PSScriptRoot) { $ToolDir = $PSScriptRoot }
 else { $ToolDir = Join-Path $env:USERPROFILE 'Documents' }
 $ListPath = Join-Path $ToolDir 'LinkTexts.csv'
+
+# Folder of a file, never empty: when a file has no folder part (or Windows gives nothing back), fall back to the
+# folder of the tool and then to the temp folder, so saving the review page / the fixed copy can not fail on it.
+function Get-FolderOf([string]$file) {
+    $d = $null
+    try { $d = [IO.Path]::GetDirectoryName($file) } catch { }
+    if (-not $d) { try { $d = Split-Path -Parent $file } catch { } }
+    if (-not $d) { $d = $ToolDir }
+    if (-not $d) { $d = [IO.Path]::GetTempPath() }
+    return $d
+}
 
 $vague = @('click here','here','link','this link','read more','more','this page','website','web site','url','download','see here','learn more','click','click this link','this website','visit','visit website','go here','link here')
 
@@ -1407,13 +1429,13 @@ function Invoke-ApplyAll($files, $texts) {
     foreach ($f in $files) {
         $fi++
         $ext = [IO.Path]::GetExtension($f)
-        $outPath = Join-Path (Split-Path -Parent $f) ([IO.Path]::GetFileNameWithoutExtension($f) + ' Links' + $ext)
+        $outPath = Join-Path (Get-FolderOf $f) ([IO.Path]::GetFileNameWithoutExtension($f) + ' Links' + $ext)
         $r = Scan-File $f $true $texts $outPath $fi
         $out.Add([pscustomobject]@{ InFile = (Split-Path -Leaf $f); OutFile = (Split-Path -Leaf $outPath); OutPath = $outPath; Changed = $r.Changed; Skipped = $r.Skipped })
     }
     $report = New-Object System.Collections.Generic.List[string]
     foreach ($o in $out) { $report.Add("$($o.InFile) -> $($o.OutFile): $($o.Changed) links changed, $($o.Skipped) left as they are") }
-    $repPath = Join-Path (Split-Path -Parent $out[0].OutPath) 'Link Fixer report.txt'
+    $repPath = Join-Path (Get-FolderOf $out[0].OutPath) 'Link Fixer report.txt'
     $report | Set-Content -LiteralPath $repPath -Encoding UTF8
     $notes.Add('Links inside a document (bookmarks) and mail links are not changed.')
     return [pscustomobject]@{ Files = $out.ToArray(); Notes = $notes.ToArray() }
@@ -1462,7 +1484,7 @@ try {
             }
             $names = @($files | ForEach-Object { Split-Path -Leaf $_ })
             $html = Build-Page $items.ToArray() $fine $names $other
-            $backup = Join-Path (Split-Path -Parent $files[0]) 'Link Fixer review.html'
+            $backup = Join-Path (Get-FolderOf $files[0]) 'Link Fixer review.html'
             [IO.File]::WriteAllText($backup, $html.Replace('__TOKEN__', ''), (New-Object Text.UTF8Encoding($false)))
             Write-Host ('Review page saved as a backup copy: ' + $backup)
             if (-not $env:LF_NOSERVE) {
@@ -1473,4 +1495,5 @@ try {
     }
 } catch {
     Write-Host ('FAILED: ' + $_.Exception.Message) -ForegroundColor Red
+    Write-Host ('  (version ' + $LF_VERSION + ', at line ' + $_.InvocationInfo.ScriptLineNumber + ': ' + ($_.InvocationInfo.Line + '').Trim() + ')') -ForegroundColor DarkGray
 }
