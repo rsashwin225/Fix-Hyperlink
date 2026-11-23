@@ -1,7 +1,7 @@
 # SLID Macro - numbers repeated slide titles (1 of 4), renames shapes, fixes language tags.
 # Saves a remediated copy next to the original. (Self-updates from GitHub via SLID_Update.ps1.)
 # SLID MACRO SCRIPT
-$SLID_VERSION = '1.0'   # shown at the start of the window; the updater compares this number with GitHub
+$SLID_VERSION = '1.1'   # shown at the start of the window; the updater compares this number with GitHub
 function Fix-Deck {
 param([string]$Path,[string]$OutPath)
 $ErrorActionPreference = 'Stop'
@@ -218,17 +218,17 @@ try {
             $off = $c.SelectSingleNode('p:spPr/a:xfrm/a:off', $m)
             if (-not $off) { $off = $c.SelectSingleNode('p:grpSpPr/a:xfrm/a:off', $m) }
             if (-not $off) { $off = $c.SelectSingleNode('p:xfrm/a:off', $m) }
-            $w = 0.0
+            $w = 0.0; $h = 0.0
             if ($off) {
                 $y = [double]$off.GetAttribute('y'); $x = [double]$off.GetAttribute('x')
                 $ext = $off.ParentNode.SelectSingleNode('a:ext', $m)
-                if ($ext) { $w = [double]$ext.GetAttribute('cx') }
+                if ($ext) { $w = [double]$ext.GetAttribute('cx'); $h = [double]$ext.GetAttribute('cy') }
             }
             else {
                 $lo = Get-LayoutOff $sp $c
                 if ($lo) { $y = $lo[0]; $x = $lo[1]; $w = $lo[2] } else { $y = 1e12; $x = 0 }
             }
-            $items.Add([pscustomobject]@{ Kind = $kind; Nv = $nv; Node = $c; RK = $rk; Y = [Math]::Round($y / 12700); X = $x; CX = (($x + $w / 2) / 12700); Order = $order })
+            $items.Add([pscustomobject]@{ Kind = $kind; Nv = $nv; Node = $c; RK = $rk; Y = [Math]::Round($y / 12700); X = $x; CX = (($x + $w / 2) / 12700); Order = $order; L = $x; T = $y; W = $w; H = $h })
         }
         # first slide: its one text object is the subtitle, even when it is not a subtitle placeholder
         if ($slideParts.IndexOf($sp) -eq 0 -and -not @($items | Where-Object { $_.Kind -eq 'Subtitle' }).Count) {
@@ -277,6 +277,27 @@ try {
             foreach ($r in $rowList) { foreach ($it in @($r | Sort-Object X, Order)) { $sorted.Add($it) } }
         }
         foreach ($it in $unplaced) { $sorted.Add($it) }
+
+        # a shape that sits mostly behind a picture stays behind it (the order also decides what is drawn on top),
+        # e.g. an "<Insert Fig ... here>" note hidden under the photo: it is placed just before that picture
+        $guard = 0; $moved = $true
+        while ($moved -and $guard -lt 50) {
+            $moved = $false; $guard++
+            for ($i = 0; $i -lt $sorted.Count -and -not $moved; $i++) {
+                $s1 = $sorted[$i]
+                if ($s1.RK -eq 0 -or $s1.Kind -eq 'Picture' -or $s1.W -le 0 -or $s1.H -le 0 -or $s1.T -ge 1e11) { continue }
+                for ($j = 0; $j -lt $i; $j++) {
+                    $pc = $sorted[$j]
+                    if ($pc.Kind -ne 'Picture' -or $pc.Order -le $s1.Order -or $pc.W -le 0 -or $pc.H -le 0 -or $pc.T -ge 1e11) { continue }
+                    $ow = [Math]::Min($s1.L + $s1.W, $pc.L + $pc.W) - [Math]::Max($s1.L, $pc.L)
+                    $oh = [Math]::Min($s1.T + $s1.H, $pc.T + $pc.H) - [Math]::Max($s1.T, $pc.T)
+                    if ($ow -le 0 -or $oh -le 0) { continue }
+                    if (($ow * $oh) / ($s1.W * $s1.H) -gt 0.5) {
+                        $sorted.RemoveAt($i); $sorted.Insert($j, $s1); $moved = $true; break
+                    }
+                }
+            }
+        }
         $sorted = $sorted.ToArray()
 
         # names are numbered in reading order: Picture 1, TextBox 1, TextBox 2, Picture 2 ...
