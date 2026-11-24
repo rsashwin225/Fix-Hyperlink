@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="1.2">
+<meta name="s4c-hub-version" content="1.3">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -291,6 +291,7 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
 
 .dg tbody tr td:last-child{position:relative}
 .ttlc{display:inline-block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;font-weight:600;color:var(--brand);cursor:pointer;border-radius:6px;padding:1px 6px;margin-left:-6px}.ttlc:hover{background:var(--card2)}.ttlc.none{font-weight:500;color:var(--fg3);border:1px dashed var(--stroke2)}
+.dg .tag{white-space:nowrap}.rm.cp{color:var(--fg2)}.rm.cp:hover{background:var(--card2)}.rm{height:28px;padding:0 10px;border-radius:8px;border:1px solid var(--stroke2);background:var(--card);cursor:pointer;font-size:12px;color:#a23a1f}.rm:hover{background:#f7e3dc}
 .rowact{position:absolute;right:12px;top:50%;transform:translateY(-50%);display:flex;gap:6px;opacity:0;transition:opacity .12s}
 .dg tbody tr:hover .rowact{opacity:1}
 .rowact button{height:28px;padding:0 10px;border-radius:8px;border:1px solid var(--stroke2);background:var(--card);cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:6px}
@@ -416,7 +417,7 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
         <div class="card stat"><small><svg><use href="#i-file"/></svg>Word pages</small><b id="cPages">0</b><span>as saved by Word</span></div>
         <div class="card stat"><small><svg><use href="#i-sync"/></svg>Tool runs</small><b id="cRuns">0</b><span>files saved by tools</span></div>
       </div>
-      <section class="card"><table class="dg"><thead><tr><th style="width:56px">#</th><th>Title</th><th>File name</th><th class="n" style="width:140px">Slides / pages</th><th>Tools used</th><th style="width:130px">Time</th></tr></thead><tbody id="tbody"></tbody></table></section>
+      <section class="card"><table class="dg"><thead><tr><th style="width:44px">#</th><th style="width:170px">Title</th><th>File name</th><th class="n" style="width:104px">Slides / pages</th><th style="width:150px">Tools used</th><th style="width:118px">Time</th><th style="width:136px"></th></tr></thead><tbody id="tbody"></tbody></table></section>
     </div></div>
 
     <!-- ============ HELP ============ -->
@@ -509,7 +510,7 @@ async function api(p){const r=await fetch(p,{headers:{'X-S4C':TOKEN}});if(!r.ok)
 /* one line per chapter: the same chapter through several tools counts once */
 const SUF=/(\s+(Remediated|AltText|Links|Fixed)|_BEFORE_IMBKfix\d*)+$/i;
 function groupRows(rows){const m=new Map();rows.forEach(r=>{const dot=r.file.lastIndexOf('.');const stem=(dot>0?r.file.slice(0,dot):r.file).replace(SUF,'');const ext=dot>0?r.file.slice(dot):'';const k=(stem+ext).toLowerCase();
-  if(!m.has(k))m.set(k,{name:r.file,count:'',unit:r.unit,tools:[],first:r.time,last:r.time});const g=m.get(k);
+  if(!m.has(k))m.set(k,{key:k,name:r.file,count:'',unit:r.unit,tools:[],first:r.time,last:r.time});const g=m.get(k);
   if(r.file.length<g.name.length)g.name=r.file;if(r.count!=='')g.count=r.count;if(!g.tools.includes(r.tool))g.tools.push(r.tool);if(r.time<g.first)g.first=r.time;if(r.time>g.last)g.last=r.time});return [...m.values()]}
 function totals(rows){const g=groupRows(rows);let s=0,p=0;g.forEach(x=>{const n=parseInt(x.count)||0;if(x.unit==='slides')s+=n;else if(x.unit==='pages')p+=n});return {files:g.length,slides:s,pages:p,groups:g}}
 /* title from the file-name pattern: the part before the chapter / part / appendix marker (or a leading ISBN) */
@@ -635,10 +636,14 @@ async function load(keep){const day=$('day').value||'';const r=await (await api(
   drawPersona();$('upc').textContent=r.pc||'This PC';
   drawWork();if(keep){drawNav();drawStats()}else select(cur);drawGreet();drawGoal();achievements()}
 function editTitle(key){const T=getTitles();const cur=key in T?T[key]:key;const v=prompt('Title for every file named like this ('+(key||'no name pattern')+'). Leave empty to use the file-name text.',cur);if(v===null)return;if(v.trim()===''||v.trim().toLowerCase()===key)delete T[key];else T[key]=v.trim();LS.set('titles',T);drawWork();toast('ok','Title saved','Applies to all files with this name pattern, today and later')}
+async function removeRow(b){const n=b.dataset.n,k=b.dataset.k,dy=($('day').value)||state.today;if(!confirm('Remove "'+n+'" from the log for '+dy+'?\n\nUse this when a file was run by mistake. It will no longer count in Today\'s work, your goal or the report.'))return;
+  try{const r=await (await api('/api/delete?day='+dy+'&key='+encodeURIComponent(k))).json();await load(true);
+    if(r.removed)toast('ok','Removed from the log',n,['Undo',undoRemove],12000);else toast('err','Nothing was removed','That file was not found in the log.')}catch(e){toast('err','Could not remove it',e.message)}}
+async function undoRemove(){try{const r=await (await api('/api/undelete')).json();await load(true);toast('ok','Put back',r.restored+' run'+(r.restored===1?'':'s')+' restored to the log')}catch(e){toast('err','Could not undo',e.message)}}
 function copyName(b){const n=b.dataset.n;if(navigator.clipboard)navigator.clipboard.writeText(n).then(()=>toast('ok','Copied',n))}
 function drawWork(){const tt=totals(state.rows);$('cFiles').textContent=tt.files;$('cSlides').textContent=tt.slides;$('cPages').textContent=tt.pages;$('cRuns').textContent=state.rows.length;
-  $('tbody').innerHTML=tt.groups.length?tt.groups.map((g,i)=>{const isW=/\.docx$/i.test(g.name);const ti=titleOf(g.name);return '<tr><td>'+(i+1)+'</td><td>'+(ti.shown?'<span class="ttlc" onclick="editTitle(\''+esc(ti.key).replace(/'/g,"\\'")+'\')" title="Click to rename this title">'+esc(ti.shown)+'</span>':'<span class="ttlc none" onclick="editTitle(\''+esc(ti.key).replace(/'/g,"\\'")+'\')">+ Add title</span>')+'</td><td><div class="fn"><span class="tile" style="background:'+(isW?'var(--word)':'var(--ppt)')+'">'+(isW?'W':'P')+'</span>'+esc(g.name)+'</div></td><td class="n">'+unitTxt(g)+'</td><td>'+g.tools.map(x=>'<span class="tag">'+esc(x)+'</span>').join('')+'</td><td>'+esc(g.first===g.last?g.first:g.first+' – '+g.last)+'<span class="rowact"><button onclick="copyName(this)" data-n="'+esc(g.name)+'"><svg class="s" style="width:14px;height:14px"><use href="#i-file"/></svg>Copy name</button></span></td></tr>'}).join(''):
-    '<tr><td colspan="6" style="color:var(--fg3);padding:28px 16px">No files were saved by the tools on this day.</td></tr>'}
+  $('tbody').innerHTML=tt.groups.length?tt.groups.map((g,i)=>{const isW=/\.docx$/i.test(g.name);const ti=titleOf(g.name);return '<tr><td>'+(i+1)+'</td><td>'+(ti.shown?'<span class="ttlc" onclick="editTitle(\''+esc(ti.key).replace(/'/g,"\\'")+'\')" title="Click to rename this title">'+esc(ti.shown)+'</span>':'<span class="ttlc none" onclick="editTitle(\''+esc(ti.key).replace(/'/g,"\\'")+'\')">+ Add title</span>')+'</td><td><div class="fn"><span class="tile" style="background:'+(isW?'var(--word)':'var(--ppt)')+'">'+(isW?'W':'P')+'</span>'+esc(g.name)+'</div></td><td class="n">'+unitTxt(g)+'</td><td>'+g.tools.map(x=>'<span class="tag">'+esc(x)+'</span>').join('')+'</td><td>'+esc(g.first===g.last?g.first:g.first+' – '+g.last)+'</td><td class="n" style="white-space:nowrap"><button class="rm cp" onclick="copyName(this)" data-n="'+esc(g.name)+'" title="Copy the file name">Copy</button> <button class="rm" data-k="'+esc(g.key)+'" data-n="'+esc(g.name)+'" onclick="removeRow(this)" title="Remove this file from the log (use it when a file was run by mistake)">Remove</button></td></tr>'}).join(''):
+    '<tr><td colspan="7" style="color:var(--fg3);padding:28px 16px">No files were saved by the tools on this day.</td></tr>'}
 async function report(){const day=$('day').value||state.today;try{const r=await api('/api/report?day='+day+'&name='+encodeURIComponent(LS.get('name',''))+'&titles='+encodeURIComponent(JSON.stringify(getTitles())));const b=await r.blob();
   const cd=r.headers.get('Content-Disposition')||'';const m=/filename="([^"]+)"/.exec(cd);const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=m?m[1]:'Work report.txt';document.body.appendChild(a);a.click();a.remove();toast('ok','Report downloaded',m?m[1]:'')}catch(e){toast('err','Could not make the report',e.message)}}
 

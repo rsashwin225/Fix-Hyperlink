@@ -10,9 +10,11 @@
 #   5. List items that had their numbering switched off by accident, or that sit in a separate copy
 #      of the same list, are put back into the main list so the numbering runs on correctly.
 #   6. The file's Title (File > Info) is set from the title lines.
+#   7. Team format: headings start at Heading 1 (no skipped level), typed bullets become real bullets, and lecture-outline
+#      lists ("LO ..." styles) become List Paragraph items with a separate list per parent item (as in the team's finished files).
 #
 # The original file is never changed: the result is saved as "<name> Fixed.docx" with a report next to it.
-$WF_VERSION = '2.2'   # shown at the start of the window; the updater compares this number with GitHub
+$WF_VERSION = '2.3'   # shown at the start of the window; the updater compares this number with GitHub
 # ---- work log: notes each saved file (name, slides or pages) for the daily report in S4C Tools ----
 # Only reads the saved file; never changes it and never stops the tool if something goes wrong.
 function Add-WorkLog([string]$tool, [string]$inPath, [string]$outPath) {
@@ -1564,6 +1566,10 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
             if ($changedLabels.Count -gt 40) { $report.Add('CHECK: ... and ' + ($changedLabels.Count - 40) + ' more') }
         }
 
+        # ---- the team's structure (headings, real bullets, lecture-outline lists)
+        $numRef = [ref]$num; $nnsmRef = [ref]$nnsm
+        Invoke-TeamFormat $doc $nsm $sty $snsm $numRef $nnsmRef $info $defStyle $report
+        $num = $numRef.Value; $nnsm = $nnsmRef.Value
         Write-Entry $zip 'word/document.xml' $doc.OuterXml
         Write-Entry $zip 'word/styles.xml' $sty.OuterXml
         if ($num) { Write-Entry $zip 'word/numbering.xml' $num.OuterXml }
@@ -1586,6 +1592,196 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
     $chk = [IO.Compression.ZipFile]::OpenRead($outPath); $chk.Dispose()
     if ($report.Count -eq 0) { $report.Add('Nothing needed fixing in this file.') }
     return ,$report
+}
+
+# ----------------------------------------------------------------- team format
+# Learned from files the remediation team finished by hand (CH24 and others). After the fixes above, the file is put in the
+# same structure the team uses. The look (fonts, sizes, indents) is kept; only the structure changes:
+#   a. Headings start at Heading 1 with no skipped level; the chapter's main sections (Unit Summary ... Lecture) are Heading 1;
+#      a short unnumbered "LO 1 A" line right under a heading (for example "Trauma") becomes the next heading level.
+#   b. Bullets typed by hand ("* text") become real bullet lists (the typed bullet is removed).
+#   c. Lecture-outline lists (styles named "LO ...") become List Paragraph items, one list per parent item so each level
+#      restarts correctly (I. / A. / 1. / a. ...), with the same numbers the reader saw before.
+$TEAM_TOP_SECTIONS = @('unit summary', 'national ems education standard competencies', 'knowledge objectives', 'skills objectives', 'readings and preparation', 'support materials', 'enhancements', 'teaching tips', 'unit activities', 'pre-lecture', 'lecture', 'post-lecture')
+$TEAM_LIST_STYLE_RX = '^(?i)LO[_\s]'
+$TEAM_BULLET_RX = '^[•·●▪◦‣]\s*'
+function Invoke-TeamFormat($doc, $nsm, $sty, $snsm, $numRef, $nnsmRef, $info, [string]$defStyle, $report) {
+    $num = $numRef.Value; $nnsm = $nnsmRef.Value
+    $all = @($doc.SelectNodes('/w:document/w:body//w:p', $nsm))
+    $pStyleId = { param($p) $v = WAttr (SSN $p 'w:pPr/w:pStyle' $nsm) 'val'; if ($v) { $v } else { $defStyle } }
+    $styName = { param($sid) if ($info.ContainsKey($sid)) { [string]$info[$sid].name } else { '' } }
+    $textBefore = @{}; foreach ($p in $all) { $textBefore[$p] = Get-ParaText $p $nsm }
+    $labelsBefore = Get-ListLabels $all $nsm $sty $snsm $num $nnsm $defStyle
+    $usedIds = @{}
+    $nHead = 0; $nBul = 0; $nList = 0
+
+    # a style that is based on itself is broken (Word may refuse the file): base it on Normal instead
+    foreach ($k in @($info.Keys)) { $b = $info[$k].basedOn; if ($b -and $b -eq $k) { $bn = SSN $info[$k].node 'w:basedOn' $snsm; if ($bn) { if ($defStyle -and $defStyle -ne $k) { Set-WAttr $bn 'val' $defStyle } else { [void]$bn.ParentNode.RemoveChild($bn) }; $info[$k].basedOn = $null } } }
+
+    # ---- a. headings
+    $heads = New-Object System.Collections.Generic.List[object]; $prevHead = $null; $prevAny = $null
+    foreach ($p in $all) {
+        $t = (Get-ParaText $p $nsm).Trim()
+        if (-not $t) { continue }
+        if ($p.SelectSingleNode('ancestor::w:tbl|ancestor::w:txbxContent', $nsm)) { $prevAny = $null; continue }
+        $sid = & $pStyleId $p; $nm = & $styName $sid
+        $m = [regex]::Match($nm, '^(?i)heading ([1-9])$')
+        if ($m.Success) { $h = @{ p = $p; sid = $sid; lvl = [int]$m.Groups[1].Value; new = 0; pend = $false; parent = $null; text = $t }; $heads.Add($h); $prevHead = $h; $prevAny = $h; continue }
+        $isLine = ($nm -match '^(?i)LO[_\s]?1[_\s]?A$') -and $t.Length -le 80 -and -not (SSN $p 'w:pPr/w:numPr/w:numId' $nsm) -and -not (Get-StyleChainValue $info $sid 'numPr')
+        if ($isLine -and $prevAny -ne $null -and $prevAny.ContainsKey('parent')) { $h = @{ p = $p; sid = $sid; lvl = 0; new = 0; pend = $true; parent = $prevAny; text = $t }; $heads.Add($h); $prevAny = $h; continue }
+        $prevAny = $null
+    }
+    $real = @($heads | Where-Object { -not $_.pend })
+    if ($real.Count -gt 0) {
+        $lv = @($real | ForEach-Object { $_.lvl } | Sort-Object -Unique); $map = @{}; $i = 1; foreach ($l in $lv) { $map[$l] = $i; $i++ }
+        foreach ($h in $real) {
+            $h.new = $map[$h.lvl]
+            if ($TEAM_TOP_SECTIONS -contains (($h.text -replace '[:\s]+$', '').ToLowerInvariant())) { $h.new = 1 }
+        }
+        $prevL = 0; $bump = $null
+        foreach ($h in $heads) {
+            if ($h.pend) { $h.new = $h.parent.new + 1; $bump = @{ lvl = $h.parent.lvl } }
+            elseif ($bump) { if ($h.lvl -gt $bump.lvl) { $h.new = $h.new + 1 } else { $bump = $null } }
+            if ($h.new -gt $prevL + 1) { $h.new = $prevL + 1 }
+            if ($h.new -gt 9) { $h.new = 9 }
+            $prevL = $h.new
+        }
+        foreach ($h in $heads) {
+            if (-not $h.pend -and $h.new -eq $h.lvl) { continue }
+            $tgt = Use-BuiltinStyle $sty $snsm $info ('heading ' + $h.new) ('Heading' + $h.new) $null $usedIds ($h.new - 1)
+            Set-StyleKeepLook $h.p $nsm $info $snsm $sty $h.sid $tgt $defStyle
+            $nHead++
+        }
+    }
+
+    # ---- list definitions are added to numbering.xml when needed
+    if (-not $num) {
+        $num = New-XmlDoc ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:w="' + $NS_W + '"/>'); $nnsm = New-Ns $num; $script:NewNumbering = $true
+        $numRef.Value = $num; $nnsmRef.Value = $nnsm
+    }
+    $nroot = $num.DocumentElement
+    $maxNum = 0; foreach ($n in $num.SelectNodes('/w:numbering/w:num', $nnsm)) { $v = [int](WAttr $n 'numId'); if ($v -gt $maxNum) { $maxNum = $v } }
+    $maxAbs = -1; foreach ($n in $num.SelectNodes('/w:numbering/w:abstractNum', $nnsm)) { $v = [int](WAttr $n 'abstractNumId'); if ($v -gt $maxAbs) { $maxAbs = $v } }
+    $addAbs = { param($absNode)
+        $first = $num.SelectSingleNode('/w:numbering/w:num', $nnsm)
+        if ($first) { [void]$nroot.InsertBefore($absNode, $first) } else { [void]$nroot.AppendChild($absNode) } }
+    $addNum = { param([string]$absId, [int]$lvl, [int]$start)
+        $script:TFmaxNum++
+        $n = New-W $num 'num'; Set-WAttr $n 'numId' ([string]$script:TFmaxNum)
+        $a = New-W $num 'abstractNumId'; Set-WAttr $a 'val' $absId; [void]$n.AppendChild($a)
+        if ($start -ge 0) { $o = New-W $num 'lvlOverride'; Set-WAttr $o 'ilvl' ([string]$lvl); $s = New-W $num 'startOverride'; Set-WAttr $s 'val' ([string]$start); [void]$o.AppendChild($s); [void]$n.AppendChild($o) }
+        $cl = $num.SelectSingleNode('/w:numbering/w:numIdMacAtCleanup', $nnsm)
+        if ($cl) { [void]$nroot.InsertBefore($n, $cl) } else { [void]$nroot.AppendChild($n) }
+        return [string]$script:TFmaxNum }
+    $script:TFmaxNum = $maxNum
+
+    # ---- b. typed bullets -> real bullets
+    $bulNum = $null
+    foreach ($p in $all) {
+        if (SSN $p 'w:pPr/w:numPr/w:numId' $nsm) { continue }
+        $sid = & $pStyleId $p; if ((& $styName $sid) -match '^(?i)(heading \d|title)') { continue }
+        $t = Get-ParaText $p $nsm
+        $m = [regex]::Match($t, $TEAM_BULLET_RX); if (-not $m.Success -or $t.Trim().Length -le $m.Length) { continue }
+        if (Get-StyleChainValue $info $sid 'numPr') { continue }
+        if (-not $bulNum) {
+            $maxAbs++; $ab = New-W $num 'abstractNum'; Set-WAttr $ab 'abstractNumId' ([string]$maxAbs)
+            $mt = New-W $num 'multiLevelType'; Set-WAttr $mt 'val' 'hybridMultilevel'; [void]$ab.AppendChild($mt)
+            for ($l = 0; $l -lt 9; $l++) {
+                $lvl = New-W $num 'lvl'; Set-WAttr $lvl 'ilvl' ([string]$l)
+                $st = New-W $num 'start'; Set-WAttr $st 'val' '1'; [void]$lvl.AppendChild($st)
+                $nf = New-W $num 'numFmt'; Set-WAttr $nf 'val' 'bullet'; [void]$lvl.AppendChild($nf)
+                $lt = New-W $num 'lvlText'; $ch = @([string][char]0xF0B7, 'o', [string][char]0xF0A7)[$l % 3]; Set-WAttr $lt 'val' $ch; [void]$lvl.AppendChild($lt)
+                $jc = New-W $num 'lvlJc'; Set-WAttr $jc 'val' 'left'; [void]$lvl.AppendChild($jc)
+                $pp = New-W $num 'pPr'; $ind = New-W $num 'ind'; Set-WAttr $ind 'left' ([string](720 + 720 * $l)); Set-WAttr $ind 'hanging' '360'; [void]$pp.AppendChild($ind); [void]$lvl.AppendChild($pp)
+                $rp = New-W $num 'rPr'; $rf = New-W $num 'rFonts'; $fn = @('Symbol', 'Courier New', 'Wingdings')[$l % 3]; Set-WAttr $rf 'ascii' $fn; Set-WAttr $rf 'hAnsi' $fn; Set-WAttr $rf 'cs' $fn; Set-WAttr $rf 'hint' 'default'; [void]$rp.AppendChild($rf); [void]$lvl.AppendChild($rp)
+                [void]$ab.AppendChild($lvl)
+            }
+            & $addAbs $ab
+            $bulNum = & $addNum ([string]$maxAbs) 0 -1
+        }
+        Remove-LeadingChars $p $nsm $m.Length
+        $pPr = $p.SelectSingleNode('w:pPr', $nsm); if (-not $pPr) { $pPr = New-W $doc 'pPr'; [void]$p.PrependChild($pPr) }
+        $np = New-W $doc 'numPr'; $il = New-W $doc 'ilvl'; Set-WAttr $il 'val' '0'; $ni = New-W $doc 'numId'; Set-WAttr $ni 'val' $bulNum; [void]$np.AppendChild($il); [void]$np.AppendChild($ni); [void]$pPr.AppendChild($np)
+        Sort-Kids $pPr $PPR_ORDER
+        $nBul++
+    }
+
+    # ---- c. lecture-outline lists -> List Paragraph items, one list per parent item
+    $numToAbs = @{}; $ovr = @{}
+    foreach ($n in $num.SelectNodes('/w:numbering/w:num', $nnsm)) {
+        $id = WAttr $n 'numId'; $numToAbs[$id] = WAttr (SSN $n 'w:abstractNumId' $nnsm) 'val'; $ovr[$id] = @{}
+        foreach ($o in $n.SelectNodes('w:lvlOverride', $nnsm)) { $so = SSN $o 'w:startOverride' $nnsm; if ($so) { $ovr[$id][[int](WAttr $o 'ilvl')] = [int](WAttr $so 'val') } }
+    }
+    $absNodes = @{}; foreach ($an in $num.SelectNodes('/w:numbering/w:abstractNum', $nnsm)) { $absNodes[(WAttr $an 'abstractNumId')] = $an }
+    $lpId = $null
+    foreach ($k in $info.Keys) { if ($info[$k].name -ieq 'List Paragraph') { $lpId = $k; break } }
+    $perDepth = @{}; $cnt = @{}; $seen = @{}; $prevItem = @{}
+    foreach ($p in $all) {
+        $nid = WAttr (SSN $p 'w:pPr/w:numPr/w:numId' $nsm) 'val'; if (-not $nid -or $nid -eq '0' -or -not $numToAbs.ContainsKey($nid)) { continue }
+        $a = $numToAbs[$nid]; if (-not $absNodes.ContainsKey($a)) { continue }
+        $d = 0; $ilv = WAttr (SSN $p 'w:pPr/w:numPr/w:ilvl' $nsm) 'val'; if ($ilv) { $d = [int]$ilv }
+        $lvN = $absNodes[$a].SelectSingleNode('w:lvl[@w:ilvl="' + $d + '"]', $nnsm); if (-not $lvN) { continue }
+        if (-not $cnt.ContainsKey($a)) { $cnt[$a] = @{} }
+        if (-not $seen.ContainsKey($nid)) { $seen[$nid] = $true; foreach ($k in $ovr[$nid].Keys) { $cnt[$a][$k] = $ovr[$nid][$k] - 1 } }
+        if (-not $cnt[$a].ContainsKey($d)) { $s0 = WAttr (SSN $lvN 'w:start' $nnsm) 'val'; $cnt[$a][$d] = $(if ($s0) { [int]$s0 } else { 1 }) - 1 }
+        $cnt[$a][$d] = $cnt[$a][$d] + 1
+        foreach ($k in @($cnt[$a].Keys)) { if ($k -gt $d) { [void]$cnt[$a].Remove($k) } }
+        $kv = $cnt[$a][$d]
+        $sid = & $pStyleId $p
+        if ((& $styName $sid) -notmatch $TEAM_LIST_STYLE_RX) { $prevItem.Remove($nid); continue }
+        if (-not $lpId) {
+            $lpId = Use-BuiltinStyle $sty $snsm $info 'List Paragraph' 'ListParagraph' $null $usedIds
+            $ls = $info[$lpId].node
+            if (-not (SSN $ls 'w:basedOn' $snsm)) { $bo = New-W $sty 'basedOn'; Set-WAttr $bo 'val' $defStyle; $nn = SSN $ls 'w:name' $snsm; [void]$ls.InsertAfter($bo, $nn) }
+            if (-not (SSN $ls 'w:pPr' $snsm)) { $sp = New-W $sty 'pPr'; $ci = New-W $sty 'contextualSpacing'; $ind = New-W $sty 'ind'; Set-WAttr $ind 'left' '720'; [void]$sp.AppendChild($ind); [void]$sp.AppendChild($ci); [void]$ls.AppendChild($sp) }
+        }
+        $key = $a + '|' + $d
+        if (-not $perDepth.ContainsKey($key)) {
+            $maxAbs++; $ab = New-W $num 'abstractNum'; Set-WAttr $ab 'abstractNumId' ([string]$maxAbs)
+            $mt = New-W $num 'multiLevelType'; Set-WAttr $mt 'val' 'hybridMultilevel'; [void]$ab.AppendChild($mt)
+            $txt0 = WAttr (SSN $lvN 'w:lvlText' $nnsm) 'val'
+            for ($l = 0; $l -lt 9; $l++) {
+                $nl = $lvN.CloneNode($true); Set-WAttr $nl 'ilvl' ([string]$l)
+                foreach ($x in @($nl.SelectNodes('w:pStyle|w:tplc', $nnsm))) { [void]$nl.RemoveChild($x) }
+                $nt = SSN $nl 'w:lvlText' $nnsm; if ($nt) { Set-WAttr $nt 'val' ($txt0 -replace ('%' + ($d + 1)), ('%' + ($l + 1))) }
+                $pp = SSN $nl 'w:pPr' $nnsm; if (-not $pp) { $pp = New-W $num 'pPr'; [void]$nl.AppendChild($pp) }
+                $ind = SSN $pp 'w:ind' $nnsm; if (-not $ind) { $ind = New-W $num 'ind'; [void]$pp.AppendChild($ind) }
+                Set-WAttr $ind 'left' ([string](720 + 360 * $l)); Set-WAttr $ind 'hanging' '360'
+                foreach ($at in @('firstLine', 'start', 'end')) { [void]$ind.RemoveAttribute($at, $NS_W) }
+                [void]$ab.AppendChild($nl)
+            }
+            & $addAbs $ab; $perDepth[$key] = [string]$maxAbs
+        }
+        $pi = $prevItem[$nid]
+        if ($pi -and $pi.d -eq $d -and $pi.k + 1 -eq $kv) { $newNum = $pi.n }
+        else { $newNum = & $addNum $perDepth[$key] $d $kv }
+        $prevItem[$nid] = @{ d = $d; k = $kv; n = $newNum }
+        Set-StyleKeepLook $p $nsm $info $snsm $sty $sid $lpId $defStyle
+        $pPr = $p.SelectSingleNode('w:pPr', $nsm)
+        foreach ($x in @($pPr.SelectNodes('w:ind', $nsm))) { [void]$pPr.RemoveChild($x) }   # the indent now comes from the list level, as in the team's files
+        $np = $pPr.SelectSingleNode('w:numPr', $nsm)
+        if (-not $np) { $np = New-W $doc 'numPr'; [void]$pPr.AppendChild($np) }
+        foreach ($c in @($np.ChildNodes)) { [void]$np.RemoveChild($c) }
+        $il = New-W $doc 'ilvl'; Set-WAttr $il 'val' ([string]$d); $ni = New-W $doc 'numId'; Set-WAttr $ni 'val' $newNum; [void]$np.AppendChild($il); [void]$np.AppendChild($ni)
+        Sort-Kids $pPr $PPR_ORDER
+        $nList++
+    }
+
+    # ---- check: what the reader sees must be the same as before
+    $norm = { param([string]$s) ((($s -replace '[•·●▪◦‣]', '*') -replace '\s', '')) }
+    $labelsAfter = Get-ListLabels $all $nsm $sty $snsm $num $nnsm $defStyle
+    $bad = @()
+    foreach ($p in $all) {
+        $vb = & $norm (([string]$labelsBefore[$p]) + $textBefore[$p]); $va = & $norm (([string]$labelsAfter[$p]) + (Get-ParaText $p $nsm))
+        if ($vb -ne $va) { $bad += ("'" + ((Get-ParaText $p $nsm).Trim() -replace '^(.{60}).+$', '$1...') + "'") }
+    }
+    if ($nHead) { [void]$report.RemoveAll([Predicate[string]]{ param($x) $x -like 'CHECK: heading *(a heading level is skipped)' }) }
+    if ($nBul) { [void]$report.RemoveAll([Predicate[string]]{ param($x) $x -match "^CHECK: \d+ paragraphs starting '[\u2022\u00B7\u25CF\u25AA\u25E6\u2023\uF0B7]" }) }
+    if ($nHead) { $report.Add("Team format: $nHead heading(s) set to the team's levels (Heading 1 for the main sections, no skipped levels)") }
+    if ($nBul) { $report.Add("Team format: $nBul typed bullet(s) turned into real bullet lists") }
+    if ($nList) { $report.Add("Team format: $nList lecture-outline line(s) turned into List Paragraph items (one list per parent item, numbering restarts correctly)") }
+    if ($bad.Count) { $report.Add('Team format: ' + $bad.Count + ' line(s) show a different number or bullet than before:'); foreach ($b in ($bad | Select-Object -First 30)) { $report.Add('CHECK: ' + $b) } }
+    elseif ($nHead + $nBul + $nList) { $report.Add('Team format: all text, numbers and bullets look exactly as before.') }
 }
 
 # ----------------------------------------------------------------- main

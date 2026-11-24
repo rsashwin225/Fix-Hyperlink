@@ -1,5 +1,5 @@
 # S4C HUB SCRIPT - the S4C Tools window. Runs a small page on this PC only (http://localhost) and opens it
-# S4C-FILE-VERSION: 1.2
+# S4C-FILE-VERSION: 1.3
 # in the browser. From the page you pick a tool, it checks GitHub for that one tool, then opens the tool
 # in its own window exactly as before. Close this window to close S4C Tools.
 $ErrorActionPreference = 'Stop'
@@ -165,6 +165,41 @@ while ($listener.IsListening -and -not $quit) {
                 Step-Job $j
                 $body = [ordered]@{ id = $j.Id; tool = $j.File; state = $j.State; update = $j.Status; version = (Get-ToolVersion $j.File) }
                 Send $res 200 'application/json' (ToJson $body) $null
+            }
+            '/api/delete' {
+                # removes ONE chapter (all its tool runs) from this person's work log for the day; the removed lines are kept so it can be undone
+                $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }
+                $dir = Join-Path (Join-Path $base 'S4C_Tools') 'WorkLog'; $log = Join-Path $dir 'worklog.tsv'; $trash = Join-Path $dir 'worklog.deleted.tsv'
+                $day = $q['day']; $key = ([string]$q['key']).ToLowerInvariant(); $removed = 0
+                if ($day -and $key -and (Test-Path -LiteralPath $log)) {
+                    $keep = New-Object System.Collections.Generic.List[string]; $gone = New-Object System.Collections.Generic.List[string]
+                    foreach ($l in [IO.File]::ReadAllLines($log, [Text.Encoding]::UTF8)) {
+                        $c = $l.Split("`t"); $hit = $false
+                        if ($c.Count -ge 8 -and $c[0] -eq $day) {
+                            $leaf = [IO.Path]::GetFileName($c[4])
+                            $k = (([IO.Path]::GetFileNameWithoutExtension($leaf) -replace '(?i)(\s+(Remediated|AltText|Links|Fixed)|_BEFORE_IMBKfix\d*)+$', '') + [IO.Path]::GetExtension($leaf)).ToLowerInvariant()
+                            if ($k -eq $key) { $hit = $true }
+                        }
+                        if ($hit) { $gone.Add($l) } else { $keep.Add($l) }
+                    }
+                    if ($gone.Count) {
+                        Copy-Item -LiteralPath $log -Destination (Join-Path $dir 'worklog.backup.tsv') -Force
+                        [IO.File]::WriteAllLines($trash, $gone.ToArray(), (New-Object Text.UTF8Encoding($false)))
+                        [IO.File]::WriteAllLines($log, $keep.ToArray(), (New-Object Text.UTF8Encoding($false)))
+                        $removed = $gone.Count
+                    }
+                }
+                Send $res 200 'application/json; charset=utf-8' (ToJson ([ordered]@{ removed = $removed })) $null
+            }
+            '/api/undelete' {
+                $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }
+                $dir = Join-Path (Join-Path $base 'S4C_Tools') 'WorkLog'; $log = Join-Path $dir 'worklog.tsv'; $trash = Join-Path $dir 'worklog.deleted.tsv'; $back = 0
+                if (Test-Path -LiteralPath $trash) {
+                    $lines = [IO.File]::ReadAllLines($trash, [Text.Encoding]::UTF8)
+                    if ($lines.Count) { [IO.File]::AppendAllLines($log, $lines, (New-Object Text.UTF8Encoding($false))); $back = $lines.Count }
+                    Remove-Item -LiteralPath $trash -Force -ErrorAction SilentlyContinue
+                }
+                Send $res 200 'application/json; charset=utf-8' (ToJson ([ordered]@{ restored = $back })) $null
             }
             '/api/report' {
                 $day = [datetime]::ParseExact($q['day'], 'yyyy-MM-dd', $ci)
