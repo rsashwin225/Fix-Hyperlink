@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="1.5">
+<meta name="s4c-hub-version" content="1.7">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -427,7 +427,7 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
       <div class="help">
         <div class="card"><h3><svg class="i"><use href="#i-run"/></svg>Pick a tool and press Run</h3><p>Choose a tool on the left and press <b>Run</b> (or Enter). S4C Tools checks GitHub for that one tool, then opens it in its own window, exactly as before. Pick your files in that window.</p></div>
         <div class="card"><h3><svg class="i"><use href="#i-sync"/></svg>Updates from GitHub</h3><p>Only the tool you choose is checked. The bar at the top says <b>Newest version</b>, <b>Updated</b> or <b>Not connected</b>. If GitHub can't be reached, the copy on this PC is used and the tool still runs.</p></div>
-        <div class="card"><h3><svg class="i"><use href="#i-shield"/></svg>Your files are safe</h3><p>Each tool saves a new copy next to your file (<code>Fixed</code>, <code>Remediated</code>, <code>AltText</code>, <code>Links</code>). PPT Fixer in IMBK mode works on the file itself and keeps a backup named <code>_BEFORE_IMBKfix</code>.</p></div>
+        <div class="card"><h3><svg class="i"><use href="#i-shield"/></svg>Your files are safe</h3><p>Each tool saves a new copy next to your file (<code>Fixed</code>, <code>Remediated</code>, <code>AltText</code>, <code>Links</code>). IMBK Macro works on the file itself and keeps a backup named <code>_BEFORE_IMBKfix</code>.</p></div>
         <div class="card"><h3><svg class="i"><use href="#i-cal"/></svg>Daily report</h3><p>Every saved file is noted with its slide or page count. Open <b>Today's work</b> and press <b>Download report</b>. A chapter run through several tools counts once.</p></div>
         <div class="card"><h3><svg class="i"><use href="#i-window"/></svg>Keep the S4C Tools window open</h3><p>This page runs from the small S4C Tools window. Closing that window closes S4C Tools. Double-click <code>S4C Tools.cmd</code> to open it again.</p></div>
         <div class="card"><h3><svg class="i"><use href="#i-help"/></svg>Something not working?</h3><p>Use <code>S4C Tools - classic menu.cmd</code> in the same folder; it runs the same tools from a text menu. Send a screenshot of any red message to Hari.</p></div>
@@ -473,13 +473,20 @@ const TOOLS=[
   idea:'The text is never changed. A safety check compares every word before the copy is saved.',
   steps:[['Choose files','In the tool window'],['Check GitHub','Newest version of this tool'],['Fix headings','Title, Heading 1, Heading 2'],['Fix list levels','I, A, 1, a, i, (a), (i)'],['Save a copy','Fixed.docx + report'],['Note in today\'s work','For the daily report']],
   checks:['Title is the first two lines','Section titles are Heading 1','No heading level is skipped','Roman numerals are lists, not headings','List ladder: I, A, 1, a, i, (a), (i)']},
- {file:'PPT_Fixer.ps1',art:'slide',name:'PPT Fixer',group:1,letter:'P',tile:'var(--ppt)',out:'<name> Remediated.pptx (IMBK: same file + backup)',unit:'slides',
-  tagline:'One PowerPoint tool: you choose IMBK, SDRS or Standard each time.',
+ {file:'SLID_Macro.ps1',art:'slide',name:'SLID Macro',group:1,letter:'P',tile:'var(--ppt)',out:'<name> Remediated.pptx',unit:'slides',
+  tagline:'Slide titles, shape names and reading order. SDRS credit lines too.',
   intro:['Repeated slide titles sound identical to a screen reader, shapes named <code>Rectangle 6</code> say nothing, and loose caption and credit boxes are read in the wrong place.',
-         'PPT Fixer asks which type of deck it is. All types add <code>(1 of 10)</code> to repeated titles, name shapes Title, TextBox and Picture in reading order, set the language to English (US) and fill the document title.'],
-  idea:'IMBK also lays out figures and turns captions and credits into real placeholders (the file is changed in place, a backup is kept). SDRS also moves sideways photo credits under their picture. Standard saves a Remediated copy.',
-  steps:[['Choose type and files','IMBK, SDRS or Standard'],['Check GitHub','Newest version of this tool'],['Number titles','(1 of N) on repeated titles'],['Name shapes','Title, TextBox, Picture'],['Reading order','Title, picture, credit, caption'],['Save','Remediated.pptx, or IMBK backup']],
-  checks:['You picked the right type for the deck','Repeated titles end in (1 of N)','Shapes are named in reading order','Credit sits under its picture (SDRS, IMBK)','Language is English (US) and the document title is set']},
+         'SLID Macro adds <code>(1 of 10)</code> to repeated titles, names shapes Title, TextBox and Picture in reading order, sets the language to English (US) and fills the document title.'],
+  idea:'For SDRS files (the file name contains SDRS) it also turns sideways photo credits upright and places them under their picture, so the reading order is title, picture, credit, caption. Other files are not touched this way.',
+  steps:[['Pick files','PowerPoint decks'],['Check GitHub','Newest version of this tool'],['Number titles','(1 of N) on repeated titles'],['Name shapes','Title, TextBox, Picture'],['Reading order','Title, picture, credit, caption'],['Save','Remediated.pptx']],
+  checks:['Repeated titles end in (1 of N)','Shapes are named in reading order','SDRS files: credit sits under its picture','Language is English (US) and the document title is set']},
+ {file:'IMBK_Macro.ps1',art:'layout',name:'IMBK Macro',group:1,letter:'P',tile:'var(--ppt)',out:'<name> (same file, backup kept)',unit:'slides',
+  tagline:'IMBK chapter decks: figures, captions and credits laid out.',
+  intro:['IMBK decks have figures, captions and credits that must sit in a fixed layout and be real placeholders.',
+         'IMBK Macro lays them out, numbers repeated titles, names shapes, sets the language and the document title.'],
+  idea:'It works on the file itself and keeps a backup named <code>_BEFORE_IMBKfix</code> next to it.',
+  steps:[['Pick files','IMBK decks'],['Check GitHub','Newest version of this tool'],['Lay out figures','Captions and credits'],['Name shapes','Title, TextBox, Picture'],['Save','Same file + backup']],
+  checks:['Figures, captions and credits are in place','Repeated titles end in (1 of N)','A _BEFORE_IMBKfix backup exists']},
  {file:'AltText_Tool.ps1',art:'alt',name:'Alt Text Tool',group:1,letter:'P',tile:'var(--ppt)',out:'<name> AltText.pptx',unit:'slides',
   tagline:'Fills picture alt text from the client\'s Excel log, matched by figure number.',
   intro:['The client sends alt text in an Excel file, one row per figure. Copying it into every picture by hand is slow and easy to get wrong.',
@@ -757,9 +764,9 @@ async function restartHub(){toast('inf','Restarting S4C Tools','This page reload
 async function checkHub(n){try{const r=await (await api('/api/hub')).json();$('hubVer').textContent='Page version '+PAGE_VER+'.';
     if(!r.done){if((n||0)<40)setTimeout(()=>checkHub((n||0)+1),5000);return}
     const ups=r.updated||[];const hubPs=ups.some(x=>/^S4C_Hub\.ps1 /.test(x));
-    if(r.restart){toast('inf','S4C Tools has been updated','One restart finishes the update. It takes a few seconds.',['Restart now',restartHub],30000);return}
+    if(r.restart){toast('inf','S4C Tools has been updated','Press Refresh. It restarts by itself and reloads this page.',['Refresh',restartHub],60000);return}
     // an older copy of this program (it cannot restart itself) is still running although GitHub gave it a new version
-    if(hubPs&&r.restart===undefined){toast('inf','S4C Tools has been updated','Close the black S4C Tools window and open S4C Tools again once to finish the update.',null,30000);return}
+    if(hubPs&&r.restart===undefined){toast('inf','S4C Tools has been updated','This PC has an older copy running. Close the black window and open S4C Tools once more. After this, Refresh does everything.',null,60000);return}
     // only offer the refresh while the page on screen is older than the page on this PC
     if(vgt(r.version,PAGE_VER))toast('inf','S4C Tools has a new look waiting','Page '+PAGE_VER+' -> '+r.version+'. Refresh to see it.',['Refresh',()=>location.reload()],30000);
   }catch(e){}}

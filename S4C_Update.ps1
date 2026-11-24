@@ -1,11 +1,12 @@
 # S4C UPDATE SCRIPT (TESTING BUILD) - checks the 'testing' branch on GitHub for ONE tool and replaces the local copy
-# S4C-FILE-VERSION: 1.2
+# S4C-FILE-VERSION: 1.3
 # only when GitHub has a HIGHER version number. An older or same-numbered file on GitHub never replaces the copy here.
 # Used by "S4C Tools.cmd" for the tool you pick. Never stops the tool from running.
 param([string]$Tool)
 $info = @{
     'Word_Fixer.ps1'   = @('Word Fixer',    'WORD FIXER SCRIPT',    "WF_VERSION\s*=\s*'([^']+)'")
-    'PPT_Fixer.ps1'    = @('PPT Fixer',     'PPT FIXER SCRIPT',     "PPT_VERSION\s*=\s*'([^']+)'")
+    'IMBK_Macro.ps1'   = @('IMBK Macro',    'IMBK FIGURE LAYOUT',   "IMBK_VERSION\s*=\s*'([^']+)'")
+    'SLID_Macro.ps1'   = @('SLID Macro',    'SLID MACRO SCRIPT',    "SLID_VERSION\s*=\s*'([^']+)'")
     'AltText_Tool.ps1' = @('Alt Text Tool', 'ALT TEXT TOOL SCRIPT', "ALT_VERSION\s*=\s*'([^']+)'")
     'Link_Fixer.ps1'   = @('Link Fixer',    '# Link_Fixer.ps1',     '(?m)^\$LF_VERSION\s*=\s*(\d+)')
 }[$Tool]
