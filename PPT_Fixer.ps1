@@ -7,7 +7,7 @@
 #   3  Standard  numbers repeated titles (1 of 4), names shapes Title / TextBox / Picture in reading order, sets the
 #                language to English (US) and the document title. Saves "<name> Remediated.pptx".
 # PPT FIXER SCRIPT
-$PPT_VERSION = '1.1'   # shown at the start of the window; the updater compares this number with GitHub
+$PPT_VERSION = '1.2'   # shown at the start of the window; the updater compares this number with GitHub
 # ---- work log: notes each saved file (name, slides or pages) for the daily report in S4C Tools ----
 # Only reads the saved file; never changes it and never stops the tool if something goes wrong.
 function Add-WorkLog([string]$tool, [string]$inPath, [string]$outPath) {
@@ -1518,16 +1518,18 @@ elseif ($args.Count -gt 0) { $files = @($args) }
 else {
     Write-Host 'A window is opening - choose your PowerPoint file(s) there. If you do not see it, look in the taskbar.' -ForegroundColor Yellow
     try {
-        Add-Type -AssemblyName System.Windows.Forms
-        Add-Type -AssemblyName System.Drawing
-        $owner = New-Object System.Windows.Forms.Form; $owner.TopMost = $true
-        $dlg = New-Object System.Windows.Forms.OpenFileDialog
-        $dlg.Title = 'Select the PowerPoint file(s) to fix'; $dlg.Filter = 'PowerPoint presentations (*.pptx;*.pptm)|*.pptx;*.pptm'; $dlg.Multiselect = $true
-        # a tiny invisible window in front of everything, so the file window opens on top (not behind other windows)
-        $owner.ShowInTaskbar = $false; $owner.StartPosition = 'Manual'; $owner.Location = New-Object Drawing.Point(-2000, -2000); $owner.Size = New-Object Drawing.Size(1, 1)
-        $owner.Show(); $owner.Activate()
-        if ($dlg.ShowDialog($owner) -eq 'OK') { $files = $dlg.FileNames }
-        $owner.Close()
+        # the file window runs in its own small PowerShell process (the same plain window the old IMBK Macro used)
+        $exe = (Get-Process -Id $PID).Path
+        $cmd = @'
+Add-Type -AssemblyName System.Windows.Forms
+$d = New-Object System.Windows.Forms.OpenFileDialog
+$d.Title = 'Select the PowerPoint file(s) to fix'
+$d.Filter = 'PowerPoint presentations (*.pptx;*.pptm)|*.pptx;*.pptm'
+$d.Multiselect = $true
+if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $d.FileNames }
+'@
+        $out = & $exe -NoProfile -MTA -ExecutionPolicy Bypass -Command $cmd
+        $files = @($out | ForEach-Object { [string]$_ } | Where-Object { $_ -and (Test-Path -LiteralPath $_) })
     } catch { Write-Host ('The file window could not open: ' + $_.Exception.Message) -ForegroundColor Yellow }
     if ($files.Count -eq 0) {
         Write-Host 'Or drag your PowerPoint file(s) into this window and press Enter:' -ForegroundColor Yellow
