@@ -1,7 +1,7 @@
-# SLID Macro - numbers repeated slide titles (1 of 4), renames shapes, fixes language tags.
+# SLID Macro - numbers repeated slide titles (1 of 4), renames shapes, puts sideways photo credits under their picture (SDRS files only), fixes language tags.
 # Saves a remediated copy next to the original. (Self-updates from GitHub via SLID_Update.ps1.)
 # SLID MACRO SCRIPT
-$SLID_VERSION = '1.3'   # shown at the start of the window; the updater compares this number with GitHub
+$SLID_VERSION = '1.5'   # shown at the start of the window; the updater compares this number with GitHub
 # ---- work log: notes each saved file (name, slides or pages) for the daily report in S4C Tools ----
 # Only reads the saved file; never changes it and never stops the tool if something goes wrong.
 function Add-WorkLog([string]$tool, [string]$inPath, [string]$outPath) {
@@ -63,7 +63,7 @@ function Write-Part($name, $xml) {
     $sw.Close()
 }
 function New-Ns($xml) {
-    $m = New-Object Xml.XmlNamespaceManager($xml.NameTable)
+    $m = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
     $m.AddNamespace('a', 'http://schemas.openxmlformats.org/drawingml/2006/main')
     $m.AddNamespace('p', 'http://schemas.openxmlformats.org/presentationml/2006/main')
     $m.AddNamespace('r', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships')
@@ -210,6 +210,89 @@ try {
     $subtitleText = ''
     # a credit line is a plain text box that starts like a photo credit
     $creditRx = '^\s*(' + [char]169 + '|\(c\)|Courtesy|Source|Photo|Image|Copyright|Used with)'
+    # 1b. sideways photo credits: a credit line ("(c) ... Photographed by ...") turned 90 / 270 degrees beside a picture is
+    #     made upright and placed centred right under that picture; a text box that would then collide with it
+    #     (the caption) moves down just enough. The reading order below then becomes: title, picture, credit, caption.
+    $slideHemu = 6858000.0
+    if ($sldSz) { $slideHemu = [double]$sldSz.GetAttribute('cy') }
+    $creditMoved = 0; $captionMoved = 0
+    function Get-Xf($node, $m) {
+        $x = $node.SelectSingleNode('p:spPr/a:xfrm', $m)
+        if (-not $x) { $x = $node.SelectSingleNode('p:grpSpPr/a:xfrm', $m) }
+        if (-not $x) { $x = $node.SelectSingleNode('p:xfrm', $m) }
+        return $x
+    }
+    # only for SDRS files (the file name has SDRS in it, e.g. 9781284298260_SDRS_CH02.pptx); other decks are left as they are
+    $isSdrs = ([IO.Path]::GetFileName($src) -match '(?i)(^|[_\-\s\.])SDRS([_\-\s\.]|$)')
+    foreach ($sp in $(if ($isSdrs) { $slideParts } else { @() })) {
+        $m = $nss[$sp]
+        $tree = $docs[$sp].SelectSingleNode('//p:cSld/p:spTree', $m)
+        $pics = New-Object System.Collections.Generic.List[object]
+        $creds = New-Object System.Collections.Generic.List[object]
+        $texts = New-Object System.Collections.Generic.List[object]
+        foreach ($c in $tree.ChildNodes) {
+            if ($c.NodeType -ne 'Element' -or @('sp', 'pic', 'grpSp') -notcontains $c.LocalName) { continue }
+            $xf = Get-Xf $c $m; if (-not $xf) { continue }
+            $off = $xf.SelectSingleNode('a:off', $m); $ext = $xf.SelectSingleNode('a:ext', $m); if (-not $off -or -not $ext) { continue }
+            $r = [pscustomobject]@{ Node = $c; Xf = $xf; Off = $off; Ext = $ext; L = [double]$off.GetAttribute('x'); T = [double]$off.GetAttribute('y'); W = [double]$ext.GetAttribute('cx'); H = [double]$ext.GetAttribute('cy') }
+            if ($c.LocalName -eq 'pic' -or ($c.LocalName -eq 'grpSp' -and $c.SelectSingleNode('.//p:pic', $m))) { $pics.Add($r); continue }
+            if ($c.LocalName -ne 'sp') { continue }
+            $ph = $c.SelectSingleNode('p:nvSpPr/p:nvPr/p:ph', $m)
+            $txt = (($c.SelectNodes('.//a:t', $m) | ForEach-Object { $_.InnerText }) -join '')
+            if ($txt.Length -eq 0) { continue }
+            $rot = $xf.GetAttribute('rot')
+            if (-not $ph -and $txt -match $creditRx -and ($rot -eq '5400000' -or $rot -eq '16200000')) { $creds.Add($r) }
+            elseif (-not ($ph -and @('title', 'ctrTitle', 'subTitle') -contains $ph.GetAttribute('type'))) { $texts.Add($r) }
+        }
+        foreach ($cr in $creds) {
+            # the picture this credit stands beside: the sideways box has swapped width and height
+            $cxm = $cr.L + $cr.W / 2; $cym = $cr.T + $cr.H / 2
+            $vl = $cxm - $cr.H / 2; $vr = $cxm + $cr.H / 2; $vt = $cym - $cr.W / 2; $vb = $cym + $cr.W / 2
+            $best = $null; $bestGap = 1e12
+            foreach ($pc in $pics) {
+                $ov = [Math]::Min($vb, $pc.T + $pc.H) - [Math]::Max($vt, $pc.T)
+                if ($ov -lt ($vb - $vt) * 0.5) { continue }
+                $gap = 0.0
+                if ($vr -lt $pc.L) { $gap = $pc.L - $vr } elseif ($vl -gt ($pc.L + $pc.W)) { $gap = $vl - ($pc.L + $pc.W) }
+                if ($gap -le 548640 -and $gap -lt $bestGap) { $best = $pc; $bestGap = $gap }
+            }
+            if (-not $best) { continue }
+            $nw = [Math]::Min($cr.W, $best.W)
+            $nx = $best.L + ($best.W - $nw) / 2
+            $ny = $best.T + $best.H + 91440
+            if ($ny + $cr.H -gt $slideHemu) { $report.Add("Slide " + ($slideParts.IndexOf($sp) + 1) + ": a sideways credit line was left as it is (no room under the picture)"); continue }
+            $cr.Xf.RemoveAttribute('rot')
+            $cr.Off.SetAttribute('x', [string][long][Math]::Round($nx)); $cr.Off.SetAttribute('y', [string][long][Math]::Round($ny))
+            $cr.Ext.SetAttribute('cx', [string][long][Math]::Round($nw))
+            $nsA = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+            foreach ($para in $cr.Node.SelectNodes('p:txBody/a:p', $m)) {
+                $pPr = $para.SelectSingleNode('a:pPr', $m)
+                if (-not $pPr) { $pPr = $docs[$sp].CreateElement('a', 'pPr', $nsA); $null = $para.PrependChild($pPr) }
+                $pPr.SetAttribute('algn', 'ctr')
+            }
+            $creditMoved++
+            $cr.L = $nx; $cr.T = $ny; $cr.W = $nw
+            # a text box right under the picture (the caption) moves down so that it does not sit on the credit
+            $crBottom = $ny + $cr.H
+            foreach ($tx in $texts) {
+                if ($tx.Node -eq $cr.Node) { continue }
+                $hov = [Math]::Min($tx.L + $tx.W, $nx + $nw) - [Math]::Max($tx.L, $nx)
+                if ($hov -le 0 -or $tx.T -lt ($best.T + $best.H - 20000)) { continue }
+                $want = $crBottom - 45720
+                if ($tx.T -ge $want) { continue }
+                $shift = $want - $tx.T
+                $tx.Off.SetAttribute('y', [string][long][Math]::Round($tx.T + $shift))
+                $over = ($tx.T + $shift + $tx.H) - $slideHemu
+                if ($over -gt 0 -and -not $tx.Node.SelectSingleNode('p:txBody/a:bodyPr/a:spAutoFit', $m)) {
+                    $tx.Ext.SetAttribute('cy', [string][long][Math]::Round([Math]::Max($tx.H - $over, $tx.H * 0.6)))
+                }
+                $tx.T = $tx.T + $shift; $captionMoved++
+            }
+        }
+    }
+    if ($isSdrs) { $report.Add("Sideways credit lines placed under their picture: $creditMoved (captions moved down: $captionMoved)") }
+    else { $report.Add("Sideways credit lines: not changed (this step is only done for SDRS files)") }
+
     foreach ($sp in $slideParts) {
         $m = $nss[$sp]
         $tree = $docs[$sp].SelectSingleNode('//p:cSld/p:spTree', $m)
@@ -381,7 +464,7 @@ try {
         $core = Read-Part 'docProps/core.xml'
         if ($core) {
             $dcNs = 'http://purl.org/dc/elements/1.1/'
-            $cm = New-Object Xml.XmlNamespaceManager($core.NameTable)
+            $cm = New-Object System.Xml.XmlNamespaceManager($core.NameTable)
             $cm.AddNamespace('dc', $dcNs)
             $tn = $core.SelectSingleNode('//dc:title', $cm)
             if (-not $tn) {
