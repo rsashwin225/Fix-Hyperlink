@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="1.1">
+<meta name="s4c-hub-version" content="1.2">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -246,20 +246,8 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
 .stat:hover{transform:translateY(-2px);box-shadow:var(--sh3)}
 .nitem.tool:hover .tile{transform:rotate(-6deg) scale(1.08)}
 .tile{transition:transform .18s ease}
-.nitem .more{margin-left:6px;width:22px;height:22px;border-radius:6px;display:none;place-items:center;color:var(--fg3)}
-.nitem.tool:hover .more{display:grid}.nitem.tool:hover small{display:none}
-.nitem .more:hover{background:var(--card2);color:var(--fg)}
 
-.pop{position:fixed;z-index:60;width:320px;background:var(--card);border:1px solid var(--stroke);border-radius:16px;box-shadow:var(--sh3);padding:16px;opacity:0;transform:translateX(-6px) scale(.98);pointer-events:none;transition:opacity .16s ease,transform .16s ease}
-.pop.on{opacity:1;transform:none;pointer-events:auto}
-.pop:before{content:"";position:absolute;left:-7px;top:var(--ay,22px);width:12px;height:12px;background:var(--card);border-left:1px solid var(--stroke);border-bottom:1px solid var(--stroke);transform:rotate(45deg)}
-.pop-h{display:flex;align-items:center;gap:12px}
-.pop-h b{font-family:var(--serif);font-size:19px;font-weight:600;display:block;line-height:22px}
-.pop-h small{color:var(--fg3);font-size:12px}
-.pop p{margin:10px 0 12px;color:var(--fg2);font-size:13px;line-height:20px}
-.pop-meta{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
 .chip{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:12px;background:var(--card2);border:1px solid var(--stroke);font-size:12px;color:var(--fg2)}
-.pop-b{display:flex;gap:8px}.pop-b .btn{height:34px;padding:0 14px;flex:1}
 
 .ctx{position:fixed;z-index:70;min-width:220px;background:var(--card);border:1px solid var(--stroke);border-radius:12px;box-shadow:var(--sh3);padding:6px;display:none}
 .ctx.on{display:block;animation:tin .12s ease-out}
@@ -302,11 +290,16 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
 .streak b{font-family:var(--serif);font-size:16px}
 
 .dg tbody tr td:last-child{position:relative}
+.ttlc{display:inline-block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;font-weight:600;color:var(--brand);cursor:pointer;border-radius:6px;padding:1px 6px;margin-left:-6px}.ttlc:hover{background:var(--card2)}.ttlc.none{font-weight:500;color:var(--fg3);border:1px dashed var(--stroke2)}
 .rowact{position:absolute;right:12px;top:50%;transform:translateY(-50%);display:flex;gap:6px;opacity:0;transition:opacity .12s}
 .dg tbody tr:hover .rowact{opacity:1}
 .rowact button{height:28px;padding:0 10px;border-radius:8px;border:1px solid var(--stroke2);background:var(--card);cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:6px}
 .rowact button:hover{background:var(--card2)}
 #confetti{position:fixed;inset:0;pointer-events:none;z-index:90}
+.gseg{display:flex;align-items:center;justify-content:space-between;margin-top:10px}.gseg span{font-size:12px;color:var(--fg3)}
+.gseg .seg{display:flex;border:1px solid var(--stroke2);border-radius:8px;overflow:hidden}
+.gseg .seg button{border:0;background:var(--card);height:26px;padding:0 12px;font-size:12px;cursor:pointer;color:var(--fg2)}
+.gseg .seg button.on{background:var(--brand);color:var(--on-brand);font-weight:600}
 .gedit{display:flex;flex-direction:column;gap:8px;margin-top:2px}
 .gedit .row{display:flex;gap:6px;align-items:center}
 .gedit input,.gedit select{height:30px;border:1px solid var(--stroke2);border-radius:8px;padding:0 8px;background:var(--card);font-size:13px}
@@ -410,7 +403,7 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
     <!-- ============ TODAY'S WORK ============ -->
     <div class="view" id="v-work"><div class="page">
       <div class="crumb">Reports<svg><use href="#i-chev"/></svg>Daily work</div>
-      <div class="phead"><div><h1>Today's work</h1><p>Every file a tool saves on this PC is noted automatically. Download the report at the end of the day.</p></div></div>
+      <div class="phead"><div><h1>Today's work</h1><p>Every file a tool saves on this PC is noted automatically. Download the report at the end of the day. Name files like <b>Book Title_CH01</b> and the Title fills in by itself.</p></div></div>
       <div class="toolbar">
         <input type="date" class="date" id="day">
         <button class="btn sub" id="btnToday">Today</button>
@@ -423,7 +416,7 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
         <div class="card stat"><small><svg><use href="#i-file"/></svg>Word pages</small><b id="cPages">0</b><span>as saved by Word</span></div>
         <div class="card stat"><small><svg><use href="#i-sync"/></svg>Tool runs</small><b id="cRuns">0</b><span>files saved by tools</span></div>
       </div>
-      <section class="card"><table class="dg"><thead><tr><th style="width:56px">#</th><th>File name</th><th class="n" style="width:140px">Slides / pages</th><th>Tools used</th><th style="width:130px">Time</th></tr></thead><tbody id="tbody"></tbody></table></section>
+      <section class="card"><table class="dg"><thead><tr><th style="width:56px">#</th><th>Title</th><th>File name</th><th class="n" style="width:140px">Slides / pages</th><th>Tools used</th><th style="width:130px">Time</th></tr></thead><tbody id="tbody"></tbody></table></section>
     </div></div>
 
     <!-- ============ HELP ============ -->
@@ -448,7 +441,6 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
 <div class="namebox" id="namebox"><h4>Your name</h4><p>Shown in the greeting, at the top right and on your daily report.</p>
   <input id="nameIn" maxlength="40" placeholder="e.g. Hari Krishna">
   <div class="b"><button class="btn sub" id="nameReset">Use Windows name</button><button class="btn" id="nameCancel">Cancel</button><button class="btn pri" id="nameSave">Save</button></div></div>
-<div class="pop" id="pop"></div>
 <div class="ctx" id="ctx"></div>
 <div class="pal-bg" id="palBg"><div class="pal">
   <div class="pal-i"><svg class="i" style="color:var(--fg3)"><use href="#i-search"/></svg><input id="palQ" placeholder="Run a tool, open a page, download the report..." autocomplete="off"><kbd style="font:11.5px var(--sans);color:var(--fg4)">Esc</kbd></div>
@@ -520,6 +512,13 @@ function groupRows(rows){const m=new Map();rows.forEach(r=>{const dot=r.file.las
   if(!m.has(k))m.set(k,{name:r.file,count:'',unit:r.unit,tools:[],first:r.time,last:r.time});const g=m.get(k);
   if(r.file.length<g.name.length)g.name=r.file;if(r.count!=='')g.count=r.count;if(!g.tools.includes(r.tool))g.tools.push(r.tool);if(r.time<g.first)g.first=r.time;if(r.time>g.last)g.last=r.time});return [...m.values()]}
 function totals(rows){const g=groupRows(rows);let s=0,p=0;g.forEach(x=>{const n=parseInt(x.count)||0;if(x.unit==='slides')s+=n;else if(x.unit==='pages')p+=n});return {files:g.length,slides:s,pages:p,groups:g}}
+/* title from the file-name pattern: the part before the chapter / part / appendix marker (or a leading ISBN) */
+const CHAP=/[\s_.\-]*\b(?:ch(?:apter)?|chap|app(?:endix)?|part|unit|sec(?:tion)?|front|back|preface|index|glossary|intro(?:duction)?|ex(?:ercise)?)s?[\s_.\-]*(?:\d+|[a-z]\b)?.*$/i;
+function titleKey(name){let st=name.replace(/\.[^.]+$/,'').replace(SUF,'').trim();let m=/^(97[89]\d{10}|\d{9}[\dXx])\b/.exec(st.replace(/[-\s]/g,''));
+  let k=st.replace(CHAP,'').replace(/[\s_.\-]+$/,'');if(!k||k===st){const i=st.search(/[_]/);k=i>2?st.slice(0,i):''}
+  if(!k&&m)k=m[1];return k.trim()}
+const getTitles=()=>LS.get('titles',{});
+function titleOf(name){const k=titleKey(name);const T=getTitles();const kk=k.toLowerCase();return {key:kk,auto:k.replace(/_/g,' '),shown:T[kk]!==undefined?T[kk]:k.replace(/_/g,' ')}}
 const unitTxt=x=>{const n=parseInt(x.count);if(isNaN(n))return '—';return n+' '+(x.unit==='pages'?(n===1?'page':'pages'):(n===1?'slide':'slides'))};
 const todayRows=()=>state.today===state.day?state.rows:(state.todayRows||[]);
 
@@ -557,11 +556,10 @@ function stage(cls){$('stage').className='hero-r'+(cls?' '+cls:'')}
 /* ---------- nav ---------- */
 function drawNav(){const q=$('q').value.trim().toLowerCase();const tr=todayRows();
   $('toolNav').innerHTML=TOOLS.map((t,i)=>{const hit=!q||(t.name+' '+t.tagline+' '+GROUPS[t.group]).toLowerCase().includes(q);
-    return '<button class="nitem tool'+(i===cur&&$('v-tools').classList.contains('on')?' on':'')+(hit?'':' hide')+'" data-i="'+i+'"><span class="tile" style="background:'+t.tile+'">'+t.letter+'</span>'+esc(t.name)+'<small>'+esc(state.tools[t.file]||'')+'</small><span class="more" title="More options">&#8943;</span></button>'}).join('');
+    return '<button class="nitem tool'+(i===cur&&$('v-tools').classList.contains('on')?' on':'')+(hit?'':' hide')+'" data-i="'+i+'"><span class="tile" style="background:'+t.tile+'">'+t.letter+'</span>'+esc(t.name)+'<small>'+esc(state.tools[t.file]||'')+'</small></button>'}).join('');
   document.querySelectorAll('.nitem.tool').forEach(b=>{const i=+b.dataset.i;
-    b.onclick=e=>{if(e.target.closest('.more')){e.stopPropagation();const r=e.target.getBoundingClientRect();hidePop(true);openCtx(i,r.right+6,r.top);return}hidePop(true);view('tools');select(i)};
-    b.onmouseenter=()=>{clearTimeout(popT);popT=setTimeout(()=>showPop(i,b),350)};b.onmouseleave=()=>hidePop();
-    b.oncontextmenu=e=>{e.preventDefault();hidePop(true);openCtx(i,e.clientX,e.clientY)}});
+    b.onclick=()=>{view('tools');select(i)};
+    b.oncontextmenu=e=>{e.preventDefault();openCtx(i,e.clientX,e.clientY)}});
   const tt=totals(tr);$('navWork').textContent=tt.files||'';if(typeof drawGoal==='function')drawGoal();
 }
 
@@ -636,11 +634,12 @@ async function load(keep){const day=$('day').value||'';const r=await (await api(
   if(!$('day').value)$('day').value=r.today;
   drawPersona();$('upc').textContent=r.pc||'This PC';
   drawWork();if(keep){drawNav();drawStats()}else select(cur);drawGreet();drawGoal();achievements()}
+function editTitle(key){const T=getTitles();const cur=key in T?T[key]:key;const v=prompt('Title for every file named like this ('+(key||'no name pattern')+'). Leave empty to use the file-name text.',cur);if(v===null)return;if(v.trim()===''||v.trim().toLowerCase()===key)delete T[key];else T[key]=v.trim();LS.set('titles',T);drawWork();toast('ok','Title saved','Applies to all files with this name pattern, today and later')}
 function copyName(b){const n=b.dataset.n;if(navigator.clipboard)navigator.clipboard.writeText(n).then(()=>toast('ok','Copied',n))}
 function drawWork(){const tt=totals(state.rows);$('cFiles').textContent=tt.files;$('cSlides').textContent=tt.slides;$('cPages').textContent=tt.pages;$('cRuns').textContent=state.rows.length;
-  $('tbody').innerHTML=tt.groups.length?tt.groups.map((g,i)=>{const isW=/\.docx$/i.test(g.name);return '<tr><td>'+(i+1)+'</td><td><div class="fn"><span class="tile" style="background:'+(isW?'var(--word)':'var(--ppt)')+'">'+(isW?'W':'P')+'</span>'+esc(g.name)+'</div></td><td class="n">'+unitTxt(g)+'</td><td>'+g.tools.map(x=>'<span class="tag">'+esc(x)+'</span>').join('')+'</td><td>'+esc(g.first===g.last?g.first:g.first+' – '+g.last)+'<span class="rowact"><button onclick="copyName(this)" data-n="'+esc(g.name)+'"><svg class="s" style="width:14px;height:14px"><use href="#i-file"/></svg>Copy name</button></span></td></tr>'}).join(''):
-    '<tr><td colspan="5" style="color:var(--fg3);padding:28px 16px">No files were saved by the tools on this day.</td></tr>'}
-async function report(){const day=$('day').value||state.today;try{const r=await api('/api/report?day='+day+'&name='+encodeURIComponent(LS.get('name','')));const b=await r.blob();
+  $('tbody').innerHTML=tt.groups.length?tt.groups.map((g,i)=>{const isW=/\.docx$/i.test(g.name);const ti=titleOf(g.name);return '<tr><td>'+(i+1)+'</td><td>'+(ti.shown?'<span class="ttlc" onclick="editTitle(\''+esc(ti.key).replace(/'/g,"\\'")+'\')" title="Click to rename this title">'+esc(ti.shown)+'</span>':'<span class="ttlc none" onclick="editTitle(\''+esc(ti.key).replace(/'/g,"\\'")+'\')">+ Add title</span>')+'</td><td><div class="fn"><span class="tile" style="background:'+(isW?'var(--word)':'var(--ppt)')+'">'+(isW?'W':'P')+'</span>'+esc(g.name)+'</div></td><td class="n">'+unitTxt(g)+'</td><td>'+g.tools.map(x=>'<span class="tag">'+esc(x)+'</span>').join('')+'</td><td>'+esc(g.first===g.last?g.first:g.first+' – '+g.last)+'<span class="rowact"><button onclick="copyName(this)" data-n="'+esc(g.name)+'"><svg class="s" style="width:14px;height:14px"><use href="#i-file"/></svg>Copy name</button></span></td></tr>'}).join(''):
+    '<tr><td colspan="6" style="color:var(--fg3);padding:28px 16px">No files were saved by the tools on this day.</td></tr>'}
+async function report(){const day=$('day').value||state.today;try{const r=await api('/api/report?day='+day+'&name='+encodeURIComponent(LS.get('name',''))+'&titles='+encodeURIComponent(JSON.stringify(getTitles())));const b=await r.blob();
   const cd=r.headers.get('Content-Disposition')||'';const m=/filename="([^"]+)"/.exec(cd);const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=m?m[1]:'Work report.txt';document.body.appendChild(a);a.click();a.remove();toast('ok','Report downloaded',m?m[1]:'')}catch(e){toast('err','Could not make the report',e.message)}}
 
 /* ---------- wiring ---------- */
@@ -654,7 +653,7 @@ $('day').onchange=()=>load(true);$('btnToday').onclick=()=>{$('day').value=state
 $('theme').onclick=()=>document.body.classList.toggle('dark');
 document.addEventListener('keydown',e=>{
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();palOpen();return}
-  if(e.key==='Escape'){palClose();$('keysDlg').classList.remove('on');$('ctx').classList.remove('on');hidePop(true);return}
+  if(e.key==='Escape'){palClose();$('keysDlg').classList.remove('on');$('ctx').classList.remove('on');return}
   if(e.target.tagName==='INPUT'||$('palBg').classList.contains('on'))return;
   const k=e.key;
   if(k==='?'){$('keysDlg').classList.add('on');return}
@@ -674,7 +673,7 @@ function closeName(){$('namebox').classList.remove('on');$('nameIn').blur()}
 function saveName(v){LS.set('name',(v||'').trim().slice(0,40));closeName();drawPersona();drawGreet();toast('ok','Name saved','Hello, '+firstName()+' 👋')}
 const getGoal=()=>{const g=LS.get('goal2',null);return (g&&g.n>0&&(g.unit==='slides'||g.unit==='files'))?g:{unit:'slides',n:300}};
 const goalDone=tt=>getGoal().unit==='slides'?tt.slides:tt.files;
-const TIPS=['Click Change goal to set a target in slides or files','Click your name at the top right to change it','Press Ctrl + K to run any tool from the keyboard','Hover a tool on the left for quick actions','Right-click a tool for more options','Press D to download today\'s report','Press ? to see every shortcut','The original file is never changed by Word Fixer, SLID, Alt Text or Link Fixer','A chapter run through three tools still counts as one file'];
+const TIPS=['Use the Slides / Files switch under Today to pick how your goal is counted','Click your name at the top right to change it','Press Ctrl + K to run any tool from the keyboard','Right-click a tool for more options','Press D to download today\'s report','Press ? to see every shortcut','The original file is never changed by Word Fixer, SLID, Alt Text or Link Fixer','A chapter run through three tools still counts as one file'];
 let tipI=Math.floor(Math.random()*TIPS.length);
 function drawGreet(){const h=new Date().getHours();const part=h<12?'Good morning':h<17?'Good afternoon':'Good evening';const em=h<12?'☀️':h<17?'☕':'🌙';
   const tt=totals(todayRows());const G=getGoal();const done=goalDone(tt);const left=Math.max(0,G.n-done);
@@ -690,16 +689,18 @@ function streak(){const m={};days.forEach(d=>m[d.day]=d.files);let n=0;const d=n
 function drawGoal(){const tt=totals(todayRows());const G=getGoal();const done=goalDone(tt);const pct=Math.min(1,done/G.n);const C=2*Math.PI*25;const st=streak();
   const sub=G.unit==='slides'?tt.files+' file'+(tt.files===1?'':'s')+(tt.pages?' · '+tt.pages+' page'+(tt.pages===1?'':'s'):''):tt.slides+' slides'+(tt.pages?' · '+tt.pages+' page'+(tt.pages===1?'':'s'):'');
   $('nfoot').innerHTML='<small>Today</small><div class="goal" style="margin-top:8px"><div class="ring"><svg viewBox="0 0 58 58"><circle class="bg" cx="29" cy="29" r="25"/><circle class="fg" cx="29" cy="29" r="25" stroke-dasharray="'+C+'" stroke-dashoffset="'+(C*(1-pct))+'"/></svg><b style="font-size:'+(String(Math.round(pct*100)).length>2?14:16)+'px">'+Math.round(pct*100)+'%</b></div>'+
-    '<div class="goal-t" id="goalT"><b>'+done+' / '+G.n+' '+G.unit+'</b><span>'+sub+'</span><a id="goalEdit">Change goal</a></div></div><div id="goalBox"></div>'+
+    '<div class="goal-t" id="goalT"><b>'+done+' / '+G.n+' '+G.unit+'</b><span>'+sub+'</span><a id="goalEdit">Change target</a></div></div>'+
+    '<div class="gseg" title="Count my daily goal in"><span>Goal in</span><div class="seg"><button data-u="slides"'+(G.unit==='slides'?' class="on"':'')+'>Slides</button><button data-u="files"'+(G.unit==='files'?' class="on"':'')+'>Files</button></div></div><div id="goalBox"></div>'+
     '<div class="streak">'+(st?'🔥 <b>'+st+'</b> day streak':'Start a streak today ✨')+'</div>';
-  $('goalEdit').onclick=openGoal}
+  $('goalEdit').onclick=openGoal;
+  $('nfoot').querySelectorAll('.gseg button').forEach(b=>b.onclick=()=>{const u=b.dataset.u;if(u===G.unit)return;const N=LS.get('goalN',{});N[G.unit]=G.n;LS.set('goalN',N);const n=N[u]||(u==='slides'?300:8);LS.set('goal2',{unit:u,n});drawGoal();drawGreet();toast('ok','Goal is now in '+u,n+' '+u+' a day')})}
 function openGoal(){const G=getGoal();let unit=G.unit;
   $('goalEdit').style.display='none';$('goalBox').innerHTML='<div class="gedit" style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--stroke)"><small style="margin:0">Daily goal</small><div class="row"><input id="goalIn" type="number" min="1" max="5000" value="'+G.n+'"><div class="seg"><button data-u="slides">slides</button><button data-u="files">files</button></div></div>'+
     '<div class="quick" id="goalQuick"></div><div class="row"><a id="goalOk">Save</a><a id="goalNo" style="color:var(--fg3)">Cancel</a></div></div>';
   const quick=()=>{const q=unit==='slides'?[200,300,400,500]:[5,8,10,15];$('goalQuick').innerHTML=q.map(n=>'<button data-n="'+n+'">'+n+'</button>').join('');$('goalQuick').querySelectorAll('button').forEach(b=>b.onclick=()=>{$('goalIn').value=b.dataset.n})};
   const seg=()=>{$('goalBox').querySelectorAll('.seg button').forEach(b=>b.classList.toggle('on',b.dataset.u===unit));quick()};
-  $('goalBox').querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{if(unit!==b.dataset.u){unit=b.dataset.u;$('goalIn').value=unit==='slides'?300:8}seg()});seg();
-  const save=()=>{const v=Math.max(1,Math.min(5000,parseInt($('goalIn').value)||(unit==='slides'?300:8)));LS.set('goal2',{unit,n:v});drawGoal();drawGreet();toast('ok','Goal saved',v+' '+unit+' a day');achievements()};
+  $('goalBox').querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{if(unit!==b.dataset.u){unit=b.dataset.u;const N=LS.get('goalN',{});$('goalIn').value=N[unit]||(unit==='slides'?300:8)}seg()});seg();
+  const save=()=>{const v=Math.max(1,Math.min(5000,parseInt($('goalIn').value)||(unit==='slides'?300:8)));LS.set('goal2',{unit,n:v});{const N=LS.get('goalN',{});N[unit]=v;LS.set('goalN',N)}drawGoal();drawGreet();toast('ok','Goal saved',v+' '+unit+' a day');achievements()};
   $('goalOk').onclick=save;$('goalNo').onclick=drawGoal;$('goalIn').onkeydown=e=>{if(e.key==='Enter')save();if(e.key==='Escape')drawGoal()};$('goalIn').focus();$('goalIn').select()}
 
 /* ---------- achievements + confetti ---------- */
@@ -712,17 +713,6 @@ function achievements(){const tt=totals(todayRows());const G=getGoal();const key
 function confetti(){const c=$('confetti');const x=c.getContext('2d');c.width=innerWidth;c.height=innerHeight;const cols=['#2f5d50','#b4532e','#2f5d8a','#e0b04a','#6b4f8a','#8cc2ae'];
   const P=Array.from({length:150},()=>({x:innerWidth/2+(Math.random()-.5)*200,y:innerHeight*.35,vx:(Math.random()-.5)*14,vy:-Math.random()*12-4,r:Math.random()*6+3,c:cols[Math.random()*cols.length|0],a:Math.random()*6,s:(Math.random()-.5)*.3}));
   let t=0;(function f(){x.clearRect(0,0,c.width,c.height);P.forEach(p=>{p.vy+=.35;p.x+=p.vx;p.y+=p.vy;p.vx*=.99;p.a+=p.s;x.save();x.translate(p.x,p.y);x.rotate(p.a);x.fillStyle=p.c;x.globalAlpha=Math.max(0,1-t/120);x.fillRect(-p.r/2,-p.r/4,p.r,p.r/2);x.restore()});if(++t<120)requestAnimationFrame(f);else x.clearRect(0,0,c.width,c.height)})()}
-
-/* ---------- hover card on the tool list ---------- */
-let popT=null;
-function hidePop(now){clearTimeout(popT);if(now){$('pop').classList.remove('on');return}popT=setTimeout(()=>$('pop').classList.remove('on'),180)}
-function showPop(i,el){const t=TOOLS[i];const g=ghInfo(t.file);const mine=totals(todayRows().filter(r=>r.tool===t.name));const p=$('pop');
-  p.innerHTML='<div class="pop-h"><span class="tile lg" style="width:42px;height:42px;font-size:22px;border-radius:11px;background:'+t.tile+'">'+t.letter+'</span><div><b>'+esc(t.name)+'</b><small>'+esc(GROUPS[t.group])+' · version '+esc(state.tools[t.file]||'?')+'</small></div></div>'+
-    '<p>'+esc(t.tagline)+'</p><div class="pop-meta"><span class="chip"><span class="dot '+g.c+'" style="margin:0"></span>GitHub: '+esc(g.t.toLowerCase())+'</span><span class="chip">'+mine.files+' today</span><span class="chip">saves '+esc(t.out.replace('<name> ',''))+'</span></div>'+
-    '<div class="pop-b"><button class="btn pri" data-a="run"><svg class="s"><use href="#i-run"/></svg>Run</button><button class="btn" data-a="chk"><svg class="s"><use href="#i-sync"/></svg>Update</button><button class="btn" data-a="open">Details</button></div>';
-  const r=el.getBoundingClientRect();const top=Math.max(12,Math.min(innerHeight-260,r.top-14));p.style.left=(r.right+14)+'px';p.style.top=top+'px';p.style.setProperty('--ay',(r.top-top+14)+'px');p.classList.add('on');
-  p.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>{hidePop(true);view('tools');select(i);if(b.dataset.a==='run')start(true);if(b.dataset.a==='chk')start(false)})}
-$('pop').onmouseenter=()=>clearTimeout(popT);$('pop').onmouseleave=()=>hidePop();
 
 /* ---------- right-click menu ---------- */
 function openCtx(i,x,y){const t=TOOLS[i];const m=$('ctx');

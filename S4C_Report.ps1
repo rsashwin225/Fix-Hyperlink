@@ -1,5 +1,5 @@
 # S4C REPORT SCRIPT - makes the daily work report from the work log the tools keep on this PC.
-# S4C-FILE-VERSION: 1.1
+# S4C-FILE-VERSION: 1.2
 # The log is %LOCALAPPDATA%\S4C_Tools\WorkLog\worklog.tsv (one line per file a tool saved).
 $ErrorActionPreference = 'Stop'
 $ci = [Globalization.CultureInfo]::InvariantCulture
@@ -48,6 +48,26 @@ foreach ($r in $rows) {
 }
 $items = @($groups.Values)
 
+# Title = the part of the file name before the chapter / part / appendix marker (or a leading ISBN).
+# Titles the person renamed on the page arrive as JSON in S4C_REPORT_TITLES (key = lower-case pattern).
+$chapRx = '(?i)[\s_.\-]*\b(?:ch(?:apter)?|chap|app(?:endix)?|part|unit|sec(?:tion)?|front|back|preface|index|glossary|intro(?:duction)?|ex(?:ercise)?)s?[\s_.\-]*(?:\d+|[a-z]\b)?.*$'
+$custom = @{}
+if ($env:S4C_REPORT_TITLES) { try { $o = $env:S4C_REPORT_TITLES | ConvertFrom-Json; foreach ($pp in $o.PSObject.Properties) { $custom[$pp.Name.ToLowerInvariant()] = [string]$pp.Value } } catch {} }
+function Get-TitleKey([string]$name) {
+    $st = ([IO.Path]::GetFileNameWithoutExtension($name)) -replace $suffixRx, ''
+    $k = ($st -replace $chapRx, '') -replace '[\s_.\-]+$', ''
+    if (-not $k -or $k -eq $st) { $i = $st.IndexOf('_'); $k = if ($i -gt 2) { $st.Substring(0, $i) } else { '' } }
+    if (-not $k) { $m = [regex]::Match(($st -replace '[-\s]', ''), '^(97[89]\d{10}|\d{9}[\dXx])'); if ($m.Success) { $k = $m.Groups[1].Value } }
+    return $k.Trim()
+}
+foreach ($g in $items) {
+    $k = (Get-TitleKey $g.Name).ToLowerInvariant()
+    $t = if ($custom.ContainsKey($k)) { $custom[$k] } else { ((Get-TitleKey $g.Name) -replace '_', ' ') }
+    if (-not $t) { $t = '(no title - name the files like "Book Title_CH01")' }
+    $g | Add-Member -NotePropertyName Title -NotePropertyValue $t -Force
+}
+$titles = @($items | ForEach-Object { $_.Title } | Select-Object -Unique)
+
 $user = if ($env:S4C_REPORT_NAME) { $env:S4C_REPORT_NAME } elseif ($rows.Count) { $rows[0].User } else { $env:USERNAME }
 $nameW = 9; foreach ($g in $items) { if ($g.Name.Length -gt $nameW) { $nameW = $g.Name.Length } }
 $toolW = 10; foreach ($g in $items) { $t = $g.Tools -join ', '; if ($t.Length -gt $toolW) { $toolW = $t.Length } }
@@ -70,12 +90,20 @@ if ($items.Count -eq 0) {
     $L.Add('  ' + '#'.PadRight(3) + 'File name'.PadRight($nameW + 3) + $(if ($hasDoc) { 'Slides/Pages' } else { 'Slides' }).PadLeft($cw) + '   ' + 'Tools used'.PadRight($toolW + 3) + 'Time')
     $L.Add($dash)
     $i = 0
-    foreach ($g in $items) {
-        $i++
-        $cnt = if ($g.Count -ne '') { $g.Count } else { '-' }
-        if ($g.Unit -eq 'pages' -and $cnt -ne '-') { $cnt = $cnt + ' p' }
-        $time = if ($g.First -eq $g.Last) { $g.First } else { $g.First + '-' + $g.Last }
-        $L.Add('  ' + ([string]$i).PadRight(3) + $g.Name.PadRight($nameW + 3) + $cnt.PadLeft($cw) + '   ' + ($g.Tools -join ', ').PadRight($toolW + 3) + $time)
+    foreach ($t in $titles) {
+        $set = @($items | Where-Object { $_.Title -eq $t })
+        $ss = 0; foreach ($g in $set) { if ($g.Unit -eq 'slides' -and $g.Count -match '^\d+$') { $ss += [int]$g.Count } }
+        $pp2 = 0; foreach ($g in $set) { if ($g.Unit -eq 'pages' -and $g.Count -match '^\d+$') { $pp2 += [int]$g.Count } }
+        $sum = [string]$set.Count + ' file' + $(if ($set.Count -ne 1) { 's' }) + $(if ($ss) { ', ' + $ss + ' slides' }) + $(if ($pp2) { ', ' + $pp2 + ' pages' })
+        $L.Add('  TITLE: ' + $t + '   (' + $sum + ')')
+        foreach ($g in $set) {
+            $i++
+            $cnt = if ($g.Count -ne '') { $g.Count } else { '-' }
+            if ($g.Unit -eq 'pages' -and $cnt -ne '-') { $cnt = $cnt + ' p' }
+            $time = if ($g.First -eq $g.Last) { $g.First } else { $g.First + '-' + $g.Last }
+            $L.Add('  ' + ([string]$i).PadRight(3) + $g.Name.PadRight($nameW + 3) + $cnt.PadLeft($cw) + '   ' + ($g.Tools -join ', ').PadRight($toolW + 3) + $time)
+        }
+        $L.Add('')
     }
     $L.Add($dash)
     $ppt = @($items | Where-Object { $_.Unit -eq 'slides' })

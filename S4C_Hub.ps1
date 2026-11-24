@@ -1,5 +1,5 @@
 # S4C HUB SCRIPT - the S4C Tools window. Runs a small page on this PC only (http://localhost) and opens it
-# S4C-FILE-VERSION: 1.1
+# S4C-FILE-VERSION: 1.2
 # in the browser. From the page you pick a tool, it checks GitHub for that one tool, then opens the tool
 # in its own window exactly as before. Close this window to close S4C Tools.
 $ErrorActionPreference = 'Stop'
@@ -171,9 +171,10 @@ while ($listener.IsListening -and -not $quit) {
                 $dir = Join-Path ([IO.Path]::GetTempPath()) ('s4c_rep_' + [guid]::NewGuid().ToString('N').Substring(0, 8))
                 [void](New-Item -ItemType Directory -Path $dir -Force)
                 $env:S4C_REPORT_DATE = $day.ToString('dd-MM-yyyy', $ci); $env:S4C_REPORT_DIR = $dir
+                if ($q['titles']) { $env:S4C_REPORT_TITLES = $q['titles'] } else { Remove-Item Env:S4C_REPORT_TITLES -ErrorAction SilentlyContinue }
                 if ($q['name']) { $env:S4C_REPORT_NAME = $q['name'] } else { Remove-Item Env:S4C_REPORT_NAME -ErrorAction SilentlyContinue }
                 & $exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $here 'S4C_Report.ps1') | Out-Null
-                Remove-Item Env:S4C_REPORT_DATE, Env:S4C_REPORT_DIR, Env:S4C_REPORT_NAME -ErrorAction SilentlyContinue
+                Remove-Item Env:S4C_REPORT_DATE, Env:S4C_REPORT_DIR, Env:S4C_REPORT_NAME, Env:S4C_REPORT_TITLES -ErrorAction SilentlyContinue
                 $rf = Get-ChildItem -LiteralPath $dir -Filter '*.txt' | Select-Object -First 1
                 if (-not $rf) { Send $res 500 'text/plain' 'The report could not be made.' $null; break }
                 $bytes = [IO.File]::ReadAllBytes($rf.FullName)
