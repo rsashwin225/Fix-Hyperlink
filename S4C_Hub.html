@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="2.0">
+<meta name="s4c-hub-version" content="2.1">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -731,7 +731,7 @@ function rnFinish(was,r){const it=dz.items;const ok=it.length&&it.every(x=>x.sta
   const sub=ok?(was.tool==='IMBK_Macro.ps1'?'The decks were fixed in place and a backup of each was kept. Today\'s work is updated.':'The fixed copies are saved next to your originals. Today\'s work is updated.'):
     (errs.find(x=>/FAILED|Cannot|not found|denied|Exception/i.test(x))||errs[0]||'Some files were not saved. The list below says which one and why.');
   const first=it.findIndex(x=>x.outPath||x.path);
-  rn.mode=ok?'done':'bad';rn.html='<div class="rnk">'+(ok?'&#10003;':'!')+'</div><div class="rnt"><h4>'+esc(head)+'</h4><p>'+esc(sub)+'</p></div>'+(first>=0?'<button class="btn" onclick="dzOpen('+first+')">Open folder</button>':'');
+  rn.mode=ok?'done':'bad';rn.html='<div class="rnk">'+(ok?'&#10003;':'!')+'</div><div class="rnt"><h4>'+esc(head)+'</h4><p>'+esc(sub)+'</p></div>';
   rnDraw()}
 function dzDone(was,r){const t=TOOLS.find(x=>x.file===was.tool);
   dz.items.filter(x=>x.state==='running').forEach(x=>{

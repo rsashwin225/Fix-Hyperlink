@@ -1,5 +1,5 @@
 # S4C HUB SCRIPT - the S4C Tools window. Runs a small page on this PC only (http://localhost) and opens it
-# S4C-FILE-VERSION: 1.9
+# S4C-FILE-VERSION: 2.0
 # in the browser. From the page you pick a tool, it checks GitHub for that one tool, then opens the tool
 # in its own window exactly as before. Close this window to close S4C Tools.
 $ErrorActionPreference = 'Stop'
@@ -191,6 +191,35 @@ function Get-OutputDir {
     return $d
 }
 
+
+# opens File Explorer on the file and brings that window to the front (Windows keeps a window opened by a background program behind, this lifts it)
+function Show-InExplorer([string]$p) {
+    $isDir = Test-Path -LiteralPath $p -PathType Container
+    $dir = if ($isDir) { $p } else { Split-Path -Parent $p }
+    if ($isDir) { Start-Process explorer.exe ('"' + $p + '"') } else { Start-Process explorer.exe ('/select,"' + $p + '"') }
+    try {
+        if (-not ('S4CWin' -as [type])) {
+            Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class S4CWin { [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c); [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h); [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra); }'
+        }
+        $sh = New-Object -ComObject Shell.Application
+        $want = $dir.TrimEnd('\')
+        for ($i = 0; $i -lt 16; $i++) {
+            Start-Sleep -Milliseconds 250
+            foreach ($w in @($sh.Windows())) {
+                $fp = ''
+                try { $fp = [string]$w.Document.Folder.Self.Path } catch { continue }
+                if ($fp.TrimEnd('\') -ieq $want) {
+                    $hw = [IntPtr][int64]$w.HWND
+                    if ([S4CWin]::IsIconic($hw)) { [void][S4CWin]::ShowWindow($hw, 9) }
+                    [S4CWin]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero); [S4CWin]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero)
+                    [void][S4CWin]::SetForegroundWindow($hw)
+                    return
+                }
+            }
+        }
+    } catch {}
+}
+
 function Send($res, [int]$code, [string]$ctype, $body, [string]$fileName) {
     $bytes = if ($body -is [byte[]]) { $body } else { [Text.Encoding]::UTF8.GetBytes([string]$body) }
     $res.StatusCode = $code; $res.ContentType = $ctype
@@ -277,7 +306,7 @@ while ($listener.IsListening -and -not $quit) {
             }
             '/api/openfolder' {
                 $p = [string]$q['path']
-                if ($p -and (Test-Path -LiteralPath $p)) { Start-Process explorer.exe ('/select,"' + $p + '"') }
+                if ($p -and (Test-Path -LiteralPath $p)) { Show-InExplorer $p }
                 Send $res 200 'application/json' '{}' $null
             }
             '/api/run' {
