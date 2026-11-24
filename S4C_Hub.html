@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="1.3">
+<meta name="s4c-hub-version" content="1.4">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -638,7 +638,7 @@ async function load(keep){const day=$('day').value||'';const r=await (await api(
 function editTitle(key){const T=getTitles();const cur=key in T?T[key]:key;const v=prompt('Title for every file named like this ('+(key||'no name pattern')+'). Leave empty to use the file-name text.',cur);if(v===null)return;if(v.trim()===''||v.trim().toLowerCase()===key)delete T[key];else T[key]=v.trim();LS.set('titles',T);drawWork();toast('ok','Title saved','Applies to all files with this name pattern, today and later')}
 async function removeRow(b){const n=b.dataset.n,k=b.dataset.k,dy=($('day').value)||state.today;if(!confirm('Remove "'+n+'" from the log for '+dy+'?\n\nUse this when a file was run by mistake. It will no longer count in Today\'s work, your goal or the report.'))return;
   try{const r=await (await api('/api/delete?day='+dy+'&key='+encodeURIComponent(k))).json();await load(true);
-    if(r.removed)toast('ok','Removed from the log',n,['Undo',undoRemove],12000);else toast('err','Nothing was removed','That file was not found in the log.')}catch(e){toast('err','Could not remove it',e.message)}}
+    if(r.removed)toast('ok','Removed from the log',n,['Undo',undoRemove],12000);else toast('err','Nothing was removed','That file was not found in the log.')}catch(e){toast('err','Could not remove it',e.message==='not found'?'S4C Tools needs to be closed and opened again once to finish its update.':e.message)}}
 async function undoRemove(){try{const r=await (await api('/api/undelete')).json();await load(true);toast('ok','Put back',r.restored+' run'+(r.restored===1?'':'s')+' restored to the log')}catch(e){toast('err','Could not undo',e.message)}}
 function copyName(b){const n=b.dataset.n;if(navigator.clipboard)navigator.clipboard.writeText(n).then(()=>toast('ok','Copied',n))}
 function drawWork(){const tt=totals(state.rows);$('cFiles').textContent=tt.files;$('cSlides').textContent=tt.slides;$('cPages').textContent=tt.pages;$('cRuns').textContent=state.rows.length;
@@ -756,11 +756,19 @@ $('nameIn').onkeydown=e=>{if(e.key==='Enter')saveName($('nameIn').value);if(e.ke
 document.addEventListener('click',e=>{if(!e.target.closest('#namebox')&&!e.target.closest('#persona'))closeName()});
 $('q').onfocus=()=>{$('q').blur();palOpen()};
 
-async function checkHub(n){try{const r=await (await api('/api/hub')).json();$('hubVer').textContent='Page version '+(r.version||'?')+'.';
+const PAGE_VER=(document.querySelector('meta[name="s4c-hub-version"]')||{}).content||'0';
+const vnum=v=>String(v||'0').split('.').map(x=>parseInt(x)||0);
+const vgt=(a,b)=>{const x=vnum(a),y=vnum(b);for(let i=0;i<Math.max(x.length,y.length);i++){const d=(x[i]||0)-(y[i]||0);if(d)return d>0}return false};
+async function restartHub(){toast('inf','Restarting S4C Tools','This page reloads by itself in a few seconds.',null,8000);try{await api('/api/restart')}catch(e){}
+  let t=0;const iv=setInterval(async()=>{t++;try{const r=await fetch('/',{cache:'no-store'});if(r.ok&&t>2){clearInterval(iv);location.reload()}}catch(e){}if(t>40)clearInterval(iv)},1500)}
+async function checkHub(n){try{const r=await (await api('/api/hub')).json();$('hubVer').textContent='Page version '+PAGE_VER+'.';
     if(!r.done){if((n||0)<40)setTimeout(()=>checkHub((n||0)+1),5000);return}
-    const pg=(r.updated||[]).find(x=>/^S4C_Hub\.html /.test(x));const other=(r.updated||[]).filter(x=>!/^S4C_Hub\.html /.test(x));
-    if(pg)toast('inf','S4C Tools has a new look waiting','Updated '+pg.replace('S4C_Hub.html ','page ')+'. Refresh to see it.',['Refresh',()=>location.reload()],20000);
-    else if(other.length)toast('inf','S4C Tools updated',other.length+' file'+(other.length===1?'':'s')+' updated. Close and reopen S4C Tools to use them.',null,12000);
+    const ups=r.updated||[];const hubPs=ups.some(x=>/^S4C_Hub\.ps1 /.test(x));
+    if(r.restart){toast('inf','S4C Tools has been updated','One restart finishes the update. It takes a few seconds.',['Restart now',restartHub],30000);return}
+    // an older copy of this program (it cannot restart itself) is still running although GitHub gave it a new version
+    if(hubPs&&r.restart===undefined){toast('inf','S4C Tools has been updated','Close the black S4C Tools window and open S4C Tools again once to finish the update.',null,30000);return}
+    // only offer the refresh while the page on screen is older than the page on this PC
+    if(vgt(r.version,PAGE_VER))toast('inf','S4C Tools has a new look waiting','Page '+PAGE_VER+' -> '+r.version+'. Refresh to see it.',['Refresh',()=>location.reload()],30000);
   }catch(e){}}
 load().then(()=>{loadDays();checkHub(0)}).catch(()=>$('off').classList.add('on'));
 </script>

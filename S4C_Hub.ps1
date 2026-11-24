@@ -1,5 +1,5 @@
 # S4C HUB SCRIPT - the S4C Tools window. Runs a small page on this PC only (http://localhost) and opens it
-# S4C-FILE-VERSION: 1.3
+# S4C-FILE-VERSION: 1.4
 # in the browser. From the page you pick a tool, it checks GitHub for that one tool, then opens the tool
 # in its own window exactly as before. Close this window to close S4C Tools.
 $ErrorActionPreference = 'Stop'
@@ -81,6 +81,10 @@ function Step-Job($j) {
 }
 
 # ---------------------------------------------------------------- the page server
+# the version of this script when it was started: if GitHub later replaces the file, the page offers a restart
+$hubVerRx = '# S4C-FILE-VERSION: ([0-9.]+)'
+function Get-HubVer { try { $m = [regex]::Match([IO.File]::ReadAllText($PSCommandPath), $hubVerRx); if ($m.Success) { return [version]$m.Groups[1].Value } } catch {}; return $null }
+$startVer = Get-HubVer
 $token = [guid]::NewGuid().ToString('N')
 $listener = $null; $port = 0
 foreach ($try in 1..40) {
@@ -88,7 +92,7 @@ foreach ($try in 1..40) {
     if ($env:S4C_HUB_PORT) { $port = [int]$env:S4C_HUB_PORT }
     $l = New-Object System.Net.HttpListener
     $l.Prefixes.Add("http://localhost:$port/")
-    try { $l.Start(); $listener = $l; break } catch { $l.Close() }
+    try { $l.Start(); $listener = $l; break } catch { $l.Close(); if ($env:S4C_HUB_PORT) { Start-Sleep -Milliseconds 700 } }
 }
 if (-not $listener) { Write-Host 'Could not start S4C Tools (no free port).' -ForegroundColor Red; exit 1 }
 $url = "http://localhost:$port/"
@@ -97,7 +101,7 @@ Write-Host '  S4C Tools is open in your browser.' -ForegroundColor Green
 Write-Host ('  Address: ' + $url)
 Write-Host '  Keep this window open while you work. Close it to close S4C Tools.' -ForegroundColor DarkGray
 Write-Host ''
-if (-not $env:S4C_HUB_TEST) { Start-Process $url }
+if (-not $env:S4C_HUB_TEST -and -not $env:S4C_HUB_NOOPEN) { Start-Process $url }
 
 # the page files keep themselves up to date from GitHub in the background (the page opens straight away)
 $selfStatus = Join-Path ([IO.Path]::GetTempPath()) ('s4c_self_' + $token.Substring(0, 8) + '.txt')
@@ -221,7 +225,17 @@ while ($listener.IsListening -and -not $quit) {
                 $st = ''; $upd = @()
                 if ($done -and (Test-Path -LiteralPath $selfStatus)) { $lines = [IO.File]::ReadAllText($selfStatus).Split("`n") | Where-Object { $_ }; if ($lines) { $st = $lines[0]; $upd = @($lines | Select-Object -Skip 1) } }
                 $hv = [regex]::Match([IO.File]::ReadAllText((Join-Path $here 'S4C_Hub.html')), 'name="s4c-hub-version" content="([0-9.]+)"').Groups[1].Value
-                Send $res 200 'application/json' (ToJson ([ordered]@{ done = $done; status = $st; updated = $upd; version = $hv })) $null
+                $nowVer = Get-HubVer; $need = [bool]($startVer -and $nowVer -and $nowVer -gt $startVer)
+                Send $res 200 'application/json' (ToJson ([ordered]@{ done = $done; status = $st; updated = $upd; version = $hv; restart = $need })) $null
+            }
+            '/api/restart' {
+                # starts a fresh copy of this script on the same address, then closes this one (used after GitHub updated this script)
+                Send $res 200 'application/json' (ToJson ([ordered]@{ ok = $true })) $null
+                try {
+                    $env:S4C_HUB_PORT = [string]$port; $env:S4C_HUB_NOOPEN = '1'
+                    Start-Process -FilePath $exe -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "' + $PSCommandPath + '"')
+                } catch {}
+                $quit = $true
             }
             '/api/quit' { Send $res 200 'text/plain' 'bye' $null; $quit = $true }
             default { Send $res 404 'text/plain' 'not found' $null }
