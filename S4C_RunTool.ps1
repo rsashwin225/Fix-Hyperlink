@@ -1,7 +1,7 @@
 # S4C RUNTOOL SCRIPT - opens one tool in its own window, the same way the menu did, and waits for Enter at the end.
-# S4C-FILE-VERSION: 1.1
+# S4C-FILE-VERSION: 1.2
 param([string]$Tool, [switch]$Test)
-$sta = @{ 'Word_Fixer.ps1' = $true; 'SLID_Macro.ps1' = $true; 'IMBK_Macro.ps1' = $false; 'AltText_Tool.ps1' = $true; 'Link_Fixer.ps1' = $true }
+$sta = @{ 'Word_Fixer.ps1' = $true; 'PPT_Fixer.ps1' = $true; 'AltText_Tool.ps1' = $true; 'Link_Fixer.ps1' = $true }
 if (-not $sta.ContainsKey($Tool)) { Write-Host ('Unknown tool: ' + $Tool); exit 1 }
 try { $host.UI.RawUI.WindowTitle = 'S4C Tools - ' + $Tool.Replace('.ps1', '').Replace('_', ' ') } catch {}
 # GitHub check result from S4C Tools (the check is done before this window opens)

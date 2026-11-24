@@ -1,5 +1,5 @@
 # S4C HUB SCRIPT - the S4C Tools window. Runs a small page on this PC only (http://localhost) and opens it
-# S4C-FILE-VERSION: 1.4
+# S4C-FILE-VERSION: 1.5
 # in the browser. From the page you pick a tool, it checks GitHub for that one tool, then opens the tool
 # in its own window exactly as before. Close this window to close S4C Tools.
 $ErrorActionPreference = 'Stop'
@@ -9,8 +9,7 @@ $ci = [Globalization.CultureInfo]::InvariantCulture
 
 $TOOLS = [ordered]@{
     'Word_Fixer.ps1'   = @{ Name = 'Word Fixer';    Rx = "WF_VERSION\s*=\s*'([^']+)'" }
-    'SLID_Macro.ps1'   = @{ Name = 'SLID Macro';    Rx = "SLID_VERSION\s*=\s*'([^']+)'" }
-    'IMBK_Macro.ps1'   = @{ Name = 'IMBK Macro';    Rx = "IMBK_VERSION\s*=\s*'([^']+)'" }
+    'PPT_Fixer.ps1'    = @{ Name = 'PPT Fixer';     Rx = "PPT_VERSION\s*=\s*'([^']+)'" }
     'AltText_Tool.ps1' = @{ Name = 'Alt Text Tool'; Rx = "ALT_VERSION\s*=\s*'([^']+)'" }
     'Link_Fixer.ps1'   = @{ Name = 'Link Fixer';    Rx = '(?m)^\$LF_VERSION\s*=\s*(\d+)' }
 }

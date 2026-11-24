@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="1.4">
+<meta name="s4c-hub-version" content="1.5">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -427,7 +427,7 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
       <div class="help">
         <div class="card"><h3><svg class="i"><use href="#i-run"/></svg>Pick a tool and press Run</h3><p>Choose a tool on the left and press <b>Run</b> (or Enter). S4C Tools checks GitHub for that one tool, then opens it in its own window, exactly as before. Pick your files in that window.</p></div>
         <div class="card"><h3><svg class="i"><use href="#i-sync"/></svg>Updates from GitHub</h3><p>Only the tool you choose is checked. The bar at the top says <b>Newest version</b>, <b>Updated</b> or <b>Not connected</b>. If GitHub can't be reached, the copy on this PC is used and the tool still runs.</p></div>
-        <div class="card"><h3><svg class="i"><use href="#i-shield"/></svg>Your files are safe</h3><p>Each tool saves a new copy next to your file (<code>Fixed</code>, <code>Remediated</code>, <code>AltText</code>, <code>Links</code>). IMBK Macro works on the file itself and keeps a backup named <code>_BEFORE_IMBKfix</code>.</p></div>
+        <div class="card"><h3><svg class="i"><use href="#i-shield"/></svg>Your files are safe</h3><p>Each tool saves a new copy next to your file (<code>Fixed</code>, <code>Remediated</code>, <code>AltText</code>, <code>Links</code>). PPT Fixer in IMBK mode works on the file itself and keeps a backup named <code>_BEFORE_IMBKfix</code>.</p></div>
         <div class="card"><h3><svg class="i"><use href="#i-cal"/></svg>Daily report</h3><p>Every saved file is noted with its slide or page count. Open <b>Today's work</b> and press <b>Download report</b>. A chapter run through several tools counts once.</p></div>
         <div class="card"><h3><svg class="i"><use href="#i-window"/></svg>Keep the S4C Tools window open</h3><p>This page runs from the small S4C Tools window. Closing that window closes S4C Tools. Double-click <code>S4C Tools.cmd</code> to open it again.</p></div>
         <div class="card"><h3><svg class="i"><use href="#i-help"/></svg>Something not working?</h3><p>Use <code>S4C Tools - classic menu.cmd</code> in the same folder; it runs the same tools from a text menu. Send a screenshot of any red message to Hari.</p></div>
@@ -473,20 +473,13 @@ const TOOLS=[
   idea:'The text is never changed. A safety check compares every word before the copy is saved.',
   steps:[['Choose files','In the tool window'],['Check GitHub','Newest version of this tool'],['Fix headings','Title, Heading 1, Heading 2'],['Fix list levels','I, A, 1, a, i, (a), (i)'],['Save a copy','Fixed.docx + report'],['Note in today\'s work','For the daily report']],
   checks:['Title is the first two lines','Section titles are Heading 1','No heading level is skipped','Roman numerals are lists, not headings','List ladder: I, A, 1, a, i, (a), (i)']},
- {file:'SLID_Macro.ps1',art:'slide',name:'SLID Macro',group:1,letter:'P',tile:'var(--ppt)',out:'<name> Remediated.pptx',unit:'slides',
-  tagline:'Numbers repeated titles, names every shape and fixes the reading order.',
-  intro:['Ten slides called "Chapter Summary" sound identical to a screen reader, and shapes named <code>Rectangle 6</code> say nothing.',
-         'SLID Macro adds <code>(1 of 10)</code> to repeated titles, names shapes Title, TextBox and Picture, puts them in reading order, sets the language to English (US) and fills the document title.'],
-  idea:'A text box that sits behind a picture stays behind it, so hidden <code>&lt;Insert Fig&gt;</code> notes never show through.',
-  steps:[['Choose files','In the tool window'],['Check GitHub','Newest version of this tool'],['Number titles','(1 of N) on repeated titles'],['Name shapes','Title, TextBox, Picture'],['Reading order','Title first, then as laid out'],['Save a copy','Remediated.pptx + report']],
-  checks:['Repeated titles end in (1 of N)','Shapes are named in reading order','Nothing new shows on top of a picture','Language is English (US)','Document title is set']},
- {file:'IMBK_Macro.ps1',art:'layout',name:'IMBK Macro',group:1,letter:'P',tile:'var(--ppt)',out:'Same file, backup _BEFORE_IMBKfix',unit:'slides',
-  tagline:'Lays out figures, captions and credits in IMBK chapter decks.',
-  intro:['IMBK decks place figures with loose caption and credit boxes that a screen reader reads in the wrong place.',
-         'IMBK Macro lays the figure out, turns the caption and credit into real placeholders, numbers repeated titles, names shapes and sets the language and document title.'],
-  idea:'It works on the file itself and first saves a backup next to it. If anything fails, the file is put back from the backup.',
-  steps:[['Choose files','In the tool window'],['Check GitHub','Newest version of this tool'],['Lay out figures','Picture, caption, credit'],['Caption placeholders','Real layout placeholders'],['Titles and names','(1 of N), shape names'],['Save','Backup kept next to the deck']],
-  checks:['Caption sits under its figure','Credit line is a placeholder','Slides to check by hand were reviewed','Backup file is next to the deck']},
+ {file:'PPT_Fixer.ps1',art:'slide',name:'PPT Fixer',group:1,letter:'P',tile:'var(--ppt)',out:'<name> Remediated.pptx (IMBK: same file + backup)',unit:'slides',
+  tagline:'One PowerPoint tool: you choose IMBK, SDRS or Standard each time.',
+  intro:['Repeated slide titles sound identical to a screen reader, shapes named <code>Rectangle 6</code> say nothing, and loose caption and credit boxes are read in the wrong place.',
+         'PPT Fixer asks which type of deck it is. All types add <code>(1 of 10)</code> to repeated titles, name shapes Title, TextBox and Picture in reading order, set the language to English (US) and fill the document title.'],
+  idea:'IMBK also lays out figures and turns captions and credits into real placeholders (the file is changed in place, a backup is kept). SDRS also moves sideways photo credits under their picture. Standard saves a Remediated copy.',
+  steps:[['Choose type and files','IMBK, SDRS or Standard'],['Check GitHub','Newest version of this tool'],['Number titles','(1 of N) on repeated titles'],['Name shapes','Title, TextBox, Picture'],['Reading order','Title, picture, credit, caption'],['Save','Remediated.pptx, or IMBK backup']],
+  checks:['You picked the right type for the deck','Repeated titles end in (1 of N)','Shapes are named in reading order','Credit sits under its picture (SDRS, IMBK)','Language is English (US) and the document title is set']},
  {file:'AltText_Tool.ps1',art:'alt',name:'Alt Text Tool',group:1,letter:'P',tile:'var(--ppt)',out:'<name> AltText.pptx',unit:'slides',
   tagline:'Fills picture alt text from the client\'s Excel log, matched by figure number.',
   intro:['The client sends alt text in an Excel file, one row per figure. Copying it into every picture by hand is slow and easy to get wrong.',
