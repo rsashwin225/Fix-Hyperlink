@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="1.8">
+<meta name="s4c-hub-version" content="1.9">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -398,7 +398,7 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
         <div class="hero-r" id="stage"><div class="art" id="art"></div>
           <div class="legend"><span><i style="background:#d98b3a"></i>to GitHub</span><span><i style="background:#5f9a52"></i>update back</span><span><i style="background:var(--fg3)"></i>your file</span></div></div>
       </section>
-      <div class="dz" id="dz" style="display:none"><div class="big">&#8595;</div><div><h4 id="dzH">Drop your files here</h4><p id="dzP">Files stay on this PC. The fixed copy is saved next to each original.</p></div><button class="btn" id="dzPick">Choose files</button><input type="file" id="dzIn" multiple hidden></div>
+      <div class="dz" id="dz" style="display:none"><div class="big">&#8595;</div><div><h4 id="dzH">Drop your files here</h4><p id="dzP">Or press Choose files above. Files stay on this PC. The fixed copy is saved next to each original, and it starts as soon as the files are picked.</p></div><input type="file" id="dzIn" multiple hidden></div>
       <div class="fl" id="dzList" style="display:none"></div>
       <div class="cards4" id="stats"></div>
       <section class="card prog-card"><div class="ch">Run progress<small id="stepTxt">Ready</small></div><div class="cb"><ol class="steps" id="steps"></ol></div></section>
@@ -625,15 +625,16 @@ function dzOn(){return dz.tool===TOOLS[cur].file?dz.items:[]}
 function dzRender(){const t=TOOLS[cur];const box=$('dz'),list=$('dzList');
   if(!t.drop){box.style.display='none';list.style.display='none';return}
   box.style.display='';const it=dzOn();
-  $('dzH').textContent='Drop your '+t.drop.replace('.','')+' files here';$('dzIn').accept=t.drop;
+  $('dzH').textContent='Drop your '+t.drop.replace('.','')+' files here to start';$('dzIn').accept=t.drop;
   list.style.display=it.length?'':'none';
   const ready=it.filter(x=>x.state==='ready').length;
   list.innerHTML=it.map((x,i)=>'<div class="r"><span class="nm" title="'+esc(x.path||x.file.name)+'">'+esc(x.file.name)+'</span><span class="st'+(x.state==='done'?' ok':x.state==='failed'?' bad':'')+'">'+esc(x.msg)+'</span>'+
-    (x.state==='done'?'<button class="btn" onclick="dzOpen('+i+')">Open folder</button>':(x.state==='ready'||x.state==='failed')&&!job?'<button class="x" title="Remove" onclick="dzDel('+i+')">&times;</button>':'')+'</div>').join('');
-  if(!job)$('runTxt').textContent=ready?'Run on '+ready+(ready===1?' file':' files'):'Run '+t.name}
+    (x.path||x.outPath?'<button class="btn" onclick="dzOpen('+i+')">Open folder</button>':'')+(x.state==='failed'&&!job?'<button class="x" title="Remove" onclick="dzDel('+i+')">&times;</button>':'')+'</div>').join('');
+  if(!job)$('runTxt').textContent='Choose files'}
 function dzDel(i){dz.items.splice(i,1);dzRender()}
-function dzOpen(i){const x=dzOn()[i];if(x&&x.outPath)api('/api/openfolder?path='+encodeURIComponent(x.outPath))}
+function dzOpen(i){const x=dzOn()[i];const p=x&&(x.outPath||x.path);if(p)api('/api/openfolder?path='+encodeURIComponent(p))}
 async function dzAdd(files){const t=TOOLS[cur];if(!t.drop)return;
+  if(job){toast('warn','A tool is already running','Wait until it has finished, then choose more files.');return}
   const add=[...files].filter(f=>f.name.toLowerCase().endsWith(t.drop));
   if(!add.length){toast('warn','Wrong file type','Drop '+t.drop+' files here for '+t.name+'.');return}
   if(dz.tool!==t.file)dz={tool:t.file,items:[]};
@@ -646,7 +647,7 @@ async function dzAdd(files){const t=TOOLS[cur];if(!t.drop)return;
     const fl=[].concat(r.files||[]);
     mine.forEach(x=>{const m=fl.find(y=>y.name===x.file.name);x.state='ready';if(m&&m.path){x.path=m.path;x.msg='Found in '+folderOf(m.path)}else x.msg=miss})
   }catch(e){mine.forEach(x=>{x.state='ready';x.msg=miss})}
-  dzRender()}
+  dzRender();startDrop()}
 async function startDrop(){
   if(job){toast('warn','A tool is already running','Wait until it has finished.');return}
   const t=TOOLS[cur];const items=dz.items.filter(x=>x.state==='ready');const paths=[];$('btnRun').disabled=$('btnCheck').disabled=true;
@@ -672,13 +673,13 @@ function dzDone(was){const t=TOOLS.find(x=>x.file===was.tool);
   ['dragleave','drop'].forEach(n=>z.addEventListener(n,e=>{e.preventDefault();z.classList.remove('hot')}));
   z.addEventListener('drop',e=>dzAdd(e.dataTransfer.files));
   window.addEventListener('dragover',e=>e.preventDefault());window.addEventListener('drop',e=>e.preventDefault());
-  $('dzPick').onclick=()=>$('dzIn').click();$('dzIn').onchange=e=>{dzAdd(e.target.files);e.target.value=''};
+  $('dzIn').onchange=e=>{dzAdd(e.target.files);e.target.value=''};
   const _sel=select;select=function(i){_sel(i);dzRender()};
 })();
 
 /* ---------- run ---------- */
 async function start(launch){
-  if(launch&&dzOn().some(x=>x.state==='ready'))return startDrop();
+  if(launch&&TOOLS[cur].drop&&!job){$('dzIn').click();return}
   if(job){toast('warn','A tool is already starting','Wait until it has opened.');return}
   const t=TOOLS[cur];
   try{const r=await (await api('/api/run?tool='+encodeURIComponent(t.file)+'&launch='+(launch?1:0))).json();
