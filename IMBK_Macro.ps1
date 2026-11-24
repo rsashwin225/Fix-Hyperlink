@@ -15,7 +15,7 @@
 #      text combined with its Subtitle text, after step 1 has run.
 #
 # A backup copy is saved first, next to the original (name_BEFORE_SLIDfix.pptx).
-$IMBK_VERSION = '4.3'   # shown at the start of the window; the updater compares this number with GitHub
+$IMBK_VERSION = '4.4'   # shown at the start of the window; the updater compares this number with GitHub
 # ---- work log: notes each saved file (name, slides or pages) for the daily report in S4C Tools ----
 # Only reads the saved file; never changes it and never stops the tool if something goes wrong.
 function Add-WorkLog([string]$tool, [string]$inPath, [string]$outPath) {
@@ -998,11 +998,11 @@ function Fix-One([string]$path) {
 
 Write-Host "IMBK Macro - running version $IMBK_VERSION" -ForegroundColor Cyan
 Write-Host ''
-$files = if ($args.Count -gt 0) { $args } else { Select-Files }
+$files = if ($env:IMBK_FILES) { @($env:IMBK_FILES.Split(';') | Where-Object { $_ }) } elseif ($args.Count -gt 0) { $args } else { Select-Files }
 if ($files.Count -eq 0) { Write-Host "No files selected."; exit }
-$report = foreach ($f in $files) { Fix-One $f }
+$report = foreach ($f in $files) { Write-Host ('Fixing: ' + [IO.Path]::GetFileName($f)); Fix-One $f }
 Write-Host ""
 Write-Host "RESULT"
 $report | ForEach-Object { Write-Host " - $_" }
 Write-Host ""
-Read-Host "Press Enter to close"
+if (-not $env:S4C_AUTO) { Read-Host "Press Enter to close" }

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="1.9">
+<meta name="s4c-hub-version" content="2.0">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -334,6 +334,20 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
 .fl .r:first-child{border-top:0}.fl .nm{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
 .fl .st{color:var(--fg3);font-size:12.5px;text-align:right}.fl .st.ok{color:#3f7d3a;font-weight:600}.fl .st.bad{color:#b3402a;font-weight:600}
 .fl .x{border:0;background:none;color:var(--fg3);cursor:pointer;font-size:16px;padding:0 4px}
+.rnc{margin:0 0 16px;border:1px solid var(--stroke);border-radius:16px;background:var(--card);padding:18px 24px;display:flex;align-items:center;gap:22px}
+.rnw{position:relative;width:92px;height:92px;flex:none}.rnw svg{display:block}
+.rnw b{position:absolute;inset:0;display:grid;place-items:center;font:700 19px var(--sans);color:var(--fg)}
+.rno{position:absolute;inset:-5px;border-radius:50%;border:2px solid transparent;border-top-color:#d98b3a88;animation:rnsp 1.4s linear infinite}
+@keyframes rnsp{to{transform:rotate(360deg)}}
+.rnt{flex:1;min-width:0}.rnt h4{margin:0;font:600 16px var(--sans);color:var(--fg)}.rnt p{margin:3px 0 0;font:13px var(--sans);color:var(--fg3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.rns span{font:12.5px var(--sans);padding:4px 10px;border-radius:20px;background:var(--card2);color:var(--fg3)}
+.rns span.on{background:#f3dccd;color:#8a3a1c;font-weight:600}.rns span.dn{background:#e1efdc;color:#3f7d3a}
+.rnt .btn{margin-top:12px}
+.rnc.rnd{border-color:#b9d8b1;background:#eef7ea;animation:rnpop .4s}.rnc.rnd.bad{border-color:#e6cf9b;background:#fbf4e1}
+@keyframes rnpop{from{transform:scale(.97);opacity:0}to{transform:none;opacity:1}}
+.rnk{width:36px;height:36px;border-radius:50%;background:#3f7d3a;color:#fff;display:grid;place-items:center;font-size:20px;flex:none}.rnd.bad .rnk{background:#b98a1c}
+.rnd h4{color:#24541f}.rnd.bad h4{color:#7a5a0d}.rnd p{color:#3d6b37;white-space:normal}.rnd.bad p{color:#7a5a0d}.rnd .btn{margin-left:auto;flex:none}
+.hero.hot{outline:2px dashed #b4532e;outline-offset:-8px}
 </style>
 </head>
 <body>
@@ -398,7 +412,8 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
         <div class="hero-r" id="stage"><div class="art" id="art"></div>
           <div class="legend"><span><i style="background:#d98b3a"></i>to GitHub</span><span><i style="background:#5f9a52"></i>update back</span><span><i style="background:var(--fg3)"></i>your file</span></div></div>
       </section>
-      <div class="dz" id="dz" style="display:none"><div class="big">&#8595;</div><div><h4 id="dzH">Drop your files here</h4><p id="dzP">Or press Choose files above. Files stay on this PC. The fixed copy is saved next to each original, and it starts as soon as the files are picked.</p></div><input type="file" id="dzIn" multiple hidden></div>
+      <input type="file" id="dzIn" multiple hidden>
+      <div class="rnc" id="rnCard" style="display:none"></div>
       <div class="fl" id="dzList" style="display:none"></div>
       <div class="cards4" id="stats"></div>
       <section class="card prog-card"><div class="ch">Run progress<small id="stepTxt">Ready</small></div><div class="cb"><ol class="steps" id="steps"></ol></div></section>
@@ -492,21 +507,21 @@ const TOOLS=[
   idea:'For SDRS files (the file name contains SDRS) it also turns sideways photo credits upright and places them under their picture, so the reading order is title, picture, credit, caption. Other files are not touched this way.',
   steps:[['Pick files','PowerPoint decks'],['Check GitHub','Newest version of this tool'],['Number titles','(1 of N) on repeated titles'],['Name shapes','Title, TextBox, Picture'],['Reading order','Title, picture, credit, caption'],['Save','Remediated.pptx']],
   checks:['Repeated titles end in (1 of N)','Shapes are named in reading order','SDRS files: credit sits under its picture','Language is English (US) and the document title is set']},
- {file:'IMBK_Macro.ps1',art:'layout',name:'IMBK Macro',group:1,letter:'P',tile:'var(--ppt)',out:'<name> (same file, backup kept)',unit:'slides',
+ {file:'IMBK_Macro.ps1',drop:'.pptx',art:'layout',name:'IMBK Macro',group:1,letter:'P',tile:'var(--ppt)',out:'<name> (same file, backup kept)',unit:'slides',
   tagline:'IMBK chapter decks: figures, captions and credits laid out.',
   intro:['IMBK decks have figures, captions and credits that must sit in a fixed layout and be real placeholders.',
          'IMBK Macro lays them out, numbers repeated titles, names shapes, sets the language and the document title.'],
   idea:'It works on the file itself and keeps a backup named <code>_BEFORE_IMBKfix</code> next to it.',
   steps:[['Pick files','IMBK decks'],['Check GitHub','Newest version of this tool'],['Lay out figures','Captions and credits'],['Name shapes','Title, TextBox, Picture'],['Save','Same file + backup']],
   checks:['Figures, captions and credits are in place','Repeated titles end in (1 of N)','A _BEFORE_IMBKfix backup exists']},
- {file:'AltText_Tool.ps1',art:'alt',name:'Alt Text Tool',group:1,letter:'P',tile:'var(--ppt)',out:'<name> AltText.pptx',unit:'slides',
+ {file:'AltText_Tool.ps1',drop:['.pptx','.xlsx','.csv'],art:'alt',name:'Alt Text Tool',group:1,letter:'P',tile:'var(--ppt)',out:'<name> AltText.pptx',unit:'slides',
   tagline:'Fills picture alt text from the client\'s Excel log, matched by figure number.',
   intro:['The client sends alt text in an Excel file, one row per figure. Copying it into every picture by hand is slow and easy to get wrong.',
          'The tool reads the figure number on the slide (for example <code>Figure 14.F03</code>), finds the row, and opens a review page where you confirm or pick another row from the whole file.'],
   idea:'Pictures that already have alt text are kept, and rows marked Decorative are marked decorative.',
   steps:[['Choose deck and Excel','In the tool window'],['Check GitHub','Newest version of this tool'],['Match figures','By figure number first'],['Review page','Confirm or change each match'],['Save a copy','AltText.pptx + report'],['Note in today\'s work','For the daily report']],
   checks:['Every picture has alt text or is decorative','Figure numbers matched the right rows','"Not sure" items were written by hand','Long descriptions came through']},
- {file:'Link_Fixer.ps1',art:'link',name:'Link Fixer',group:2,letter:'L',tile:'var(--both)',out:'<name> Links.docx / .pptx',unit:'slides',
+ {file:'Link_Fixer.ps1',drop:['.docx','.pptx'],art:'link',name:'Link Fixer',group:2,letter:'L',tile:'var(--both)',out:'<name> Links.docx / .pptx',unit:'slides',
   tagline:'Replaces raw web addresses and "click here" with meaningful link text.',
   intro:['Screen reader users often jump from link to link. "Click here", "link" or a long web address tells them nothing about where it goes.',
          'Link Fixer checks each address, reads the page title and suggests clear text. You edit it on the review page and press Apply.'],
@@ -616,29 +631,33 @@ function showGh(t,g){if(g.status==='latest')mbar('ok','<b>Connected to GitHub.</
 function countChecks(){const a=document.querySelectorAll('#checks input');$('chkCount').textContent=[...a].filter(x=>x.checked).length+' of '+a.length}
 
 
-/* ---------- drop files on the page ---------- */
-let dz={tool:'',items:[]};
+/* ---------- choose or drop files: runs in the background, progress and result on this page ---------- */
+let dz={tool:'',items:[]};let rn=null;
 const POSTJ=async(p,body)=>{const r=await fetch(p,{method:'POST',headers:{'X-S4C':TOKEN},body:JSON.stringify(body)});if(!r.ok)throw new Error(await r.text());return r.json()};
 const folderOf=p=>String(p||'').replace(/[\\/][^\\/]*$/,'');
 const leafOf=p=>String(p||'').replace(/^.*[\\/]/,'');
+const dropOf=t=>[].concat(t.drop||[]);
+const INTER=['Link_Fixer.ps1','AltText_Tool.ps1'];
+const RN_STEPS={d:['Checking GitHub','Reading the file','Fixing','Saving'],
+ 'Link_Fixer.ps1':['Checking GitHub','Reading the links','Looking up links','Review page open'],
+ 'AltText_Tool.ps1':['Checking GitHub','Reading deck and Excel','Building the review page','Review page open']};
 function dzOn(){return dz.tool===TOOLS[cur].file?dz.items:[]}
-function dzRender(){const t=TOOLS[cur];const box=$('dz'),list=$('dzList');
-  if(!t.drop){box.style.display='none';list.style.display='none';return}
-  box.style.display='';const it=dzOn();
-  $('dzH').textContent='Drop your '+t.drop.replace('.','')+' files here to start';$('dzIn').accept=t.drop;
-  list.style.display=it.length?'':'none';
-  const ready=it.filter(x=>x.state==='ready').length;
+function dzRender(){const t=TOOLS[cur];const list=$('dzList');
+  if(!t.drop){list.style.display='none';$('rnCard').style.display='none';return}
+  $('dzIn').accept=dropOf(t).join(',');
+  const it=dzOn();list.style.display=it.length?'':'none';
   list.innerHTML=it.map((x,i)=>'<div class="r"><span class="nm" title="'+esc(x.path||x.file.name)+'">'+esc(x.file.name)+'</span><span class="st'+(x.state==='done'?' ok':x.state==='failed'?' bad':'')+'">'+esc(x.msg)+'</span>'+
     (x.path||x.outPath?'<button class="btn" onclick="dzOpen('+i+')">Open folder</button>':'')+(x.state==='failed'&&!job?'<button class="x" title="Remove" onclick="dzDel('+i+')">&times;</button>':'')+'</div>').join('');
-  if(!job)$('runTxt').textContent='Choose files'}
+  if(!job)$('runTxt').textContent='Choose files';
+  rnDraw()}
 function dzDel(i){dz.items.splice(i,1);dzRender()}
 function dzOpen(i){const x=dzOn()[i];const p=x&&(x.outPath||x.path);if(p)api('/api/openfolder?path='+encodeURIComponent(p))}
 async function dzAdd(files){const t=TOOLS[cur];if(!t.drop)return;
   if(job){toast('warn','A tool is already running','Wait until it has finished, then choose more files.');return}
-  const add=[...files].filter(f=>f.name.toLowerCase().endsWith(t.drop));
-  if(!add.length){toast('warn','Wrong file type','Drop '+t.drop+' files here for '+t.name+'.');return}
+  const ok=dropOf(t);const add=[...files].filter(f=>ok.some(e=>f.name.toLowerCase().endsWith(e)));
+  if(!add.length){toast('warn','Wrong file type',t.name+' takes '+ok.join(', ')+' files.');return}
   if(dz.tool!==t.file)dz={tool:t.file,items:[]};
-  dz.items=dz.items.filter(x=>x.state!=='done');
+  dz.items=dz.items.filter(x=>x.state!=='done');rn=null;
   const mine=[];
   for(const f of add){if(dz.items.some(x=>x.file.name===f.name&&x.file.size===f.size))continue;const x={file:f,path:'',state:'looking',msg:'Looking for the original...'};dz.items.push(x);mine.push(x)}
   dzRender();if(!mine.length)return;
@@ -650,33 +669,85 @@ async function dzAdd(files){const t=TOOLS[cur];if(!t.drop)return;
   dzRender();startDrop()}
 async function startDrop(){
   if(job){toast('warn','A tool is already running','Wait until it has finished.');return}
-  const t=TOOLS[cur];const items=dz.items.filter(x=>x.state==='ready');const paths=[];$('btnRun').disabled=$('btnCheck').disabled=true;
+  const t=TOOLS[cur];const items=dz.items.filter(x=>x.state==='ready');if(!items.length)return;
+  let chapter='';
+  if(t.file==='AltText_Tool.ps1'){
+    const pp=items.filter(x=>/\.pptx$/i.test(x.file.name)),xx=items.filter(x=>/\.xlsx$/i.test(x.file.name));
+    if(!pp.length||!xx.length){toast('warn','One more file needed','Choose the deck (.pptx) and the Excel alt text file (.xlsx) together. Add the saved mapping (.csv) to apply the matches.');return}
+    if(!items.some(x=>/\.csv$/i.test(x.file.name))){
+      const g=(pp[0].file.name.replace(/\.[^.]+$/,'').match(/(\d{1,2})(?=\D*$)/)||[''])[0];
+      chapter=g||prompt('Which chapter number is this deck? (as in the Excel Chapter Number column, for example 05)','')||'';
+      if(!chapter){toast('warn','Chapter number needed','Choose the files again and enter the chapter number.');return}}
+  }
+  $('btnRun').disabled=$('btnCheck').disabled=true;const paths=[];
   for(const x of items){
     if(!x.path){x.msg='Copying to Documents\\S4C Output...';dzRender();
       try{const r=await (await fetch('/api/upload?name='+encodeURIComponent(x.file.name),{method:'POST',headers:{'X-S4C':TOKEN},body:x.file})).json();x.path=r.path}
       catch(e){x.state='failed';x.msg='Could not copy: '+e.message;continue}}
     paths.push(x.path);x.state='running';x.msg='Waiting...'}
-  dzRender();
-  if(!paths.length){$('btnRun').disabled=$('btnCheck').disabled=false;return}
-  try{const r=await POSTJ('/api/runfiles',{tool:t.file,files:paths});
+  if(!paths.length){$('btnRun').disabled=$('btnCheck').disabled=false;dzRender();return}
+  try{const r=await POSTJ('/api/runfiles',{tool:t.file,files:paths,chapter});
+    const inter=INTER.includes(t.file);const total=t.file==='AltText_Tool.ps1'?1:paths.length;
     job={id:r.id,tool:t.file,launch:true,drop:true};doneFor='';phase=1;stage('updating');
-    items.forEach(x=>{if(x.state==='running')x.msg='Checking GitHub...'});dzRender();
-    mbar('busy','<b>Checking GitHub</b>for the newest '+esc(t.name)+'... this can take up to a minute.');drawSteps();poll();
-  }catch(e){$('btnRun').disabled=$('btnCheck').disabled=false;items.forEach(x=>{if(x.state==='running'){x.state='failed';x.msg='Could not start: '+e.message}});dzRender();toast('err','Could not start',e.message)}}
-function dzDone(was){const t=TOOLS.find(x=>x.file===was.tool);
-  (state.rows||[]).length;dz.items.filter(x=>x.state==='running').forEach(x=>{
-    const leaf=leafOf(x.path);const rows=(state.rows||[]).filter(r=>r.file===leaf&&r.tool===t.name);const r=rows[rows.length-1];
-    if(r){x.state='done';x.outPath=folderOf(x.path)+'\\'+r.out;x.msg='Saved: '+r.out+(r.count?'  ('+r.count+' '+r.unit+')':'')}
-    else{x.state='failed';x.msg='Not saved. Check the tool window for the reason.'}})}
-(function(){const z=$('dz');
-  ['dragenter','dragover'].forEach(n=>z.addEventListener(n,e=>{e.preventDefault();z.classList.add('hot')}));
-  ['dragleave','drop'].forEach(n=>z.addEventListener(n,e=>{e.preventDefault();z.classList.remove('hot')}));
-  z.addEventListener('drop',e=>dzAdd(e.dataTransfer.files));
+    rn={tool:t.file,total,inter,t0:Date.now(),ft0:Date.now(),lastDone:0,pct:3,stage:0,serving:false,cur:'',mode:'run'};
+    dzRender();drawSteps();poll();
+  }catch(e){$('btnRun').disabled=$('btnCheck').disabled=false;items.forEach(x=>{if(x.state==='running'){x.state='failed';x.msg='Could not start: '+e.message}});rn=null;dzRender();toast('err','Could not start',e.message)}}
+/* ring */
+const RC=2*Math.PI*42;
+function rnTitle(){const t=TOOLS.find(x=>x.file===rn.tool);
+  if(rn.tool==='Link_Fixer.ps1')return rn.serving?'The review page is open':'Reading your links...';
+  if(rn.tool==='AltText_Tool.ps1')return rn.serving?'The review page is open':'Building the review page...';
+  return 'Fixing '+rn.total+(rn.total===1?' file':' files')+'...'}
+function rnDraw(){const c=$('rnCard');if(!rn||rn.tool!==TOOLS[cur].file){c.style.display='none';return}
+  c.style.display='';
+  if(rn.mode!=='run'){c.className='rnc rnd'+(rn.mode==='bad'?' bad':'');c.innerHTML=rn.html;return}
+  c.className='rnc';
+  c.innerHTML='<div class="rnw"><svg viewBox="0 0 100 100" width="92" height="92"><circle cx="50" cy="50" r="42" fill="none" stroke="var(--stroke2)" stroke-width="9"/><circle id="rnArc" cx="50" cy="50" r="42" fill="none" stroke="#b4532e" stroke-width="9" stroke-linecap="round" stroke-dasharray="'+RC+'" stroke-dashoffset="'+RC+'" transform="rotate(-90 50 50)" style="transition:stroke-dashoffset .7s"/></svg><b id="rnPct">0%</b><i class="rno"></i></div>'+
+   '<div class="rnt"><h4 id="rnH"></h4><p id="rnP"></p><div class="rns" id="rnS">'+(RN_STEPS[rn.tool]||RN_STEPS.d).map(x=>'<span>'+esc(x)+'</span>').join('')+'</div><div id="rnB"></div></div>';
+  rnPaint()}
+function rnPaint(){if(!rn||rn.mode!=='run'||!$('rnArc'))return;
+  $('rnArc').style.strokeDashoffset=RC*(1-rn.pct/100);$('rnPct').textContent=Math.round(rn.pct)+'%';$('rnH').textContent=rnTitle();
+  $('rnP').textContent=rn.serving?'Finish in your browser, then press the button below.':(rn.cur||'');
+  [...$('rnS').children].forEach((x,k)=>{x.className=k<rn.stage?'dn':k===rn.stage?'on':''});
+  $('rnB').innerHTML=rn.serving?'<button class="btn" onclick="rnStop()">I have finished in the review page</button>':''}
+function rnStop(){if(job)api('/api/stop?id='+job.id)}
+function rnUpdate(r){if(!rn)return;const p=r.progress||{total:rn.total,done:0};let stage=0,pct=rn.pct;
+  if(r.state==='running'){const el=(Date.now()-rn.t0)/1000;stage=1;
+    if(rn.inter){
+      if(p.serving){stage=3;pct=93}
+      else if(p.lookTotal>0){stage=2;pct=8+80*p.lookDone/p.lookTotal}
+      else{stage=el>4?2:1;pct=Math.min(85,8+el*3)}
+    }else{
+      if(p.done!==rn.lastDone){rn.lastDone=p.done;rn.ft0=Date.now()}
+      const slice=100/rn.total;const creep=(1-Math.exp(-(Date.now()-rn.ft0)/15000))*0.9*slice;
+      pct=Math.min(97,3+(p.done*slice)*0.97+creep*0.97);
+      if(p.current)stage=2;if(p.saved>p.done)stage=3}
+    rn.serving=!!p.serving;rn.cur=p.current||''}
+  rn.stage=stage;rn.pct=Math.max(rn.pct,pct);rnPaint()}
+function rnFinish(was,r){const it=dz.items;const ok=it.length&&it.every(x=>x.state==='done');const errs=((r.progress||{}).errors)||[];
+  const n=it.filter(x=>x.state==='done'&&/\.(pptx|docx)$/i.test(x.file.name)).length;const t=TOOLS.find(x=>x.file===was.tool);
+  const inter=INTER.includes(was.tool);
+  const head=ok?(inter?'Completed. Your review was applied.':'Completed. '+n+(n===1?' file':' files')+' fixed.'):'Completed with problems';
+  const sub=ok?(was.tool==='IMBK_Macro.ps1'?'The decks were fixed in place and a backup of each was kept. Today\'s work is updated.':'The fixed copies are saved next to your originals. Today\'s work is updated.'):
+    (errs.find(x=>/FAILED|Cannot|not found|denied|Exception/i.test(x))||errs[0]||'Some files were not saved. The list below says which one and why.');
+  const first=it.findIndex(x=>x.outPath||x.path);
+  rn.mode=ok?'done':'bad';rn.html='<div class="rnk">'+(ok?'&#10003;':'!')+'</div><div class="rnt"><h4>'+esc(head)+'</h4><p>'+esc(sub)+'</p></div>'+(first>=0?'<button class="btn" onclick="dzOpen('+first+')">Open folder</button>':'');
+  rnDraw()}
+function dzDone(was,r){const t=TOOLS.find(x=>x.file===was.tool);
+  dz.items.filter(x=>x.state==='running').forEach(x=>{
+    const leaf=leafOf(x.path);const rows=(state.rows||[]).filter(q=>q.file===leaf&&q.tool===t.name);const q=rows[rows.length-1];
+    const isDoc=/\.(pptx|docx)$/i.test(x.file.name);
+    if(q){x.state='done';x.outPath=folderOf(x.path)+'\\'+q.out;x.msg=(q.out===q.file?'Fixed in place, backup kept':'Saved: '+q.out)+(q.count?'  ('+q.count+' '+q.unit+')':'')}
+    else if(!isDoc){x.state='done';x.msg='Used'}
+    else{x.state='failed';x.msg=(INTER.includes(was.tool)&&!(((r.progress||{}).errors)||[]).length)?'Nothing was saved (the review was not applied).':'Not saved. '+((((r.progress||{}).errors)||[])[0]||'The tool reported a problem.')}})}
+(function(){const h=document.querySelector('section.hero');
+  ['dragenter','dragover'].forEach(n=>h.addEventListener(n,e=>{e.preventDefault();h.classList.add('hot')}));
+  ['dragleave','drop'].forEach(n=>h.addEventListener(n,e=>{e.preventDefault();h.classList.remove('hot')}));
+  h.addEventListener('drop',e=>dzAdd(e.dataTransfer.files));
   window.addEventListener('dragover',e=>e.preventDefault());window.addEventListener('drop',e=>e.preventDefault());
   $('dzIn').onchange=e=>{dzAdd(e.target.files);e.target.value=''};
   const _sel=select;select=function(i){_sel(i);dzRender()};
 })();
-
 /* ---------- run ---------- */
 async function start(launch){
   if(launch&&TOOLS[cur].drop&&!job){$('dzIn').click();return}
@@ -689,15 +760,15 @@ async function start(launch){
 }
 async function poll(){
   if(!job)return;
-  try{const r=await (await api('/api/job?id='+job.id)).json();const t=TOOLS.find(x=>x.file===r.tool);const here=TOOLS[cur].file===r.tool;
+  try{const r=await (await api('/api/job?id='+job.id)).json();const t=TOOLS.find(x=>x.file===r.tool);const here=TOOLS[cur].file===r.tool;if(job.drop)rnUpdate(r);
     if(r.update&&!job.seen){job.seen=1;gh[r.tool]=r.update;if(r.version)state.tools[r.tool]=r.version;
       const u=r.update;if(here)showGh(t,u);
       toast(u.status==='offline'?'err':u.status==='kept'?'warn':'ok',u.status==='offline'?'Not connected to GitHub':'Connected to GitHub',u.status==='offline'?'Using the copy on this PC.':u.message);
       if(here){drawStats();drawNav()}}
-    if(r.state==='running'&&!job.open){job.open=1;if(here){phase=2;stage('running');mbar('info',job.drop?'<b>'+esc(t.name)+' is fixing your files.</b>You can watch it in its own window. This page updates when it finishes.':'<b>'+esc(t.name)+' is open in its own window.</b>Pick your files there. This page updates when you close it.');drawSteps()}if(job.drop)dz.items.forEach(x=>{if(x.state==='running')x.msg='Fixing...'});dzRender()}
+    if(r.state==='running'&&!job.open){job.open=1;if(here&&!job.drop){phase=2;stage('running');mbar('info','<b>'+esc(t.name)+' is open in its own window.</b>Pick your files there. This page updates when you close it.');drawSteps()}if(job.drop){mbar(null);dz.items.forEach(x=>{if(x.state==='running')x.msg='Fixing...'});dzRender()}}
     if(r.state==='done'){const was=job;job=null;$('btnRun').disabled=$('btnCheck').disabled=false;
       if(was.launch){doneFor=r.tool;toast('ok',t.name+' finished','Today\'s work is updated.')}
-      await load(true);loadDays();if(was.drop)dzDone(was);if(here){stage(was.launch?'done':'');if(was.launch){phase=t.steps.length;mbar('ok','<b>'+esc(t.name)+' finished.</b>Check the saved file, then tick the list on the right.')}select(cur)}return}
+      await load(true);loadDays();if(was.drop){dzDone(was,r);rnFinish(was,r)}if(here){stage(was.launch?'done':'');if(was.launch&&!was.drop){phase=t.steps.length;mbar('ok','<b>'+esc(t.name)+' finished.</b>Check the saved file, then tick the list on the right.')}if(was.drop)phase=t.steps.length;select(cur)}return}
   }catch(e){$('off').classList.add('on');return}
   setTimeout(poll,900);
 }

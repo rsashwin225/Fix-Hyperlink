@@ -1,5 +1,5 @@
 # S4C RUNTOOL SCRIPT - opens one tool in its own window, the same way the menu did, and waits for Enter at the end.
-# S4C-FILE-VERSION: 1.4
+# S4C-FILE-VERSION: 1.5
 param([string]$Tool, [switch]$Test)
 $sta = @{ 'Word_Fixer.ps1' = $true; 'SLID_Macro.ps1' = $true; 'IMBK_Macro.ps1' = $false; 'AltText_Tool.ps1' = $true; 'Link_Fixer.ps1' = $true }
 if (-not $sta.ContainsKey($Tool)) { Write-Host ('Unknown tool: ' + $Tool); exit 1 }
@@ -27,4 +27,4 @@ $a += @('-File', (Join-Path $PSScriptRoot $Tool))
 if ($Test) { Write-Host ('[test] would run: ' + ($a -join ' ')); exit 0 }
 & $exe @a
 Write-Host ''
-if ($env:S4C_AUTO) { Start-Sleep -Seconds 4 } else { [void](Read-Host 'Finished. Press Enter to close this window') }
+if ($env:S4C_AUTO) { } else { [void](Read-Host 'Finished. Press Enter to close this window') }

@@ -1,5 +1,5 @@
 # S4C HUB SCRIPT - the S4C Tools window. Runs a small page on this PC only (http://localhost) and opens it
-# S4C-FILE-VERSION: 1.8
+# S4C-FILE-VERSION: 1.9
 # in the browser. From the page you pick a tool, it checks GitHub for that one tool, then opens the tool
 # in its own window exactly as before. Close this window to close S4C Tools.
 $ErrorActionPreference = 'Stop'
@@ -48,7 +48,7 @@ function Read-Status([string]$text) {
 
 # ---------------------------------------------------------------- jobs: GitHub check, then the tool in its own window
 $jobs = @{}
-function Start-Job2([string]$file, [bool]$launch, [string[]]$files = @()) {
+function Start-Job2([string]$file, [bool]$launch, [string[]]$files = @(), [hashtable]$envs = @{}, [int]$total = 0) {
     $id = [guid]::NewGuid().ToString('N').Substring(0, 10)
     $out = Join-Path ([IO.Path]::GetTempPath()) ("s4c_upd_$id.txt"); $err = $out + '.err'
     $args1 = '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $here 'S4C_Update.ps1') + '" -Tool ' + $file
@@ -56,7 +56,7 @@ function Start-Job2([string]$file, [bool]$launch, [string[]]$files = @()) {
     $env:S4C_STATUS_FILE = $sf
     $p = Start-Process -FilePath $exe -ArgumentList $args1 -NoNewWindow -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
     Remove-Item Env:S4C_STATUS_FILE -ErrorAction SilentlyContinue
-    $jobs[$id] = @{ Id = $id; File = $file; Launch = $launch; State = 'updating'; Upd = $p; Out = $out; Err = $err; Sf = $sf; Status = $null; Tool = $null; Started = (Get-Date); Files = $files }
+    $jobs[$id] = @{ Id = $id; File = $file; Launch = $launch; State = 'updating'; Upd = $p; Out = $out; Err = $err; Sf = $sf; Status = $null; Tool = $null; Started = (Get-Date); Files = $files; Envs = $envs; Total = $(if ($total -gt 0) { $total } else { $files.Count }); Log = ($out + '.run.txt') }
     return $id
 }
 function Step-Job($j) {
@@ -72,15 +72,54 @@ function Step-Job($j) {
             # the tool window repeats the GitHub result at the top, so both windows say the same thing
             $env:S4C_GH_STATUS = [string]$j.Status.status; $env:S4C_GH_MSG = [string]$j.Status.message; $env:S4C_GH_REASON = [string]$j.Status.reason
             $a = '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $here 'S4C_RunTool.ps1') + '" -Tool ' + $j.File
-            # files dropped on the page: hand them to the tool so it does not open its own file window
-            $fileEnv = @{ 'Word_Fixer.ps1' = 'WF_FILES'; 'SLID_Macro.ps1' = 'SLID_FILES' }[$j.File]
-            if ($j.Files -and $j.Files.Count -gt 0 -and $fileEnv) { Set-Item -Path ('Env:' + $fileEnv) -Value ($j.Files -join ';'); $env:S4C_AUTO = '1' }
+            # files chosen on the page: hand them to the tool and run it hidden, its messages go to a log the page reads
+            $fileEnv = @{ 'Word_Fixer.ps1' = 'WF_FILES'; 'SLID_Macro.ps1' = 'SLID_FILES'; 'IMBK_Macro.ps1' = 'IMBK_FILES'; 'Link_Fixer.ps1' = 'LF_FILES' }[$j.File]
+            $hidden = ($j.Files -and $j.Files.Count -gt 0)
+            if ($hidden) {
+                if ($fileEnv) { Set-Item -Path ('Env:' + $fileEnv) -Value ($j.Files -join ';') }
+                foreach ($k in $j.Envs.Keys) { Set-Item -Path ('Env:' + $k) -Value ([string]$j.Envs[$k]) }
+                $env:S4C_AUTO = '1'
+            }
             if ($env:S4C_HUB_TEST) { $j.Tool = Start-Process -FilePath $exe -ArgumentList ($a + ' -Test') -NoNewWindow -PassThru }
+            elseif ($hidden) {
+                $sp = @{ FilePath = $exe; ArgumentList = $a; RedirectStandardOutput = $j.Log; RedirectStandardError = ($j.Log + '.err'); PassThru = $true }
+                if (-not ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows)) { $sp['WindowStyle'] = 'Hidden' }
+                $j.Tool = Start-Process @sp
+            }
             else { $j.Tool = Start-Process -FilePath $exe -ArgumentList $a -PassThru }
-            Remove-Item Env:S4C_GH_STATUS, Env:S4C_GH_MSG, Env:S4C_GH_REASON, Env:WF_FILES, Env:SLID_FILES, Env:S4C_AUTO -ErrorAction SilentlyContinue
+            Remove-Item Env:S4C_GH_STATUS, Env:S4C_GH_MSG, Env:S4C_GH_REASON, Env:WF_FILES, Env:SLID_FILES, Env:IMBK_FILES, Env:LF_FILES, Env:ALTMATCH_MODE, Env:ALTMATCH_PPTX, Env:ALTMATCH_XLSX, Env:ALTMATCH_CHAPTER, Env:ALTMATCH_MAP, Env:S4C_AUTO -ErrorAction SilentlyContinue
             $j.State = 'running'
         } else { $j.State = 'done' }
     } elseif ($j.State -eq 'running' -and $j.Tool.HasExited) { $j.State = 'done' }
+}
+
+
+function Get-JobProgress($j) {
+    $p = [ordered]@{ total = [int]$j.Total; done = 0; current = ''; lookDone = 0; lookTotal = 0; serving = $false; saved = 0; errors = @() }
+    if (-not $j.Log -or -not (Test-Path -LiteralPath $j.Log)) { return $p }
+    $txt = ''
+    try { $fs = New-Object IO.FileStream($j.Log, 'Open', 'Read', 'ReadWrite'); $sr = New-Object IO.StreamReader($fs); $txt = $sr.ReadToEnd(); $sr.Close() } catch { return $p }
+    $fixN = 0; $errs = New-Object System.Collections.Generic.List[string]
+    foreach ($line in ($txt -split "`r?`n")) {
+        $t = $line.Trim()
+        if ($t -match '^Fixing:\s*(.+)$') { $fixN++; $p.current = ($Matches[1] -replace '^.*[\\/]', '') }
+        elseif ($t -match '^Looking up (\d+) of (\d+)') { $p.lookDone = [int]$Matches[1]; $p.lookTotal = [int]$Matches[2] }
+        elseif ($t -match '^Saved:') { $p.saved++ }
+        elseif ($t -match 'The review page is open at') { $p.serving = $true }
+        if ($t -match 'FAILED' -and $t.Length -lt 400) { $errs.Add($t) }
+    }
+    $p.done = [math]::Min([int]$j.Total, [math]::Max($p.saved, [math]::Max(0, $fixN - 1)))
+    # anything the tool wrote to the error stream (for example a crash before it could print a message)
+    try {
+        $ep = $j.Log + '.err'
+        if (Test-Path -LiteralPath $ep) {
+            $fs2 = New-Object IO.FileStream($ep, 'Open', 'Read', 'ReadWrite'); $sr2 = New-Object IO.StreamReader($fs2); $et = $sr2.ReadToEnd(); $sr2.Close()
+            $et = [regex]::Replace($et, "\x1B\[[0-9;]*[A-Za-z]", '')
+            foreach ($el in ($et -split "`r?`n")) { $x = $el.Trim(); if ($x -and $x.Length -lt 400 -and $errs.Count -lt 3) { $errs.Add($x) } }
+        }
+    } catch {}
+    $p.errors = @($errs.ToArray())
+    return $p
 }
 
 # ---------------------------------------------------------------- the page server
@@ -134,7 +173,7 @@ function Find-Originals($items) {
     foreach ($root in (Get-SearchRoots)) {
         if ($sw.Elapsed.TotalSeconds -gt 30 -or $found.Count -ge $want.Count) { break }
         try {
-            foreach ($f in (Get-ChildItem -LiteralPath $root -Recurse -File -Include '*.pptx', '*.docx' -Depth 8 -ErrorAction SilentlyContinue)) {
+            foreach ($f in (Get-ChildItem -LiteralPath $root -Recurse -File -Include '*.pptx', '*.docx', '*.xlsx', '*.csv' -Depth 8 -ErrorAction SilentlyContinue)) {
                 $k = $f.Name.ToLowerInvariant()
                 if (-not $want.ContainsKey($k) -or $found.ContainsKey($k)) { continue }
                 $it = $want[$k]
@@ -207,7 +246,7 @@ while ($listener.IsListening -and -not $quit) {
             '/api/upload' {
                 # a file whose original could not be found: saved in Documents\S4C Output, the fixed copy is saved beside it
                 $leaf = [IO.Path]::GetFileName([string]$q['name']) -replace '[;\\/:*?"<>|]', '_'
-                if ($leaf -notmatch '(?i)\.(pptx|docx)$') { Send $res 400 'text/plain' 'only .pptx and .docx' $null; break }
+                if ($leaf -notmatch '(?i)\.(pptx|docx|xlsx|csv)$') { Send $res 400 'text/plain' 'not a file type these tools use' $null; break }
                 $dir = Get-OutputDir; $dest = Join-Path $dir $leaf
                 $fs = [IO.File]::Create($dest); try { $req.InputStream.CopyTo($fs) } finally { $fs.Close() }
                 Send $res 200 'application/json; charset=utf-8' (ToJson @{ path = $dest }) $null
@@ -215,12 +254,26 @@ while ($listener.IsListening -and -not $quit) {
             '/api/runfiles' {
                 $b = (Read-Body $req) | ConvertFrom-Json
                 $f = [string]$b.tool
-                if (-not $TOOLS.Contains($f) -or @('Word_Fixer.ps1', 'SLID_Macro.ps1') -notcontains $f) { Send $res 400 'text/plain' 'this tool does not take dropped files' $null; break }
-                $ext = if ($f -eq 'Word_Fixer.ps1') { '.docx' } else { '.pptx' }
-                $ok = @($b.files | Where-Object { $_ -and $_.ToLowerInvariant().EndsWith($ext) -and ($_.IndexOf(';') -lt 0) -and (Test-Path -LiteralPath $_ -PathType Leaf) })
+                $allow = @{ 'Word_Fixer.ps1' = @('.docx'); 'SLID_Macro.ps1' = @('.pptx'); 'IMBK_Macro.ps1' = @('.pptx'); 'AltText_Tool.ps1' = @('.pptx', '.xlsx', '.csv'); 'Link_Fixer.ps1' = @('.docx', '.pptx') }
+                if (-not $TOOLS.Contains($f) -or -not $allow.ContainsKey($f)) { Send $res 400 'text/plain' 'this tool does not take chosen files' $null; break }
+                $ok = @($b.files | Where-Object { $_ -and ($_.IndexOf(';') -lt 0) -and (Test-Path -LiteralPath $_ -PathType Leaf) -and ($allow[$f] -contains [IO.Path]::GetExtension($_).ToLowerInvariant()) })
                 if ($ok.Count -eq 0) { Send $res 400 'text/plain' 'no usable files' $null; break }
-                $id = Start-Job2 $f $true $ok
+                $envs = @{}; $jobFiles = $ok
+                if ($f -eq 'AltText_Tool.ps1') {
+                    $pp = @($ok | Where-Object { $_.ToLowerInvariant().EndsWith('.pptx') }); $xx = @($ok | Where-Object { $_.ToLowerInvariant().EndsWith('.xlsx') }); $cc = @($ok | Where-Object { $_.ToLowerInvariant().EndsWith('.csv') })
+                    if ($pp.Count -eq 0 -or $xx.Count -eq 0) { Send $res 400 'text/plain' 'Alt Text Tool needs the deck (.pptx) and the Excel file (.xlsx)' $null; break }
+                    $envs['ALTMATCH_PPTX'] = $pp[0]; $envs['ALTMATCH_XLSX'] = $xx[0]
+                    if ($cc.Count -gt 0) { $envs['ALTMATCH_MODE'] = '2'; $envs['ALTMATCH_MAP'] = $cc[0] } else { $envs['ALTMATCH_MODE'] = '1'; $envs['ALTMATCH_CHAPTER'] = [string]$b.chapter }
+                    $jobFiles = @($pp[0])
+                }
+                $id = Start-Job2 $f $true $jobFiles $envs $(if ($f -eq 'AltText_Tool.ps1') { 1 } else { $jobFiles.Count })
                 Send $res 200 'application/json' (ToJson @{ id = $id }) $null
+            }
+            '/api/stop' {
+                # ends a tool that is waiting for the person to finish in its review page
+                $j = $jobs[$q['id']]
+                if ($j -and $j.Tool -and -not $j.Tool.HasExited) { try { & taskkill.exe /PID $j.Tool.Id /T /F 2>&1 | Out-Null } catch { try { Stop-Process -Id $j.Tool.Id -Force } catch {} } }
+                Send $res 200 'application/json' '{}' $null
             }
             '/api/openfolder' {
                 $p = [string]$q['path']
@@ -237,6 +290,7 @@ while ($listener.IsListening -and -not $quit) {
                 if (-not $j) { Send $res 404 'text/plain' 'no job' $null; break }
                 Step-Job $j
                 $body = [ordered]@{ id = $j.Id; tool = $j.File; state = $j.State; update = $j.Status; version = (Get-ToolVersion $j.File) }
+                if ($j.Files -and $j.Files.Count -gt 0) { $body['progress'] = (Get-JobProgress $j) }
                 Send $res 200 'application/json' (ToJson $body) $null
             }
             '/api/delete' {
