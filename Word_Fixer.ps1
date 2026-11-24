@@ -14,7 +14,7 @@
 #      lists ("LO ..." styles) become List Paragraph items with a separate list per parent item (as in the team's finished files).
 #
 # The original file is never changed: the result is saved as "<name> Fixed.docx" with a report next to it.
-$WF_VERSION = '2.3'   # shown at the start of the window; the updater compares this number with GitHub
+$WF_VERSION = '2.4'   # shown at the start of the window; the updater compares this number with GitHub
 # ---- work log: notes each saved file (name, slides or pages) for the daily report in S4C Tools ----
 # Only reads the saved file; never changes it and never stops the tool if something goes wrong.
 function Add-WorkLog([string]$tool, [string]$inPath, [string]$outPath) {
@@ -1604,7 +1604,8 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
 #      restarts correctly (I. / A. / 1. / a. ...), with the same numbers the reader saw before.
 $TEAM_TOP_SECTIONS = @('unit summary', 'national ems education standard competencies', 'knowledge objectives', 'skills objectives', 'readings and preparation', 'support materials', 'enhancements', 'teaching tips', 'unit activities', 'pre-lecture', 'lecture', 'post-lecture')
 $TEAM_LIST_STYLE_RX = '^(?i)LO[_\s]'
-$TEAM_BULLET_RX = '^[•·●▪◦‣]\s*'
+$TEAM_BULLET_CHARS = -join ([char[]](0x2022, 0xB7, 0x25CF, 0x25AA, 0x25E6, 0x2023, 0xF0B7))   # typed bullet characters (kept as numbers so the file stays plain ASCII)
+$TEAM_BULLET_RX = '^[' + $TEAM_BULLET_CHARS + ']\s*'
 function Invoke-TeamFormat($doc, $nsm, $sty, $snsm, $numRef, $nnsmRef, $info, [string]$defStyle, $report) {
     $num = $numRef.Value; $nnsm = $nnsmRef.Value
     $all = @($doc.SelectNodes('/w:document/w:body//w:p', $nsm))
@@ -1768,7 +1769,7 @@ function Invoke-TeamFormat($doc, $nsm, $sty, $snsm, $numRef, $nnsmRef, $info, [s
     }
 
     # ---- check: what the reader sees must be the same as before
-    $norm = { param([string]$s) ((($s -replace '[•·●▪◦‣]', '*') -replace '\s', '')) }
+    $norm = { param([string]$s) ((($s -replace ('[' + $TEAM_BULLET_CHARS + ']'), '*') -replace '\s', '')) }
     $labelsAfter = Get-ListLabels $all $nsm $sty $snsm $num $nnsm $defStyle
     $bad = @()
     foreach ($p in $all) {
