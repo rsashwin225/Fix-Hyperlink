@@ -1,7 +1,7 @@
 # SLID Macro - numbers repeated slide titles (1 of 4), renames shapes, puts sideways photo credits under their picture (SDRS files only), fixes language tags.
 # Saves a remediated copy next to the original. (Self-updates from GitHub via SLID_Update.ps1.)
 # SLID MACRO SCRIPT
-$SLID_VERSION = '1.5'   # shown at the start of the window; the updater compares this number with GitHub
+$SLID_VERSION = '1.6'   # shown at the start of the window; the updater compares this number with GitHub
 # ---- work log: notes each saved file (name, slides or pages) for the daily report in S4C Tools ----
 # Only reads the saved file; never changes it and never stops the tool if something goes wrong.
 function Add-WorkLog([string]$tool, [string]$inPath, [string]$outPath) {
@@ -520,7 +520,9 @@ Add-WorkLog 'SLID Macro' $src $OutPath
 
 Write-Host "SLID Macro - running version $SLID_VERSION" -ForegroundColor Cyan
 Write-Host ''
-if ($env:FIXDECK_FILE) {
+if ($env:SLID_FILES) {
+    $files = @($env:SLID_FILES.Split(';') | Where-Object { $_ })
+} elseif ($env:FIXDECK_FILE) {
     $files = @($env:FIXDECK_FILE)
 } else {
     Add-Type -AssemblyName System.Windows.Forms

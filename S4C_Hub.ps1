@@ -1,5 +1,5 @@
 # S4C HUB SCRIPT - the S4C Tools window. Runs a small page on this PC only (http://localhost) and opens it
-# S4C-FILE-VERSION: 1.7
+# S4C-FILE-VERSION: 1.8
 # in the browser. From the page you pick a tool, it checks GitHub for that one tool, then opens the tool
 # in its own window exactly as before. Close this window to close S4C Tools.
 $ErrorActionPreference = 'Stop'
@@ -48,7 +48,7 @@ function Read-Status([string]$text) {
 
 # ---------------------------------------------------------------- jobs: GitHub check, then the tool in its own window
 $jobs = @{}
-function Start-Job2([string]$file, [bool]$launch) {
+function Start-Job2([string]$file, [bool]$launch, [string[]]$files = @()) {
     $id = [guid]::NewGuid().ToString('N').Substring(0, 10)
     $out = Join-Path ([IO.Path]::GetTempPath()) ("s4c_upd_$id.txt"); $err = $out + '.err'
     $args1 = '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $here 'S4C_Update.ps1') + '" -Tool ' + $file
@@ -56,7 +56,7 @@ function Start-Job2([string]$file, [bool]$launch) {
     $env:S4C_STATUS_FILE = $sf
     $p = Start-Process -FilePath $exe -ArgumentList $args1 -NoNewWindow -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
     Remove-Item Env:S4C_STATUS_FILE -ErrorAction SilentlyContinue
-    $jobs[$id] = @{ Id = $id; File = $file; Launch = $launch; State = 'updating'; Upd = $p; Out = $out; Err = $err; Sf = $sf; Status = $null; Tool = $null; Started = (Get-Date) }
+    $jobs[$id] = @{ Id = $id; File = $file; Launch = $launch; State = 'updating'; Upd = $p; Out = $out; Err = $err; Sf = $sf; Status = $null; Tool = $null; Started = (Get-Date); Files = $files }
     return $id
 }
 function Step-Job($j) {
@@ -72,9 +72,12 @@ function Step-Job($j) {
             # the tool window repeats the GitHub result at the top, so both windows say the same thing
             $env:S4C_GH_STATUS = [string]$j.Status.status; $env:S4C_GH_MSG = [string]$j.Status.message; $env:S4C_GH_REASON = [string]$j.Status.reason
             $a = '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $here 'S4C_RunTool.ps1') + '" -Tool ' + $j.File
+            # files dropped on the page: hand them to the tool so it does not open its own file window
+            $fileEnv = @{ 'Word_Fixer.ps1' = 'WF_FILES'; 'SLID_Macro.ps1' = 'SLID_FILES' }[$j.File]
+            if ($j.Files -and $j.Files.Count -gt 0 -and $fileEnv) { Set-Item -Path ('Env:' + $fileEnv) -Value ($j.Files -join ';'); $env:S4C_AUTO = '1' }
             if ($env:S4C_HUB_TEST) { $j.Tool = Start-Process -FilePath $exe -ArgumentList ($a + ' -Test') -NoNewWindow -PassThru }
             else { $j.Tool = Start-Process -FilePath $exe -ArgumentList $a -PassThru }
-            Remove-Item Env:S4C_GH_STATUS, Env:S4C_GH_MSG, Env:S4C_GH_REASON -ErrorAction SilentlyContinue
+            Remove-Item Env:S4C_GH_STATUS, Env:S4C_GH_MSG, Env:S4C_GH_REASON, Env:WF_FILES, Env:SLID_FILES, Env:S4C_AUTO -ErrorAction SilentlyContinue
             $j.State = 'running'
         } else { $j.State = 'done' }
     } elseif ($j.State -eq 'running' -and $j.Tool.HasExited) { $j.State = 'done' }
@@ -110,6 +113,43 @@ if (Test-Path -LiteralPath (Join-Path $here 'S4C_SelfUpdate.ps1')) {
     $env:S4C_SELF_STATUS = $selfStatus
     try { $selfProc = Start-Process -FilePath $exe -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $here 'S4C_SelfUpdate.ps1') + '"') -NoNewWindow -PassThru } catch {}
     Remove-Item Env:S4C_SELF_STATUS -ErrorAction SilentlyContinue
+}
+
+
+# ---------------------------------------------------------------- files dropped on the page: find the original, save uploads
+function Read-Body($req) { $sr = New-Object IO.StreamReader($req.InputStream, [Text.Encoding]::UTF8); try { return $sr.ReadToEnd() } finally { $sr.Close() } }
+function Get-SearchRoots {
+    $r = New-Object System.Collections.Generic.List[string]
+    $up = $env:USERPROFILE
+    foreach ($p in @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('MyDocuments'), $(if ($up) { Join-Path $up 'Downloads' }), $env:OneDrive, $env:OneDriveCommercial, $env:OneDriveConsumer, $(if ($up) { Join-Path $up 'Desktop' }), $(if ($up) { Join-Path $up 'Documents' }))) {
+        if ($p -and (Test-Path -LiteralPath $p) -and -not ($r | Where-Object { $_ -ieq $p })) { $r.Add($p) }
+    }
+    return , $r.ToArray()
+}
+# items: name, size, mtime (ms since 1970). A file is "found" when name, size and saved time all match.
+function Find-Originals($items) {
+    $want = @{}; foreach ($it in $items) { $want[([string]$it.name).ToLowerInvariant()] = $it }
+    $found = @{}
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    foreach ($root in (Get-SearchRoots)) {
+        if ($sw.Elapsed.TotalSeconds -gt 30 -or $found.Count -ge $want.Count) { break }
+        try {
+            foreach ($f in (Get-ChildItem -LiteralPath $root -Recurse -File -Include '*.pptx', '*.docx' -Depth 8 -ErrorAction SilentlyContinue)) {
+                $k = $f.Name.ToLowerInvariant()
+                if (-not $want.ContainsKey($k) -or $found.ContainsKey($k)) { continue }
+                $it = $want[$k]
+                $ms = [long]([DateTimeOffset]$f.LastWriteTimeUtc).ToUnixTimeMilliseconds()
+                if ([long]$f.Length -eq [long]$it.size -and [math]::Abs($ms - [long]$it.mtime) -le 2500 -and $f.FullName.IndexOf(';') -lt 0) { $found[$k] = $f.FullName }
+                if ($found.Count -ge $want.Count -or $sw.Elapsed.TotalSeconds -gt 30) { break }
+            }
+        } catch {}
+    }
+    return $found
+}
+function Get-OutputDir {
+    $d = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'S4C Output'
+    if (-not (Test-Path -LiteralPath $d)) { [void](New-Item -ItemType Directory -Path $d) }
+    return $d
 }
 
 function Send($res, [int]$code, [string]$ctype, $body, [string]$fileName) {
@@ -157,6 +197,35 @@ while ($listener.IsListening -and -not $quit) {
                 }
                 $list = @(); foreach ($d in ($map.Keys | Sort-Object)) { $list += [ordered]@{ day = $d; files = $map[$d].Count } }
                 Send $res 200 'application/json' (ToJson @{ days = $list }) $null
+            }
+            '/api/locate' {
+                $items = @((Read-Body $req) | ConvertFrom-Json)
+                $found = Find-Originals $items
+                $out = @(); foreach ($it in $items) { $k = ([string]$it.name).ToLowerInvariant(); $out += [ordered]@{ name = $it.name; path = $(if ($found.ContainsKey($k)) { $found[$k] } else { '' }) } }
+                Send $res 200 'application/json; charset=utf-8' (ToJson @{ files = $out }) $null
+            }
+            '/api/upload' {
+                # a file whose original could not be found: saved in Documents\S4C Output, the fixed copy is saved beside it
+                $leaf = [IO.Path]::GetFileName([string]$q['name']) -replace '[;\\/:*?"<>|]', '_'
+                if ($leaf -notmatch '(?i)\.(pptx|docx)$') { Send $res 400 'text/plain' 'only .pptx and .docx' $null; break }
+                $dir = Get-OutputDir; $dest = Join-Path $dir $leaf
+                $fs = [IO.File]::Create($dest); try { $req.InputStream.CopyTo($fs) } finally { $fs.Close() }
+                Send $res 200 'application/json; charset=utf-8' (ToJson @{ path = $dest }) $null
+            }
+            '/api/runfiles' {
+                $b = (Read-Body $req) | ConvertFrom-Json
+                $f = [string]$b.tool
+                if (-not $TOOLS.Contains($f) -or @('Word_Fixer.ps1', 'SLID_Macro.ps1') -notcontains $f) { Send $res 400 'text/plain' 'this tool does not take dropped files' $null; break }
+                $ext = if ($f -eq 'Word_Fixer.ps1') { '.docx' } else { '.pptx' }
+                $ok = @($b.files | Where-Object { $_ -and $_.ToLowerInvariant().EndsWith($ext) -and ($_.IndexOf(';') -lt 0) -and (Test-Path -LiteralPath $_ -PathType Leaf) })
+                if ($ok.Count -eq 0) { Send $res 400 'text/plain' 'no usable files' $null; break }
+                $id = Start-Job2 $f $true $ok
+                Send $res 200 'application/json' (ToJson @{ id = $id }) $null
+            }
+            '/api/openfolder' {
+                $p = [string]$q['path']
+                if ($p -and (Test-Path -LiteralPath $p)) { Start-Process explorer.exe ('/select,"' + $p + '"') }
+                Send $res 200 'application/json' '{}' $null
             }
             '/api/run' {
                 $f = $q['tool']; if (-not $TOOLS.Contains($f)) { Send $res 400 'text/plain' 'unknown tool' $null; break }

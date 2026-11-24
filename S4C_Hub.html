@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="1.7">
+<meta name="s4c-hub-version" content="1.8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -324,6 +324,16 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
 .namebox input:focus{outline:0;border-color:var(--brand-st);box-shadow:0 0 0 3px var(--brand-bg)}
 .namebox .b{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
 .namebox .b .btn{height:34px;padding:0 14px}
+.dz{margin:0 0 16px;border:2px dashed var(--stroke2);border-radius:16px;background:var(--card);padding:20px 24px;display:flex;align-items:center;gap:20px}
+.dz.hot{border-color:#b4532e;background:var(--card2)}
+.dz .big{width:50px;height:50px;border-radius:14px;background:var(--card2);display:grid;place-items:center;font-size:24px;color:#b4532e;flex:none}
+.dz h4{margin:0 0 3px;font:600 15.5px var(--sans);color:var(--fg)}.dz p{margin:0;color:var(--fg3);font:13px var(--sans)}
+.dz .btn{margin-left:auto;flex:none}
+.fl{margin:0 0 16px;border:1px solid var(--stroke);border-radius:16px;background:var(--card);overflow:hidden}
+.fl .r{display:flex;align-items:center;gap:12px;padding:10px 18px;border-top:1px solid var(--stroke);font:13.5px var(--sans);color:var(--fg)}
+.fl .r:first-child{border-top:0}.fl .nm{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.fl .st{color:var(--fg3);font-size:12.5px;text-align:right}.fl .st.ok{color:#3f7d3a;font-weight:600}.fl .st.bad{color:#b3402a;font-weight:600}
+.fl .x{border:0;background:none;color:var(--fg3);cursor:pointer;font-size:16px;padding:0 4px}
 </style>
 </head>
 <body>
@@ -388,6 +398,8 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
         <div class="hero-r" id="stage"><div class="art" id="art"></div>
           <div class="legend"><span><i style="background:#d98b3a"></i>to GitHub</span><span><i style="background:#5f9a52"></i>update back</span><span><i style="background:var(--fg3)"></i>your file</span></div></div>
       </section>
+      <div class="dz" id="dz" style="display:none"><div class="big">&#8595;</div><div><h4 id="dzH">Drop your files here</h4><p id="dzP">Files stay on this PC. The fixed copy is saved next to each original.</p></div><button class="btn" id="dzPick">Choose files</button><input type="file" id="dzIn" multiple hidden></div>
+      <div class="fl" id="dzList" style="display:none"></div>
       <div class="cards4" id="stats"></div>
       <section class="card prog-card"><div class="ch">Run progress<small id="stepTxt">Ready</small></div><div class="cb"><ol class="steps" id="steps"></ol></div></section>
       <div class="grid2">
@@ -466,14 +478,14 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
 const TOKEN='__S4C_TOKEN__';
 const GROUPS=['Word','PowerPoint','Word and PowerPoint'];
 const TOOLS=[
- {file:'Word_Fixer.ps1',art:'doc',name:'Word Fixer',group:0,letter:'W',tile:'var(--word)',out:'<name> Fixed.docx',unit:'pages',
+ {file:'Word_Fixer.ps1',drop:'.docx',art:'doc',name:'Word Fixer',group:0,letter:'W',tile:'var(--word)',out:'<name> Fixed.docx',unit:'pages',
   tagline:'Turns typed headings and outlines into real Word headings and list levels.',
   intro:['Many chapters arrive with headings that are only bold text and lists typed by hand (<code>I.</code> <code>A.</code> <code>1.</code> <code>a.</code>), so a screen reader hears no structure.',
          'Word Fixer makes the first two lines the Title and section titles Heading 1 (Heading 2 only for a sub-heading), and turns typed outlines into real list levels.'],
   idea:'The text is never changed. A safety check compares every word before the copy is saved.',
   steps:[['Choose files','In the tool window'],['Check GitHub','Newest version of this tool'],['Fix headings','Title, Heading 1, Heading 2'],['Fix list levels','I, A, 1, a, i, (a), (i)'],['Save a copy','Fixed.docx + report'],['Note in today\'s work','For the daily report']],
   checks:['Title is the first two lines','Section titles are Heading 1','No heading level is skipped','Roman numerals are lists, not headings','List ladder: I, A, 1, a, i, (a), (i)']},
- {file:'SLID_Macro.ps1',art:'slide',name:'SLID Macro',group:1,letter:'P',tile:'var(--ppt)',out:'<name> Remediated.pptx',unit:'slides',
+ {file:'SLID_Macro.ps1',drop:'.pptx',art:'slide',name:'SLID Macro',group:1,letter:'P',tile:'var(--ppt)',out:'<name> Remediated.pptx',unit:'slides',
   tagline:'Slide titles, shape names and reading order. SDRS credit lines too.',
   intro:['Repeated slide titles sound identical to a screen reader, shapes named <code>Rectangle 6</code> say nothing, and loose caption and credit boxes are read in the wrong place.',
          'SLID Macro adds <code>(1 of 10)</code> to repeated titles, names shapes Title, TextBox and Picture in reading order, sets the language to English (US) and fills the document title.'],
@@ -603,8 +615,70 @@ function showGh(t,g){if(g.status==='latest')mbar('ok','<b>Connected to GitHub.</
   else if(g.status==='kept')mbar('warn','<b>Connected to GitHub.</b>'+esc(g.message)+'.');}
 function countChecks(){const a=document.querySelectorAll('#checks input');$('chkCount').textContent=[...a].filter(x=>x.checked).length+' of '+a.length}
 
+
+/* ---------- drop files on the page ---------- */
+let dz={tool:'',items:[]};
+const POSTJ=async(p,body)=>{const r=await fetch(p,{method:'POST',headers:{'X-S4C':TOKEN},body:JSON.stringify(body)});if(!r.ok)throw new Error(await r.text());return r.json()};
+const folderOf=p=>String(p||'').replace(/[\\/][^\\/]*$/,'');
+const leafOf=p=>String(p||'').replace(/^.*[\\/]/,'');
+function dzOn(){return dz.tool===TOOLS[cur].file?dz.items:[]}
+function dzRender(){const t=TOOLS[cur];const box=$('dz'),list=$('dzList');
+  if(!t.drop){box.style.display='none';list.style.display='none';return}
+  box.style.display='';const it=dzOn();
+  $('dzH').textContent='Drop your '+t.drop.replace('.','')+' files here';$('dzIn').accept=t.drop;
+  list.style.display=it.length?'':'none';
+  const ready=it.filter(x=>x.state==='ready').length;
+  list.innerHTML=it.map((x,i)=>'<div class="r"><span class="nm" title="'+esc(x.path||x.file.name)+'">'+esc(x.file.name)+'</span><span class="st'+(x.state==='done'?' ok':x.state==='failed'?' bad':'')+'">'+esc(x.msg)+'</span>'+
+    (x.state==='done'?'<button class="btn" onclick="dzOpen('+i+')">Open folder</button>':(x.state==='ready'||x.state==='failed')&&!job?'<button class="x" title="Remove" onclick="dzDel('+i+')">&times;</button>':'')+'</div>').join('');
+  if(!job)$('runTxt').textContent=ready?'Run on '+ready+(ready===1?' file':' files'):'Run '+t.name}
+function dzDel(i){dz.items.splice(i,1);dzRender()}
+function dzOpen(i){const x=dzOn()[i];if(x&&x.outPath)api('/api/openfolder?path='+encodeURIComponent(x.outPath))}
+async function dzAdd(files){const t=TOOLS[cur];if(!t.drop)return;
+  const add=[...files].filter(f=>f.name.toLowerCase().endsWith(t.drop));
+  if(!add.length){toast('warn','Wrong file type','Drop '+t.drop+' files here for '+t.name+'.');return}
+  if(dz.tool!==t.file)dz={tool:t.file,items:[]};
+  dz.items=dz.items.filter(x=>x.state!=='done');
+  const mine=[];
+  for(const f of add){if(dz.items.some(x=>x.file.name===f.name&&x.file.size===f.size))continue;const x={file:f,path:'',state:'looking',msg:'Looking for the original...'};dz.items.push(x);mine.push(x)}
+  dzRender();if(!mine.length)return;
+  const miss='Original not found: a copy goes to Documents\\S4C Output';
+  try{const r=await POSTJ('/api/locate',mine.map(x=>({name:x.file.name,size:x.file.size,mtime:x.file.lastModified})));
+    const fl=[].concat(r.files||[]);
+    mine.forEach(x=>{const m=fl.find(y=>y.name===x.file.name);x.state='ready';if(m&&m.path){x.path=m.path;x.msg='Found in '+folderOf(m.path)}else x.msg=miss})
+  }catch(e){mine.forEach(x=>{x.state='ready';x.msg=miss})}
+  dzRender()}
+async function startDrop(){
+  if(job){toast('warn','A tool is already running','Wait until it has finished.');return}
+  const t=TOOLS[cur];const items=dz.items.filter(x=>x.state==='ready');const paths=[];$('btnRun').disabled=$('btnCheck').disabled=true;
+  for(const x of items){
+    if(!x.path){x.msg='Copying to Documents\\S4C Output...';dzRender();
+      try{const r=await (await fetch('/api/upload?name='+encodeURIComponent(x.file.name),{method:'POST',headers:{'X-S4C':TOKEN},body:x.file})).json();x.path=r.path}
+      catch(e){x.state='failed';x.msg='Could not copy: '+e.message;continue}}
+    paths.push(x.path);x.state='running';x.msg='Waiting...'}
+  dzRender();
+  if(!paths.length){$('btnRun').disabled=$('btnCheck').disabled=false;return}
+  try{const r=await POSTJ('/api/runfiles',{tool:t.file,files:paths});
+    job={id:r.id,tool:t.file,launch:true,drop:true};doneFor='';phase=1;stage('updating');
+    items.forEach(x=>{if(x.state==='running')x.msg='Checking GitHub...'});dzRender();
+    mbar('busy','<b>Checking GitHub</b>for the newest '+esc(t.name)+'... this can take up to a minute.');drawSteps();poll();
+  }catch(e){$('btnRun').disabled=$('btnCheck').disabled=false;items.forEach(x=>{if(x.state==='running'){x.state='failed';x.msg='Could not start: '+e.message}});dzRender();toast('err','Could not start',e.message)}}
+function dzDone(was){const t=TOOLS.find(x=>x.file===was.tool);
+  (state.rows||[]).length;dz.items.filter(x=>x.state==='running').forEach(x=>{
+    const leaf=leafOf(x.path);const rows=(state.rows||[]).filter(r=>r.file===leaf&&r.tool===t.name);const r=rows[rows.length-1];
+    if(r){x.state='done';x.outPath=folderOf(x.path)+'\\'+r.out;x.msg='Saved: '+r.out+(r.count?'  ('+r.count+' '+r.unit+')':'')}
+    else{x.state='failed';x.msg='Not saved. Check the tool window for the reason.'}})}
+(function(){const z=$('dz');
+  ['dragenter','dragover'].forEach(n=>z.addEventListener(n,e=>{e.preventDefault();z.classList.add('hot')}));
+  ['dragleave','drop'].forEach(n=>z.addEventListener(n,e=>{e.preventDefault();z.classList.remove('hot')}));
+  z.addEventListener('drop',e=>dzAdd(e.dataTransfer.files));
+  window.addEventListener('dragover',e=>e.preventDefault());window.addEventListener('drop',e=>e.preventDefault());
+  $('dzPick').onclick=()=>$('dzIn').click();$('dzIn').onchange=e=>{dzAdd(e.target.files);e.target.value=''};
+  const _sel=select;select=function(i){_sel(i);dzRender()};
+})();
+
 /* ---------- run ---------- */
 async function start(launch){
+  if(launch&&dzOn().some(x=>x.state==='ready'))return startDrop();
   if(job){toast('warn','A tool is already starting','Wait until it has opened.');return}
   const t=TOOLS[cur];
   try{const r=await (await api('/api/run?tool='+encodeURIComponent(t.file)+'&launch='+(launch?1:0))).json();
@@ -619,10 +693,10 @@ async function poll(){
       const u=r.update;if(here)showGh(t,u);
       toast(u.status==='offline'?'err':u.status==='kept'?'warn':'ok',u.status==='offline'?'Not connected to GitHub':'Connected to GitHub',u.status==='offline'?'Using the copy on this PC.':u.message);
       if(here){drawStats();drawNav()}}
-    if(r.state==='running'&&!job.open){job.open=1;if(here){phase=2;stage('running');mbar('info','<b>'+esc(t.name)+' is open in its own window.</b>Pick your files there. This page updates when you close it.');drawSteps()}}
+    if(r.state==='running'&&!job.open){job.open=1;if(here){phase=2;stage('running');mbar('info',job.drop?'<b>'+esc(t.name)+' is fixing your files.</b>You can watch it in its own window. This page updates when it finishes.':'<b>'+esc(t.name)+' is open in its own window.</b>Pick your files there. This page updates when you close it.');drawSteps()}if(job.drop)dz.items.forEach(x=>{if(x.state==='running')x.msg='Fixing...'});dzRender()}
     if(r.state==='done'){const was=job;job=null;$('btnRun').disabled=$('btnCheck').disabled=false;
       if(was.launch){doneFor=r.tool;toast('ok',t.name+' finished','Today\'s work is updated.')}
-      await load(true);loadDays();if(here){stage(was.launch?'done':'');if(was.launch){phase=t.steps.length;mbar('ok','<b>'+esc(t.name)+' finished.</b>Check the saved file, then tick the list on the right.')}select(cur)}return}
+      await load(true);loadDays();if(was.drop)dzDone(was);if(here){stage(was.launch?'done':'');if(was.launch){phase=t.steps.length;mbar('ok','<b>'+esc(t.name)+' finished.</b>Check the saved file, then tick the list on the right.')}select(cur)}return}
   }catch(e){$('off').classList.add('on');return}
   setTimeout(poll,900);
 }
