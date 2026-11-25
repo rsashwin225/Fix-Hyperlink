@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="2.3">
+<meta name="s4c-hub-version" content="2.6">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -226,6 +226,7 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
 .toasts{position:fixed;right:22px;bottom:22px;display:flex;flex-direction:column;gap:10px;z-index:50}
 .toast{display:flex;gap:11px;align-items:flex-start;min-width:300px;max-width:420px;background:var(--card);border:1px solid var(--stroke);border-radius:14px;box-shadow:var(--sh3);padding:13px 16px;animation:tin .22s ease-out}
 .toast b{display:block;font-weight:600}
+.toast .tclose{margin-left:auto;align-self:flex-start;border:0;background:none;color:var(--fg3);font-size:20px;line-height:1;cursor:pointer;padding:0 2px;flex:none}.toast .tclose:hover{color:var(--fg)}
 .toast span{font-size:13px;color:var(--fg2)}
 .toast svg.ok{color:var(--ok)}.toast svg.err{color:var(--err)}.toast svg.inf{color:var(--brand)}.toast svg.warn{color:var(--warn)}
 @keyframes tin{from{opacity:0;transform:translateY(8px)}}
@@ -420,13 +421,11 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
       <div class="rnc" id="rnCard" style="display:none"></div>
       <div class="fl" id="dzList" style="display:none"></div>
       <div class="cards4" id="stats"></div>
-      <section class="card prog-card"><div class="ch">Run progress<small id="stepTxt">Ready</small></div><div class="cb"><ol class="steps" id="steps"></ol></div></section>
       <div class="grid2">
         <div class="colc">
           <section class="card"><div class="ch">About this tool</div><div class="cb" id="about"></div></section>
         </div>
         <div class="colc">
-          <section class="card"><div class="ch">Check after running<small id="chkCount"></small></div><div class="cb" id="checks"></div></section>
           <section class="card"><div class="ch">Saved today with this tool<small id="mineCount"></small></div><div class="cb" id="mine"></div></section>
         </div>
       </div>
@@ -555,7 +554,7 @@ const unitTxt=x=>{const n=parseInt(x.count);if(isNaN(n))return '—';return n+' 
 const todayRows=()=>state.today===state.day?state.rows:(state.todayRows||[]);
 
 function toast(kind,title,text,action,ms){const ic={ok:'i-ok',err:'i-err',inf:'i-info',warn:'i-warn'}[kind];const d=document.createElement('div');d.className='toast';
-  d.innerHTML='<svg class="i '+kind+'"><use href="#'+ic+'"/></svg><div><b>'+esc(title)+'</b>'+(text?'<span>'+esc(text)+'</span>':'')+'</div>';if(action){const b=document.createElement('button');b.className='btn pri';b.style.cssText='height:30px;padding:0 12px;margin-left:8px;align-self:center';b.textContent=action[0];b.onclick=action[1];d.appendChild(b)}$('toasts').appendChild(d);setTimeout(()=>d.remove(),ms||5000)}
+  d.innerHTML='<svg class="i '+kind+'"><use href="#'+ic+'"/></svg><div><b>'+esc(title)+'</b>'+(text?'<span>'+esc(text)+'</span>':'')+'</div>';if(action){const b=document.createElement('button');b.className='btn pri';b.style.cssText='height:30px;padding:0 12px;margin-left:8px;align-self:center';b.textContent=action[0];b.onclick=action[1];d.appendChild(b)}const x=document.createElement('button');x.className='tclose';x.setAttribute('aria-label','Close');x.innerHTML='&times;';x.onclick=()=>d.remove();d.appendChild(x);$('toasts').appendChild(d);setTimeout(()=>d.remove(),ms||5000)}
 function mbar(kind,text,sub){const m=$('mbar');if(!kind){m.className='mbar';return}m.className='mbar on '+kind;
   $('mbarIcon').innerHTML='<use href="#'+({ok:'i-ok',err:'i-err',warn:'i-warn',busy:'i-sync',info:'i-info'}[kind])+'"/>';$('mbarText').innerHTML=text;$('mbarSub').textContent=sub||''}
 
@@ -609,7 +608,7 @@ function drawStats(){const t=TOOLS[cur];const mine=todayRows().filter(r=>r.tool=
   $('mine').innerHTML=tt.groups.length?'<table class="mini">'+tt.groups.map(x=>'<tr><td title="'+esc(x.name)+'">'+esc(x.name)+'</td><td>'+unitTxt(x)+' · '+esc(x.last)+'</td></tr>').join('')+'</table>':'<div class="empty">No files saved with '+esc(t.name)+' today.</div>';
   $('mineCount').textContent=tt.groups.length?tt.groups.length+' file'+(tt.groups.length===1?'':'s'):'';
 }
-function drawSteps(){const t=TOOLS[cur];const n=t.steps.length;
+function drawSteps(){if(!$('steps'))return;const t=TOOLS[cur];const n=t.steps.length;
   $('steps').innerHTML=t.steps.map((s,i)=>{const st=(phase>=n||i<phase)?'did':(i===phase?'on':'pend');
     return '<li class="'+st+'"><div class="c">'+(st==='did'?'<svg class="s" style="width:14px;height:14px"><use href="#i-chev"/></svg>':'<span>'+(i+1)+'</span>')+'</div><div class="t"><b>'+esc(s[0])+'</b><span>'+esc(s[1])+'</span></div></li>'}).join('');
   if(phase>=n)$('steps').querySelectorAll('.did .c').forEach(c=>c.innerHTML='<svg viewBox="0 0 12 12" style="width:12px;height:12px"><path d="m2.5 6.2 2.2 2.2 4.8-4.9" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>');
@@ -625,14 +624,13 @@ function select(i){if(i<0)i=TOOLS.length-1;if(i>=TOOLS.length)i=0;if(i!==cur&&do
   if(!job&&doneFor!==t.file){const g=gh[t.file];if(g)showGh(t,g);else mbar(null)}
   $('about').innerHTML=t.intro.map(p=>'<p>'+p+'</p>').join('')+'<div class="callout"><svg class="i"><use href="#i-bulb"/></svg><div>'+t.idea+'</div></div>'+
     '<dl class="kv"><dt>Works on</dt><dd>'+esc(GROUPS[t.group])+' files</dd><dt>Saved as</dt><dd>'+esc(t.out)+'</dd><dt>Script</dt><dd><code>'+esc(t.file)+'</code></dd></dl>';
-  $('checks').innerHTML=t.checks.map(c=>'<label class="chk"><input type="checkbox" onchange="countChecks()"><span>'+esc(c)+'</span></label>').join('');countChecks();
-  drawNav();drawStats();drawSteps();
+  drawNav();drawStats();
 }
 function showGh(t,g){if(g.status==='latest')mbar('ok','<b>Connected to GitHub.</b>'+esc(t.name)+' is the newest version ('+esc(state.tools[t.file]||'')+').');
   else if(g.status==='updated'||g.status==='newer')mbar('ok','<b>Connected to GitHub.</b>'+esc(g.message)+'.');
   else if(g.status==='offline')mbar('err','<b>Not connected to GitHub.</b>Using '+esc(t.name)+' '+esc(state.tools[t.file]||'')+' already on this PC.',g.reason?'Reason: '+g.reason:'');
   else if(g.status==='kept')mbar('warn','<b>Connected to GitHub.</b>'+esc(g.message)+'.');}
-function countChecks(){const a=document.querySelectorAll('#checks input');$('chkCount').textContent=[...a].filter(x=>x.checked).length+' of '+a.length}
+
 
 
 /* ---------- choose or drop files: runs in the background, progress and result on this page ---------- */
@@ -793,7 +791,7 @@ async function poll(){
     if(r.state==='running'&&!job.open){job.open=1;if(here&&!job.drop){phase=2;stage('running');mbar('info','<b>'+esc(t.name)+' is open in its own window.</b>Pick your files there. This page updates when you close it.');drawSteps()}if(job.drop){mbar(null);dz.items.forEach(x=>{if(x.state==='running')x.msg='Fixing...'});dzRender()}}
     if(r.state==='done'){const was=job;job=null;$('btnRun').disabled=$('btnCheck').disabled=false;
       if(was.launch){doneFor=r.tool;toast('ok',t.name+' finished','Today\'s work is updated.')}
-      await load(true);loadDays();if(was.drop){dzDone(was,r);rnFinish(was,r)}if(here){stage(was.launch?'done':'');if(was.launch&&!was.drop){phase=t.steps.length;mbar('ok','<b>'+esc(t.name)+' finished.</b>Check the saved file, then tick the list on the right.')}if(was.drop)phase=t.steps.length;select(cur)}return}
+      await load(true);loadDays();if(was.drop){dzDone(was,r);rnFinish(was,r)}if(here){stage(was.launch?'done':'');if(was.launch&&!was.drop){phase=t.steps.length;mbar('ok','<b>'+esc(t.name)+' finished.</b>Check the saved file.')}if(was.drop)phase=t.steps.length;select(cur)}return}
   }catch(e){$('off').classList.add('on');return}
   setTimeout(poll,900);
 }
@@ -839,7 +837,11 @@ document.addEventListener('keydown',e=>{
   if(!$('v-tools').classList.contains('on'))return;
   if(k==='ArrowDown'){e.preventDefault();select(cur+1)}else if(k==='ArrowUp'){e.preventDefault();select(cur-1)}else if(k==='Enter'){start(true)}else if(k.toLowerCase()==='u'){start(false)}});
 /* =================== extras =================== */
-const LS={get(k,d){try{const v=localStorage.getItem('s4c-'+k);return v===null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem('s4c-'+k,JSON.stringify(v))}catch(e){}}};
+/* settings (title, name, goal, theme...) are also kept in a file on this PC, because the page address changes every time S4C Tools starts and the browser would forget them */
+(function(){try{const x=new XMLHttpRequest();x.open('GET','/api/prefs',false);x.setRequestHeader('X-S4C',TOKEN);x.send();if(x.status===200){const d=JSON.parse(x.responseText||'{}');Object.keys(d).forEach(k=>{if(k.indexOf('s4c-')===0)try{localStorage.setItem(k,d[k])}catch(e){}})}}catch(e){}})();
+let prefT=null;function prefSave(){clearTimeout(prefT);prefT=setTimeout(()=>{try{const o={};for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k.indexOf('s4c-')===0&&k!=='s4c-hub-version')o[k]=localStorage.getItem(k)}fetch('/api/prefs',{method:'POST',headers:{'X-S4C':TOKEN},body:JSON.stringify(o)})}catch(e){}},400)}
+const LS={get(k,d){try{const v=localStorage.getItem('s4c-'+k);return v===null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem('s4c-'+k,JSON.stringify(v));prefSave()}catch(e){}}};
+setTimeout(prefSave,1500);
 const winName=()=>{const u=(state.user||'').replace(/[^A-Za-z].*$/,'');return u?u[0].toUpperCase()+u.slice(1).toLowerCase():''};
 const dispName=()=>LS.get('name','')||winName()||'there';
 const firstName=()=>dispName().split(/\s+/)[0];
@@ -847,9 +849,9 @@ function drawPersona(){const n=dispName();$('uname').textContent=n;const parts=n
 function openName(){$('nameIn').value=LS.get('name','')||winName();$('namebox').classList.add('on');setTimeout(()=>{$('nameIn').focus();$('nameIn').select()},10)}
 function closeName(){$('namebox').classList.remove('on');$('nameIn').blur()}
 function saveName(v){LS.set('name',(v||'').trim().slice(0,40));closeName();drawPersona();drawGreet();toast('ok','Name saved','Hello, '+firstName()+' 👋')}
-const getGoal=()=>{const g=LS.get('goal2',null);return (g&&g.n>0&&(g.unit==='slides'||g.unit==='files'))?g:{unit:'slides',n:300}};
-const goalDone=tt=>getGoal().unit==='slides'?tt.slides:tt.files;
-const TIPS=['Use the Slides / Files switch under Today to pick how your goal is counted','Click your name at the top right to change it','Press Ctrl + K to run any tool from the keyboard','Right-click a tool for more options','Press D to download today\'s report','Press ? to see every shortcut','The original file is never changed by Word Fixer, SLID, Alt Text or Link Fixer','A chapter run through three tools still counts as one file'];
+const getGoal=()=>{const g=LS.get('goal2',null);return (g&&g.n>0&&(g.unit==='slides'||g.unit==='pages'))?g:{unit:'slides',n:300}};
+const goalDone=tt=>getGoal().unit==='slides'?tt.slides:tt.pages;
+const TIPS=['Use the Slides / Pages switch under Today to pick how your goal is counted','Click your name at the top right to change it','Press Ctrl + K to run any tool from the keyboard','Right-click a tool for more options','Press D to download today\'s report','Press ? to see every shortcut','The original file is never changed by Word Fixer, SLID, Alt Text or Link Fixer','A chapter run through three tools still counts as one file'];
 let tipI=Math.floor(Math.random()*TIPS.length);
 function drawGreet(){const h=new Date().getHours();const part=h<12?'Good morning':h<17?'Good afternoon':'Good evening';const em=h<12?'☀️':h<17?'☕':'🌙';
   const tt=totals(todayRows());const G=getGoal();const done=goalDone(tt);const left=Math.max(0,G.n-done);
@@ -863,20 +865,20 @@ function streak(){const m={};days.forEach(d=>m[d.day]=d.files);let n=0;const d=n
   if(!m[iso(d)])d.setDate(d.getDate()-1);
   for(let k=0;k<70;k++){const wd=d.getDay();const v=m[iso(d)];if(v){n++}else if(wd!==0&&wd!==6){break}d.setDate(d.getDate()-1)}return n}
 function drawGoal(){const tt=totals(todayRows());const G=getGoal();const done=goalDone(tt);const pct=Math.min(1,done/G.n);const C=2*Math.PI*25;const st=streak();
-  const sub=G.unit==='slides'?tt.files+' file'+(tt.files===1?'':'s')+(tt.pages?' · '+tt.pages+' page'+(tt.pages===1?'':'s'):''):tt.slides+' slides'+(tt.pages?' · '+tt.pages+' page'+(tt.pages===1?'':'s'):'');
+  const sub=G.unit==='slides'?tt.pages+' page'+(tt.pages===1?'':'s')+' in Word files':tt.slides+' slide'+(tt.slides===1?'':'s')+' in decks';
   $('nfoot').innerHTML='<small>Today</small><div class="goal" style="margin-top:8px"><div class="ring"><svg viewBox="0 0 58 58"><circle class="bg" cx="29" cy="29" r="25"/><circle class="fg" cx="29" cy="29" r="25" stroke-dasharray="'+C+'" stroke-dashoffset="'+(C*(1-pct))+'"/></svg><b style="font-size:'+(String(Math.round(pct*100)).length>2?14:16)+'px">'+Math.round(pct*100)+'%</b></div>'+
-    '<div class="goal-t" id="goalT"><b>'+done+' / '+G.n+' '+G.unit+'</b><span>'+sub+'</span><a id="goalEdit">Change target</a></div></div>'+
-    '<div class="gseg" title="Count my daily goal in"><span>Goal in</span><div class="seg"><button data-u="slides"'+(G.unit==='slides'?' class="on"':'')+'>Slides</button><button data-u="files"'+(G.unit==='files'?' class="on"':'')+'>Files</button></div></div><div id="goalBox"></div>'+
+    '<div class="goal-t" id="goalT"><b>'+done+' / '+G.n+' '+G.unit+'</b><span>'+sub+'</span><a id="goalEdit">Change '+G.unit+' target</a></div></div>'+
+    '<div class="gseg" title="Count my daily goal in"><span>Goal in</span><div class="seg"><button data-u="slides"'+(G.unit==='slides'?' class="on"':'')+'>Slides</button><button data-u="pages"'+(G.unit==='pages'?' class="on"':'')+'>Pages</button></div></div><div id="goalBox"></div>'+
     '<div class="streak">'+(st?'🔥 <b>'+st+'</b> day streak':'Start a streak today ✨')+'</div>';
   $('goalEdit').onclick=openGoal;
-  $('nfoot').querySelectorAll('.gseg button').forEach(b=>b.onclick=()=>{const u=b.dataset.u;if(u===G.unit)return;const N=LS.get('goalN',{});N[G.unit]=G.n;LS.set('goalN',N);const n=N[u]||(u==='slides'?300:8);LS.set('goal2',{unit:u,n});drawGoal();drawGreet();toast('ok','Goal is now in '+u,n+' '+u+' a day')})}
+  $('nfoot').querySelectorAll('.gseg button').forEach(b=>b.onclick=()=>{const u=b.dataset.u;if(u===G.unit)return;const N=LS.get('goalN',{});N[G.unit]=G.n;LS.set('goalN',N);const n=N[u]||(u==='slides'?300:75);LS.set('goal2',{unit:u,n});drawGoal();drawGreet();toast('ok','Goal is now in '+u,n+' '+u+' a day')})}
 function openGoal(){const G=getGoal();let unit=G.unit;
-  $('goalEdit').style.display='none';$('goalBox').innerHTML='<div class="gedit" style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--stroke)"><small style="margin:0">Daily goal</small><div class="row"><input id="goalIn" type="number" min="1" max="5000" value="'+G.n+'"><div class="seg"><button data-u="slides">slides</button><button data-u="files">files</button></div></div>'+
+  $('goalEdit').style.display='none';$('goalBox').innerHTML='<div class="gedit" style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--stroke)"><small style="margin:0">Daily goal</small><div class="row"><input id="goalIn" type="number" min="1" max="5000" value="'+G.n+'"><div class="seg"><button data-u="slides">slides</button><button data-u="pages">pages</button></div></div>'+
     '<div class="quick" id="goalQuick"></div><div class="row"><a id="goalOk">Save</a><a id="goalNo" style="color:var(--fg3)">Cancel</a></div></div>';
-  const quick=()=>{const q=unit==='slides'?[200,300,400,500]:[5,8,10,15];$('goalQuick').innerHTML=q.map(n=>'<button data-n="'+n+'">'+n+'</button>').join('');$('goalQuick').querySelectorAll('button').forEach(b=>b.onclick=()=>{$('goalIn').value=b.dataset.n})};
+  const quick=()=>{const q=unit==='slides'?[200,300,400,500]:[50,75,100,150];$('goalQuick').innerHTML=q.map(n=>'<button data-n="'+n+'">'+n+'</button>').join('');$('goalQuick').querySelectorAll('button').forEach(b=>b.onclick=()=>{$('goalIn').value=b.dataset.n})};
   const seg=()=>{$('goalBox').querySelectorAll('.seg button').forEach(b=>b.classList.toggle('on',b.dataset.u===unit));quick()};
-  $('goalBox').querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{if(unit!==b.dataset.u){unit=b.dataset.u;const N=LS.get('goalN',{});$('goalIn').value=N[unit]||(unit==='slides'?300:8)}seg()});seg();
-  const save=()=>{const v=Math.max(1,Math.min(5000,parseInt($('goalIn').value)||(unit==='slides'?300:8)));LS.set('goal2',{unit,n:v});{const N=LS.get('goalN',{});N[unit]=v;LS.set('goalN',N)}drawGoal();drawGreet();toast('ok','Goal saved',v+' '+unit+' a day');achievements()};
+  $('goalBox').querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{if(unit!==b.dataset.u){unit=b.dataset.u;const N=LS.get('goalN',{});$('goalIn').value=N[unit]||(unit==='slides'?300:75)}seg()});seg();
+  const save=()=>{const v=Math.max(1,Math.min(5000,parseInt($('goalIn').value)||(unit==='slides'?300:75)));LS.set('goal2',{unit,n:v});{const N=LS.get('goalN',{});N[unit]=v;LS.set('goalN',N)}drawGoal();drawGreet();toast('ok','Goal saved',v+' '+unit+' a day');achievements()};
   $('goalOk').onclick=save;$('goalNo').onclick=drawGoal;$('goalIn').onkeydown=e=>{if(e.key==='Enter')save();if(e.key==='Escape')drawGoal()};$('goalIn').focus();$('goalIn').select()}
 
 /* ---------- achievements + confetti ---------- */
@@ -930,14 +932,12 @@ $('q').onfocus=()=>{$('q').blur();palOpen()};
 const PAGE_VER=(document.querySelector('meta[name="s4c-hub-version"]')||{}).content||'0';
 const vnum=v=>String(v||'0').split('.').map(x=>parseInt(x)||0);
 const vgt=(a,b)=>{const x=vnum(a),y=vnum(b);for(let i=0;i<Math.max(x.length,y.length);i++){const d=(x[i]||0)-(y[i]||0);if(d)return d>0}return false};
-async function restartHub(){toast('inf','Restarting S4C Tools','This page reloads by itself in a few seconds.',null,8000);try{await api('/api/restart')}catch(e){}
-  let t=0;const iv=setInterval(async()=>{t++;try{const r=await fetch('/',{cache:'no-store'});if(r.ok&&t>2){clearInterval(iv);location.reload()}}catch(e){}if(t>40)clearInterval(iv)},1500)}
 async function checkHub(n){try{const r=await (await api('/api/hub')).json();$('hubVer').textContent='Page version '+PAGE_VER+'.';
     if(!r.done){if((n||0)<40)setTimeout(()=>checkHub((n||0)+1),5000);return}
     const ups=r.updated||[];const hubPs=ups.some(x=>/^S4C_Hub\.ps1 /.test(x));
-    if(r.restart){toast('inf','S4C Tools has been updated','Press Refresh. It restarts by itself and reloads this page.',['Refresh',restartHub],60000);return}
+    if(r.restart){toast('inf','S4C Tools has been updated','Close the black S4C Tools window and open S4C Tools again to finish the update.',null,60000);return}
     // an older copy of this program (it cannot restart itself) is still running although GitHub gave it a new version
-    if(hubPs&&r.restart===undefined){toast('inf','S4C Tools has been updated','This PC has an older copy running. Close the black window and open S4C Tools once more. After this, Refresh does everything.',null,60000);return}
+    if(hubPs&&r.restart===undefined){toast('inf','S4C Tools has been updated','This PC has an older copy running. Close the black window and open S4C Tools once more.',null,60000);return}
     // only offer the refresh while the page on screen is older than the page on this PC
     if(vgt(r.version,PAGE_VER))toast('inf','S4C Tools has a new look waiting','Page '+PAGE_VER+' -> '+r.version+'. Refresh to see it.',['Refresh',()=>location.reload()],30000);
   }catch(e){}}
