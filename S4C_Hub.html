@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="2.6">
+<meta name="s4c-hub-version" content="2.7">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -226,7 +226,6 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
 .toasts{position:fixed;right:22px;bottom:22px;display:flex;flex-direction:column;gap:10px;z-index:50}
 .toast{display:flex;gap:11px;align-items:flex-start;min-width:300px;max-width:420px;background:var(--card);border:1px solid var(--stroke);border-radius:14px;box-shadow:var(--sh3);padding:13px 16px;animation:tin .22s ease-out}
 .toast b{display:block;font-weight:600}
-.toast .tclose{margin-left:auto;align-self:flex-start;border:0;background:none;color:var(--fg3);font-size:20px;line-height:1;cursor:pointer;padding:0 2px;flex:none}.toast .tclose:hover{color:var(--fg)}
 .toast span{font-size:13px;color:var(--fg2)}
 .toast svg.ok{color:var(--ok)}.toast svg.err{color:var(--err)}.toast svg.inf{color:var(--brand)}.toast svg.warn{color:var(--warn)}
 @keyframes tin{from{opacity:0;transform:translateY(8px)}}
@@ -292,7 +291,6 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
 
 .dg tbody tr td:last-child{position:relative}
 .ttlc{display:inline-block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;font-weight:600;color:var(--brand);cursor:pointer;border-radius:6px;padding:1px 6px;margin-left:-6px}.ttlc:hover{background:var(--card2)}.ttlc.none{font-weight:500;color:var(--fg3);border:1px dashed var(--stroke2)}
-.dg .tag{white-space:nowrap}.rm.cp{color:var(--fg2)}.rm.cp:hover{background:var(--card2)}.rm{height:28px;padding:0 10px;border-radius:8px;border:1px solid var(--stroke2);background:var(--card);cursor:pointer;font-size:12px;color:#a23a1f}.rm:hover{background:#f7e3dc}
 .rowact{position:absolute;right:12px;top:50%;transform:translateY(-50%);display:flex;gap:6px;opacity:0;transition:opacity .12s}
 .dg tbody tr:hover .rowact{opacity:1}
 .rowact button{height:28px;padding:0 10px;border-radius:8px;border:1px solid var(--stroke2);background:var(--card);cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:6px}
@@ -325,33 +323,6 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
 .namebox input:focus{outline:0;border-color:var(--brand-st);box-shadow:0 0 0 3px var(--brand-bg)}
 .namebox .b{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
 .namebox .b .btn{height:34px;padding:0 14px}
-.dz{margin:0 0 16px;border:2px dashed var(--stroke2);border-radius:16px;background:var(--card);padding:20px 24px;display:flex;align-items:center;gap:20px}
-.dz.hot{border-color:#b4532e;background:var(--card2)}
-.dz .big{width:50px;height:50px;border-radius:14px;background:var(--card2);display:grid;place-items:center;font-size:24px;color:#b4532e;flex:none}
-.dz h4{margin:0 0 3px;font:600 15.5px var(--sans);color:var(--fg)}.dz p{margin:0;color:var(--fg3);font:13px var(--sans)}
-.dz .btn{margin-left:auto;flex:none}
-.fl{margin:0 0 16px;border:1px solid var(--stroke);border-radius:16px;background:var(--card);overflow:hidden}
-.fl .r{display:flex;align-items:center;gap:12px;padding:10px 18px;border-top:1px solid var(--stroke);font:13.5px var(--sans);color:var(--fg)}
-.fl .r:first-child{border-top:0}.fl .nm{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
-.fl .st{color:var(--fg3);font-size:12.5px;text-align:right}.fl .st.ok{color:#3f7d3a;font-weight:600}.fl .st.bad{color:#b3402a;font-weight:600}
-.fl .x{border:0;background:none;color:var(--fg3);cursor:pointer;font-size:16px;padding:0 4px}
-.rnc{margin:0 0 16px;border:1px solid var(--stroke);border-radius:16px;background:var(--card);padding:18px 24px;display:flex;align-items:center;gap:22px}
-.rnw{position:relative;width:92px;height:92px;flex:none}.rnw svg{display:block}
-.rnw b{position:absolute;inset:0;display:grid;place-items:center;font:700 19px var(--sans);color:var(--fg)}
-.rno{position:absolute;inset:-5px;border-radius:50%;border:2px solid transparent;border-top-color:#d98b3a88;animation:rnsp 1.4s linear infinite}
-@keyframes rnsp{to{transform:rotate(360deg)}}
-.rnt{flex:1;min-width:0}.rnt h4{margin:0;font:600 16px var(--sans);color:var(--fg)}.rnt p{margin:3px 0 0;font:13px var(--sans);color:var(--fg3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.rns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.rns span{font:12.5px var(--sans);padding:4px 10px;border-radius:20px;background:var(--card2);color:var(--fg3)}
-.rns span.on{background:#f3dccd;color:#8a3a1c;font-weight:600}.rns span.dn{background:#e1efdc;color:#3f7d3a}
-.rnt .btn{margin-top:12px}
-.rnc.rnd{border-color:#b9d8b1;background:#eef7ea;animation:rnpop .4s}.rnc.rnd.bad{border-color:#e6cf9b;background:#fbf4e1}
-@keyframes rnpop{from{transform:scale(.97);opacity:0}to{transform:none;opacity:1}}
-.rnk{width:36px;height:36px;border-radius:50%;background:#3f7d3a;color:#fff;display:grid;place-items:center;font-size:20px;flex:none}.rnd.bad .rnk{background:#b98a1c}
-.rnd h4{color:#24541f}.rnd.bad h4{color:#7a5a0d}.rnd p{color:#3d6b37;white-space:normal}.rnd.bad p{color:#7a5a0d}.rnd .btn{margin-left:auto;flex:none}
-.hero.hot{outline:2px dashed #b4532e;outline-offset:-8px}
-.hbtn.pill{width:auto;padding:0 14px;gap:8px;border-radius:18px;display:flex;align-items:center;font:500 13px var(--sans);color:var(--fg2);margin-right:10px;white-space:nowrap}
-.hbtn.pill svg{width:16px;height:16px}.hbtn.pill:disabled{opacity:.7;cursor:default}
-.hbtn.spinning svg{animation:rnsp 1s linear infinite}
 </style>
 </head>
 <body>
@@ -384,7 +355,6 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
   <div class="appname"><b>S4C Tools</b><span>S4Carlisle remediation</span><em class="testing">Testing build</em></div>
   <label class="hsearch"><svg class="s"><use href="#i-search"/></svg><input id="q" placeholder="Search tools"><kbd>Ctrl+K</kbd></label>
   <div class="sp"></div>
-  <button class="hbtn pill" id="updAll" title="Check GitHub for a newer S4C Tools and newer versions of every tool"><svg class="i"><use href="#i-sync"/></svg><span>Check for updates</span></button>
   <button class="hbtn" id="theme" title="Dark mode"><svg class="i"><use href="#i-moon"/></svg></button>
   <div class="persona" id="persona" title="Change your name"><div class="avatar" id="avatar">S4</div><div><b id="uname">S4Carlisle</b><small id="upc">This PC</small></div><svg class="pen" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M10.5 2.5l3 3L5 14H2v-3z"/></svg></div>
 </header>
@@ -417,15 +387,14 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
         <div class="hero-r" id="stage"><div class="art" id="art"></div>
           <div class="legend"><span><i style="background:#d98b3a"></i>to GitHub</span><span><i style="background:#5f9a52"></i>update back</span><span><i style="background:var(--fg3)"></i>your file</span></div></div>
       </section>
-      <input type="file" id="dzIn" multiple hidden>
-      <div class="rnc" id="rnCard" style="display:none"></div>
-      <div class="fl" id="dzList" style="display:none"></div>
       <div class="cards4" id="stats"></div>
+      <section class="card prog-card"><div class="ch">Run progress<small id="stepTxt">Ready</small></div><div class="cb"><ol class="steps" id="steps"></ol></div></section>
       <div class="grid2">
         <div class="colc">
           <section class="card"><div class="ch">About this tool</div><div class="cb" id="about"></div></section>
         </div>
         <div class="colc">
+          <section class="card"><div class="ch">Check after running<small id="chkCount"></small></div><div class="cb" id="checks"></div></section>
           <section class="card"><div class="ch">Saved today with this tool<small id="mineCount"></small></div><div class="cb" id="mine"></div></section>
         </div>
       </div>
@@ -447,7 +416,7 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
         <div class="card stat"><small><svg><use href="#i-file"/></svg>Word pages</small><b id="cPages">0</b><span>as saved by Word</span></div>
         <div class="card stat"><small><svg><use href="#i-sync"/></svg>Tool runs</small><b id="cRuns">0</b><span>files saved by tools</span></div>
       </div>
-      <section class="card"><table class="dg"><thead><tr><th style="width:44px">#</th><th style="width:170px">Title</th><th>File name</th><th class="n" style="width:104px">Slides / pages</th><th style="width:150px">Tools used</th><th style="width:118px">Time</th><th style="width:136px"></th></tr></thead><tbody id="tbody"></tbody></table></section>
+      <section class="card"><table class="dg"><thead><tr><th style="width:56px">#</th><th>Title</th><th>File name</th><th class="n" style="width:140px">Slides / pages</th><th>Tools used</th><th style="width:130px">Time</th></tr></thead><tbody id="tbody"></tbody></table></section>
     </div></div>
 
     <!-- ============ HELP ============ -->
@@ -496,35 +465,35 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
 const TOKEN='__S4C_TOKEN__';
 const GROUPS=['Word','PowerPoint','Word and PowerPoint'];
 const TOOLS=[
- {file:'Word_Fixer.ps1',drop:'.docx',art:'doc',name:'Word Fixer',group:0,letter:'W',tile:'var(--word)',out:'<name> Fixed.docx',unit:'pages',
+ {file:'Word_Fixer.ps1',art:'doc',name:'Word Fixer',group:0,letter:'W',tile:'var(--word)',out:'<name> Fixed.docx',unit:'pages',
   tagline:'Turns typed headings and outlines into real Word headings and list levels.',
   intro:['Many chapters arrive with headings that are only bold text and lists typed by hand (<code>I.</code> <code>A.</code> <code>1.</code> <code>a.</code>), so a screen reader hears no structure.',
          'Word Fixer makes the first two lines the Title and section titles Heading 1 (Heading 2 only for a sub-heading), and turns typed outlines into real list levels.'],
   idea:'The text is never changed. A safety check compares every word before the copy is saved.',
   steps:[['Choose files','In the tool window'],['Check GitHub','Newest version of this tool'],['Fix headings','Title, Heading 1, Heading 2'],['Fix list levels','I, A, 1, a, i, (a), (i)'],['Save a copy','Fixed.docx + report'],['Note in today\'s work','For the daily report']],
   checks:['Title is the first two lines','Section titles are Heading 1','No heading level is skipped','Roman numerals are lists, not headings','List ladder: I, A, 1, a, i, (a), (i)']},
- {file:'SLID_Macro.ps1',drop:'.pptx',art:'slide',name:'SLID Macro',group:1,letter:'P',tile:'var(--ppt)',out:'<name> Remediated.pptx',unit:'slides',
-  tagline:'Slide titles, shape names and reading order. SDRS credit lines too.',
-  intro:['Repeated slide titles sound identical to a screen reader, shapes named <code>Rectangle 6</code> say nothing, and loose caption and credit boxes are read in the wrong place.',
-         'SLID Macro adds <code>(1 of 10)</code> to repeated titles, names shapes Title, TextBox and Picture in reading order, sets the language to English (US) and fills the document title.'],
-  idea:'For SDRS files (the file name contains SDRS) it also turns sideways photo credits upright and places them under their picture, so the reading order is title, picture, credit, caption. Other files are not touched this way.',
-  steps:[['Pick files','PowerPoint decks'],['Check GitHub','Newest version of this tool'],['Number titles','(1 of N) on repeated titles'],['Name shapes','Title, TextBox, Picture'],['Reading order','Title, picture, credit, caption'],['Save','Remediated.pptx']],
-  checks:['Repeated titles end in (1 of N)','Shapes are named in reading order','SDRS files: credit sits under its picture','Language is English (US) and the document title is set']},
- {file:'IMBK_Macro.ps1',drop:'.pptx',art:'layout',name:'IMBK Macro',group:1,letter:'P',tile:'var(--ppt)',out:'<name> (same file, backup kept)',unit:'slides',
-  tagline:'IMBK chapter decks: figures, captions and credits laid out.',
-  intro:['IMBK decks have figures, captions and credits that must sit in a fixed layout and be real placeholders.',
-         'IMBK Macro lays them out, numbers repeated titles, names shapes, sets the language and the document title.'],
-  idea:'It works on the file itself and keeps a backup named <code>_BEFORE_IMBKfix</code> next to it.',
-  steps:[['Pick files','IMBK decks'],['Check GitHub','Newest version of this tool'],['Lay out figures','Captions and credits'],['Name shapes','Title, TextBox, Picture'],['Save','Same file + backup']],
-  checks:['Figures, captions and credits are in place','Repeated titles end in (1 of N)','A _BEFORE_IMBKfix backup exists']},
- {file:'AltText_Tool.ps1',drop:['.pptx','.xlsx','.csv'],art:'alt',name:'Alt Text Tool',group:1,letter:'P',tile:'var(--ppt)',out:'<name> AltText.pptx',unit:'slides',
+ {file:'SLID_Macro.ps1',art:'slide',name:'SLID Macro',group:1,letter:'P',tile:'var(--ppt)',out:'<name> Remediated.pptx',unit:'slides',
+  tagline:'Numbers repeated titles, names every shape and fixes the reading order.',
+  intro:['Ten slides called "Chapter Summary" sound identical to a screen reader, and shapes named <code>Rectangle 6</code> say nothing.',
+         'SLID Macro adds <code>(1 of 10)</code> to repeated titles, names shapes Title, TextBox and Picture, puts them in reading order, sets the language to English (US) and fills the document title.'],
+  idea:'A text box that sits behind a picture stays behind it, so hidden <code>&lt;Insert Fig&gt;</code> notes never show through.',
+  steps:[['Choose files','In the tool window'],['Check GitHub','Newest version of this tool'],['Number titles','(1 of N) on repeated titles'],['Name shapes','Title, TextBox, Picture'],['Reading order','Title first, then as laid out'],['Save a copy','Remediated.pptx + report']],
+  checks:['Repeated titles end in (1 of N)','Shapes are named in reading order','Nothing new shows on top of a picture','Language is English (US)','Document title is set']},
+ {file:'IMBK_Macro.ps1',art:'layout',name:'IMBK Macro',group:1,letter:'P',tile:'var(--ppt)',out:'Same file, backup _BEFORE_IMBKfix',unit:'slides',
+  tagline:'Lays out figures, captions and credits in IMBK chapter decks.',
+  intro:['IMBK decks place figures with loose caption and credit boxes that a screen reader reads in the wrong place.',
+         'IMBK Macro lays the figure out, turns the caption and credit into real placeholders, numbers repeated titles, names shapes and sets the language and document title.'],
+  idea:'It works on the file itself and first saves a backup next to it. If anything fails, the file is put back from the backup.',
+  steps:[['Choose files','In the tool window'],['Check GitHub','Newest version of this tool'],['Lay out figures','Picture, caption, credit'],['Caption placeholders','Real layout placeholders'],['Titles and names','(1 of N), shape names'],['Save','Backup kept next to the deck']],
+  checks:['Caption sits under its figure','Credit line is a placeholder','Slides to check by hand were reviewed','Backup file is next to the deck']},
+ {file:'AltText_Tool.ps1',art:'alt',name:'Alt Text Tool',group:1,letter:'P',tile:'var(--ppt)',out:'<name> AltText.pptx',unit:'slides',
   tagline:'Fills picture alt text from the client\'s Excel log, matched by figure number.',
   intro:['The client sends alt text in an Excel file, one row per figure. Copying it into every picture by hand is slow and easy to get wrong.',
          'The tool reads the figure number on the slide (for example <code>Figure 14.F03</code>), finds the row, and opens a review page where you confirm or pick another row from the whole file.'],
   idea:'Pictures that already have alt text are kept, and rows marked Decorative are marked decorative.',
   steps:[['Choose deck and Excel','In the tool window'],['Check GitHub','Newest version of this tool'],['Match figures','By figure number first'],['Review page','Confirm or change each match'],['Save a copy','AltText.pptx + report'],['Note in today\'s work','For the daily report']],
   checks:['Every picture has alt text or is decorative','Figure numbers matched the right rows','"Not sure" items were written by hand','Long descriptions came through']},
- {file:'Link_Fixer.ps1',drop:['.docx','.pptx'],art:'link',name:'Link Fixer',group:2,letter:'L',tile:'var(--both)',out:'<name> Links.docx / .pptx',unit:'slides',
+ {file:'Link_Fixer.ps1',art:'link',name:'Link Fixer',group:2,letter:'L',tile:'var(--both)',out:'<name> Links.docx / .pptx',unit:'slides',
   tagline:'Replaces raw web addresses and "click here" with meaningful link text.',
   intro:['Screen reader users often jump from link to link. "Click here", "link" or a long web address tells them nothing about where it goes.',
          'Link Fixer checks each address, reads the page title and suggests clear text. You edit it on the review page and press Apply.'],
@@ -540,7 +509,7 @@ async function api(p){const r=await fetch(p,{headers:{'X-S4C':TOKEN}});if(!r.ok)
 /* one line per chapter: the same chapter through several tools counts once */
 const SUF=/(\s+(Remediated|AltText|Links|Fixed)|_BEFORE_IMBKfix\d*)+$/i;
 function groupRows(rows){const m=new Map();rows.forEach(r=>{const dot=r.file.lastIndexOf('.');const stem=(dot>0?r.file.slice(0,dot):r.file).replace(SUF,'');const ext=dot>0?r.file.slice(dot):'';const k=(stem+ext).toLowerCase();
-  if(!m.has(k))m.set(k,{key:k,name:r.file,count:'',unit:r.unit,tools:[],first:r.time,last:r.time});const g=m.get(k);
+  if(!m.has(k))m.set(k,{name:r.file,count:'',unit:r.unit,tools:[],first:r.time,last:r.time});const g=m.get(k);
   if(r.file.length<g.name.length)g.name=r.file;if(r.count!=='')g.count=r.count;if(!g.tools.includes(r.tool))g.tools.push(r.tool);if(r.time<g.first)g.first=r.time;if(r.time>g.last)g.last=r.time});return [...m.values()]}
 function totals(rows){const g=groupRows(rows);let s=0,p=0;g.forEach(x=>{const n=parseInt(x.count)||0;if(x.unit==='slides')s+=n;else if(x.unit==='pages')p+=n});return {files:g.length,slides:s,pages:p,groups:g}}
 /* title from the file-name pattern: the part before the chapter / part / appendix marker (or a leading ISBN) */
@@ -554,7 +523,7 @@ const unitTxt=x=>{const n=parseInt(x.count);if(isNaN(n))return '—';return n+' 
 const todayRows=()=>state.today===state.day?state.rows:(state.todayRows||[]);
 
 function toast(kind,title,text,action,ms){const ic={ok:'i-ok',err:'i-err',inf:'i-info',warn:'i-warn'}[kind];const d=document.createElement('div');d.className='toast';
-  d.innerHTML='<svg class="i '+kind+'"><use href="#'+ic+'"/></svg><div><b>'+esc(title)+'</b>'+(text?'<span>'+esc(text)+'</span>':'')+'</div>';if(action){const b=document.createElement('button');b.className='btn pri';b.style.cssText='height:30px;padding:0 12px;margin-left:8px;align-self:center';b.textContent=action[0];b.onclick=action[1];d.appendChild(b)}const x=document.createElement('button');x.className='tclose';x.setAttribute('aria-label','Close');x.innerHTML='&times;';x.onclick=()=>d.remove();d.appendChild(x);$('toasts').appendChild(d);setTimeout(()=>d.remove(),ms||5000)}
+  d.innerHTML='<svg class="i '+kind+'"><use href="#'+ic+'"/></svg><div><b>'+esc(title)+'</b>'+(text?'<span>'+esc(text)+'</span>':'')+'</div>';if(action){const b=document.createElement('button');b.className='btn pri';b.style.cssText='height:30px;padding:0 12px;margin-left:8px;align-self:center';b.textContent=action[0];b.onclick=action[1];d.appendChild(b)}$('toasts').appendChild(d);setTimeout(()=>d.remove(),ms||5000)}
 function mbar(kind,text,sub){const m=$('mbar');if(!kind){m.className='mbar';return}m.className='mbar on '+kind;
   $('mbarIcon').innerHTML='<use href="#'+({ok:'i-ok',err:'i-err',warn:'i-warn',busy:'i-sync',info:'i-info'}[kind])+'"/>';$('mbarText').innerHTML=text;$('mbarSub').textContent=sub||''}
 
@@ -608,7 +577,7 @@ function drawStats(){const t=TOOLS[cur];const mine=todayRows().filter(r=>r.tool=
   $('mine').innerHTML=tt.groups.length?'<table class="mini">'+tt.groups.map(x=>'<tr><td title="'+esc(x.name)+'">'+esc(x.name)+'</td><td>'+unitTxt(x)+' · '+esc(x.last)+'</td></tr>').join('')+'</table>':'<div class="empty">No files saved with '+esc(t.name)+' today.</div>';
   $('mineCount').textContent=tt.groups.length?tt.groups.length+' file'+(tt.groups.length===1?'':'s'):'';
 }
-function drawSteps(){if(!$('steps'))return;const t=TOOLS[cur];const n=t.steps.length;
+function drawSteps(){const t=TOOLS[cur];const n=t.steps.length;
   $('steps').innerHTML=t.steps.map((s,i)=>{const st=(phase>=n||i<phase)?'did':(i===phase?'on':'pend');
     return '<li class="'+st+'"><div class="c">'+(st==='did'?'<svg class="s" style="width:14px;height:14px"><use href="#i-chev"/></svg>':'<span>'+(i+1)+'</span>')+'</div><div class="t"><b>'+esc(s[0])+'</b><span>'+esc(s[1])+'</span></div></li>'}).join('');
   if(phase>=n)$('steps').querySelectorAll('.did .c').forEach(c=>c.innerHTML='<svg viewBox="0 0 12 12" style="width:12px;height:12px"><path d="m2.5 6.2 2.2 2.2 4.8-4.9" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>');
@@ -624,156 +593,17 @@ function select(i){if(i<0)i=TOOLS.length-1;if(i>=TOOLS.length)i=0;if(i!==cur&&do
   if(!job&&doneFor!==t.file){const g=gh[t.file];if(g)showGh(t,g);else mbar(null)}
   $('about').innerHTML=t.intro.map(p=>'<p>'+p+'</p>').join('')+'<div class="callout"><svg class="i"><use href="#i-bulb"/></svg><div>'+t.idea+'</div></div>'+
     '<dl class="kv"><dt>Works on</dt><dd>'+esc(GROUPS[t.group])+' files</dd><dt>Saved as</dt><dd>'+esc(t.out)+'</dd><dt>Script</dt><dd><code>'+esc(t.file)+'</code></dd></dl>';
-  drawNav();drawStats();
+  $('checks').innerHTML=t.checks.map(c=>'<label class="chk"><input type="checkbox" onchange="countChecks()"><span>'+esc(c)+'</span></label>').join('');countChecks();
+  drawNav();drawStats();drawSteps();
 }
 function showGh(t,g){if(g.status==='latest')mbar('ok','<b>Connected to GitHub.</b>'+esc(t.name)+' is the newest version ('+esc(state.tools[t.file]||'')+').');
   else if(g.status==='updated'||g.status==='newer')mbar('ok','<b>Connected to GitHub.</b>'+esc(g.message)+'.');
   else if(g.status==='offline')mbar('err','<b>Not connected to GitHub.</b>Using '+esc(t.name)+' '+esc(state.tools[t.file]||'')+' already on this PC.',g.reason?'Reason: '+g.reason:'');
   else if(g.status==='kept')mbar('warn','<b>Connected to GitHub.</b>'+esc(g.message)+'.');}
+function countChecks(){const a=document.querySelectorAll('#checks input');$('chkCount').textContent=[...a].filter(x=>x.checked).length+' of '+a.length}
 
-
-
-/* ---------- choose or drop files: runs in the background, progress and result on this page ---------- */
-let dz={tool:'',items:[]};let rn=null;
-const POSTJ=async(p,body)=>{const r=await fetch(p,{method:'POST',headers:{'X-S4C':TOKEN},body:JSON.stringify(body)});if(!r.ok)throw new Error(await r.text());return r.json()};
-const folderOf=p=>String(p||'').replace(/[\\/][^\\/]*$/,'');
-const leafOf=p=>String(p||'').replace(/^.*[\\/]/,'');
-const dropOf=t=>[].concat(t.drop||[]);
-const INTER=['Link_Fixer.ps1','AltText_Tool.ps1'];
-const RN_STEPS={d:['Checking GitHub','Reading the file','Fixing','Saving'],
- 'Link_Fixer.ps1':['Checking GitHub','Reading the links','Looking up links','Review page open'],
- 'AltText_Tool.ps1':['Checking GitHub','Reading deck and Excel','Building the review page','Review page open']};
-function dzOn(){return dz.tool===TOOLS[cur].file?dz.items:[]}
-function dzRender(){const t=TOOLS[cur];const list=$('dzList');
-  if(!t.drop){list.style.display='none';$('rnCard').style.display='none';return}
-  $('dzIn').accept=dropOf(t).join(',');
-  const it=dzOn();list.style.display=it.length?'':'none';
-  list.innerHTML=it.map((x,i)=>'<div class="r"><span class="nm" title="'+esc(x.path||x.file.name)+'">'+esc(x.file.name)+'</span><span class="st'+(x.state==='done'?' ok':x.state==='failed'?' bad':'')+'">'+esc(x.msg)+'</span>'+
-    (x.state==='needfolder'&&!job?'<button class="btn" onclick="dzPickDir('+i+')">Choose folder</button>':'')+(x.path||x.outPath?'<button class="btn" onclick="dzOpen('+i+')">Open folder</button>':'')+(x.state==='failed'&&!job?'<button class="x" title="Remove" onclick="dzDel('+i+')">&times;</button>':'')+'</div>').join('');
-  if(!job)$('runTxt').textContent='Choose files';
-  rnDraw()}
-function dzDel(i){dz.items.splice(i,1);dzRender()}
-function dzOpen(i){const x=dzOn()[i];const p=x&&(x.outPath||x.path);if(p)api('/api/openfolder?path='+encodeURIComponent(p))}
-async function dzAdd(files){const t=TOOLS[cur];if(!t.drop)return;
-  if(job){toast('warn','A tool is already running','Wait until it has finished, then choose more files.');return}
-  const ok=dropOf(t);const add=[...files].filter(f=>ok.some(e=>f.name.toLowerCase().endsWith(e)));
-  if(!add.length){toast('warn','Wrong file type',t.name+' takes '+ok.join(', ')+' files.');return}
-  if(dz.tool!==t.file)dz={tool:t.file,items:[]};
-  dz.items=dz.items.filter(x=>x.state!=='done');rn=null;
-  const mine=[];
-  for(const f of add){if(dz.items.some(x=>x.file.name===f.name&&x.file.size===f.size))continue;const x={file:f,path:'',state:'looking',msg:'Looking for the original...'};dz.items.push(x);mine.push(x)}
-  dzRender();if(!mine.length)return;
-  const miss='Original not found. Press Choose folder and pick the folder it is in.';
-  try{const r=await POSTJ('/api/locate',mine.map(x=>({name:x.file.name,size:x.file.size,mtime:x.file.lastModified})));
-    const fl=[].concat(r.files||[]);
-    mine.forEach(x=>{const m=fl.find(y=>y.name===x.file.name);if(m&&m.path){x.state='ready';x.path=m.path;x.msg='Found in '+folderOf(m.path)}else{x.state='needfolder';x.msg=miss}})
-  }catch(e){mine.forEach(x=>{x.state='needfolder';x.msg=miss})}
-  dzRender();startDrop()}
-async function startDrop(){
-  if(job){toast('warn','A tool is already running','Wait until it has finished.');return}
-  const t=TOOLS[cur];if(dz.items.some(x=>x.state==='looking'||x.state==='needfolder'))return;const items=dz.items.filter(x=>x.state==='ready');if(!items.length)return;
-  let chapter='';
-  if(t.file==='AltText_Tool.ps1'){
-    const pp=items.filter(x=>/\.pptx$/i.test(x.file.name)),xx=items.filter(x=>/\.xlsx$/i.test(x.file.name));
-    if(!pp.length||!xx.length){toast('warn','One more file needed','Choose the deck (.pptx) and the Excel alt text file (.xlsx) together. Add the saved mapping (.csv) to apply the matches.');return}
-    if(!items.some(x=>/\.csv$/i.test(x.file.name))){
-      const g=(pp[0].file.name.replace(/\.[^.]+$/,'').match(/(\d{1,2})(?=\D*$)/)||[''])[0];
-      chapter=g||prompt('Which chapter number is this deck? (as in the Excel Chapter Number column, for example 05)','')||'';
-      if(!chapter){toast('warn','Chapter number needed','Choose the files again and enter the chapter number.');return}}
-  }
-  $('btnRun').disabled=$('btnCheck').disabled=true;const paths=[];
-  for(const x of items){
-    if(!x.path){x.msg='Preparing...';dzRender();
-      try{const r=await (await fetch('/api/upload?name='+encodeURIComponent(x.file.name)+'&dir='+encodeURIComponent(x.dir||''),{method:'POST',headers:{'X-S4C':TOKEN},body:x.file})).json();x.path=r.path}
-      catch(e){x.state='failed';x.msg='Could not copy: '+e.message;continue}}
-    paths.push(x.path);x.state='running';x.msg='Waiting...'}
-  if(!paths.length){$('btnRun').disabled=$('btnCheck').disabled=false;dzRender();return}
-  try{const r=await POSTJ('/api/runfiles',{tool:t.file,files:paths,chapter});
-    const inter=INTER.includes(t.file);const total=t.file==='AltText_Tool.ps1'?1:paths.length;
-    job={id:r.id,tool:t.file,launch:true,drop:true};doneFor='';phase=1;stage('updating');
-    rn={tool:t.file,total,inter,t0:Date.now(),ft0:Date.now(),lastDone:0,pct:3,stage:0,serving:false,cur:'',mode:'run'};
-    dzRender();drawSteps();poll();
-  }catch(e){$('btnRun').disabled=$('btnCheck').disabled=false;items.forEach(x=>{if(x.state==='running'){x.state='failed';x.msg='Could not start: '+e.message}});rn=null;dzRender();toast('err','Could not start',e.message)}}
-/* the Windows file window: the real folder is known, so the fixed copy is saved right there */
-let pickBusy=false;
-async function pickWait(id,hintMs){const t0=Date.now();let hinted=false;
-  while(true){await new Promise(r=>setTimeout(r,500));
-    if(!hinted&&Date.now()-t0>hintMs){hinted=true;toast('inf','Do not see the file window?','Look in the taskbar. It opens in front of this page.',null,12000)}
-    const r=await (await api('/api/pickresult?id='+id)).json();if(r.done)return r}}
-async function pickFiles(){if(pickBusy)return;const t=TOOLS[cur];pickBusy=true;$('btnRun').disabled=true;$('runTxt').textContent='Choose in the file window...';
-  try{const id=(await (await api('/api/pick?tool='+encodeURIComponent(t.file))).json()).id;const r=await pickWait(id,4000);
-    if(r.error&&!(r.files||[]).length){toast('warn','The file window did not open','Use the browser picker instead.');$('dzIn').click();return}
-    const ok=dropOf(t);const files=(r.files||[]).filter(p=>ok.some(e=>p.toLowerCase().endsWith(e)));
-    if(!files.length)return;
-    if(dz.tool!==t.file)dz={tool:t.file,items:[]};
-    dz.items=dz.items.filter(x=>x.state!=='done');rn=null;
-    for(const p of files){if(dz.items.some(x=>x.path===p))continue;dz.items.push({file:{name:leafOf(p)},path:p,state:'ready',msg:'Chosen in '+folderOf(p)})}
-    dzRender();startDrop()
-  }catch(e){toast('err','Could not open the file window',e.message)}
-  finally{pickBusy=false;if(!job){$('btnRun').disabled=false;dzRender()}}}
-async function dzPickDir(i){const x=dzOn()[i];if(!x||pickBusy)return;pickBusy=true;
-  try{const id=(await (await api('/api/pick?mode=folder&tool='+encodeURIComponent(TOOLS[cur].file))).json()).id;const r=await pickWait(id,4000);
-    const d=(r.files||[])[0];if(d){x.dir=d;x.state='ready';x.msg='Fixed copy will be saved in '+d;dzRender();startDrop()}}
-  catch(e){toast('err','Could not open the folder window',e.message)}finally{pickBusy=false}}
-/* ring */
-const RC=2*Math.PI*42;
-function rnTitle(){const t=TOOLS.find(x=>x.file===rn.tool);
-  if(rn.tool==='Link_Fixer.ps1')return rn.serving?'The review page is open':'Reading your links...';
-  if(rn.tool==='AltText_Tool.ps1')return rn.serving?'The review page is open':'Building the review page...';
-  return 'Fixing '+rn.total+(rn.total===1?' file':' files')+'...'}
-function rnDraw(){const c=$('rnCard');if(!rn||rn.tool!==TOOLS[cur].file){c.style.display='none';return}
-  c.style.display='';
-  if(rn.mode!=='run'){c.className='rnc rnd'+(rn.mode==='bad'?' bad':'');c.innerHTML=rn.html;return}
-  c.className='rnc';
-  c.innerHTML='<div class="rnw"><svg viewBox="0 0 100 100" width="92" height="92"><circle cx="50" cy="50" r="42" fill="none" stroke="var(--stroke2)" stroke-width="9"/><circle id="rnArc" cx="50" cy="50" r="42" fill="none" stroke="#b4532e" stroke-width="9" stroke-linecap="round" stroke-dasharray="'+RC+'" stroke-dashoffset="'+RC+'" transform="rotate(-90 50 50)" style="transition:stroke-dashoffset .7s"/></svg><b id="rnPct">0%</b><i class="rno"></i></div>'+
-   '<div class="rnt"><h4 id="rnH"></h4><p id="rnP"></p><div class="rns" id="rnS">'+(RN_STEPS[rn.tool]||RN_STEPS.d).map(x=>'<span>'+esc(x)+'</span>').join('')+'</div><div id="rnB"></div></div>';
-  rnPaint()}
-function rnPaint(){if(!rn||rn.mode!=='run'||!$('rnArc'))return;
-  $('rnArc').style.strokeDashoffset=RC*(1-rn.pct/100);$('rnPct').textContent=Math.round(rn.pct)+'%';$('rnH').textContent=rnTitle();
-  $('rnP').textContent=rn.serving?'Finish in your browser, then press the button below.':(rn.cur||'');
-  [...$('rnS').children].forEach((x,k)=>{x.className=k<rn.stage?'dn':k===rn.stage?'on':''});
-  $('rnB').innerHTML=rn.serving?'<button class="btn" onclick="rnStop()">I have finished in the review page</button>':''}
-function rnStop(){if(job)api('/api/stop?id='+job.id)}
-function rnUpdate(r){if(!rn)return;const p=r.progress||{total:rn.total,done:0};let stage=0,pct=rn.pct;
-  if(r.state==='running'){const el=(Date.now()-rn.t0)/1000;stage=1;
-    if(rn.inter){
-      if(p.serving){stage=3;pct=93}
-      else if(p.lookTotal>0){stage=2;pct=8+80*p.lookDone/p.lookTotal}
-      else{stage=el>4?2:1;pct=Math.min(85,8+el*3)}
-    }else{
-      if(p.done!==rn.lastDone){rn.lastDone=p.done;rn.ft0=Date.now()}
-      const slice=100/rn.total;const creep=(1-Math.exp(-(Date.now()-rn.ft0)/15000))*0.9*slice;
-      pct=Math.min(97,3+(p.done*slice)*0.97+creep*0.97);
-      if(p.current)stage=2;if(p.saved>p.done)stage=3}
-    rn.serving=!!p.serving;rn.cur=p.current||''}
-  rn.stage=stage;rn.pct=Math.max(rn.pct,pct);rnPaint()}
-function rnFinish(was,r){const it=dz.items;const ok=it.length&&it.every(x=>x.state==='done');const errs=((r.progress||{}).errors)||[];
-  const n=it.filter(x=>x.state==='done'&&/\.(pptx|docx)$/i.test(x.file.name)).length;const t=TOOLS.find(x=>x.file===was.tool);
-  const inter=INTER.includes(was.tool);
-  const head=ok?(inter?'Completed. Your review was applied.':'Completed. '+n+(n===1?' file':' files')+' fixed.'):'Completed with problems';
-  const sub=ok?(was.tool==='IMBK_Macro.ps1'?'The decks were fixed in place and a backup of each was kept. Today\'s work is updated.':'The fixed copies are saved next to your originals. Today\'s work is updated.'):
-    (errs.find(x=>/FAILED|Cannot|not found|denied|Exception/i.test(x))||errs[0]||'Some files were not saved. The list below says which one and why.');
-  const first=it.findIndex(x=>x.outPath||x.path);
-  rn.mode=ok?'done':'bad';rn.html='<div class="rnk">'+(ok?'&#10003;':'!')+'</div><div class="rnt"><h4>'+esc(head)+'</h4><p>'+esc(sub)+'</p></div>';
-  rnDraw()}
-function dzDone(was,r){const t=TOOLS.find(x=>x.file===was.tool);
-  dz.items.filter(x=>x.state==='running').forEach(x=>{
-    const leaf=leafOf(x.path);const rows=(state.rows||[]).filter(q=>q.file===leaf&&q.tool===t.name);const q=rows[rows.length-1];
-    const isDoc=/\.(pptx|docx)$/i.test(x.file.name);
-    if(q){x.state='done';x.outPath=folderOf(x.path)+'\\'+q.out;x.msg=(q.out===q.file?'Fixed in place, backup kept':'Saved: '+q.out)+(q.count?'  ('+q.count+' '+q.unit+')':'')}
-    else if(!isDoc){x.state='done';x.msg='Used'}
-    else{x.state='failed';x.msg=(INTER.includes(was.tool)&&!(((r.progress||{}).errors)||[]).length)?'Nothing was saved (the review was not applied).':'Not saved. '+((((r.progress||{}).errors)||[])[0]||'The tool reported a problem.')}})}
-(function(){const h=document.querySelector('section.hero');
-  ['dragenter','dragover'].forEach(n=>h.addEventListener(n,e=>{e.preventDefault();h.classList.add('hot')}));
-  ['dragleave','drop'].forEach(n=>h.addEventListener(n,e=>{e.preventDefault();h.classList.remove('hot')}));
-  h.addEventListener('drop',e=>dzAdd(e.dataTransfer.files));
-  window.addEventListener('dragover',e=>e.preventDefault());window.addEventListener('drop',e=>e.preventDefault());
-  $('dzIn').onchange=e=>{dzAdd(e.target.files);e.target.value=''};
-  const _sel=select;select=function(i){_sel(i);dzRender()};
-})();
 /* ---------- run ---------- */
 async function start(launch){
-  if(launch&&TOOLS[cur].drop&&!job){return pickFiles()}
   if(job){toast('warn','A tool is already starting','Wait until it has opened.');return}
   const t=TOOLS[cur];
   try{const r=await (await api('/api/run?tool='+encodeURIComponent(t.file)+'&launch='+(launch?1:0))).json();
@@ -783,15 +613,15 @@ async function start(launch){
 }
 async function poll(){
   if(!job)return;
-  try{const r=await (await api('/api/job?id='+job.id)).json();const t=TOOLS.find(x=>x.file===r.tool);const here=TOOLS[cur].file===r.tool;if(job.drop)rnUpdate(r);
+  try{const r=await (await api('/api/job?id='+job.id)).json();const t=TOOLS.find(x=>x.file===r.tool);const here=TOOLS[cur].file===r.tool;
     if(r.update&&!job.seen){job.seen=1;gh[r.tool]=r.update;if(r.version)state.tools[r.tool]=r.version;
       const u=r.update;if(here)showGh(t,u);
       toast(u.status==='offline'?'err':u.status==='kept'?'warn':'ok',u.status==='offline'?'Not connected to GitHub':'Connected to GitHub',u.status==='offline'?'Using the copy on this PC.':u.message);
       if(here){drawStats();drawNav()}}
-    if(r.state==='running'&&!job.open){job.open=1;if(here&&!job.drop){phase=2;stage('running');mbar('info','<b>'+esc(t.name)+' is open in its own window.</b>Pick your files there. This page updates when you close it.');drawSteps()}if(job.drop){mbar(null);dz.items.forEach(x=>{if(x.state==='running')x.msg='Fixing...'});dzRender()}}
+    if(r.state==='running'&&!job.open){job.open=1;if(here){phase=2;stage('running');mbar('info','<b>'+esc(t.name)+' is open in its own window.</b>Pick your files there. This page updates when you close it.');drawSteps()}}
     if(r.state==='done'){const was=job;job=null;$('btnRun').disabled=$('btnCheck').disabled=false;
       if(was.launch){doneFor=r.tool;toast('ok',t.name+' finished','Today\'s work is updated.')}
-      await load(true);loadDays();if(was.drop){dzDone(was,r);rnFinish(was,r)}if(here){stage(was.launch?'done':'');if(was.launch&&!was.drop){phase=t.steps.length;mbar('ok','<b>'+esc(t.name)+' finished.</b>Check the saved file.')}if(was.drop)phase=t.steps.length;select(cur)}return}
+      await load(true);loadDays();if(here){stage(was.launch?'done':'');if(was.launch){phase=t.steps.length;mbar('ok','<b>'+esc(t.name)+' finished.</b>Check the saved file, then tick the list on the right.')}select(cur)}return}
   }catch(e){$('off').classList.add('on');return}
   setTimeout(poll,900);
 }
@@ -805,14 +635,10 @@ async function load(keep){const day=$('day').value||'';const r=await (await api(
   drawPersona();$('upc').textContent=r.pc||'This PC';
   drawWork();if(keep){drawNav();drawStats()}else select(cur);drawGreet();drawGoal();achievements()}
 function editTitle(key){const T=getTitles();const cur=key in T?T[key]:key;const v=prompt('Title for every file named like this ('+(key||'no name pattern')+'). Leave empty to use the file-name text.',cur);if(v===null)return;if(v.trim()===''||v.trim().toLowerCase()===key)delete T[key];else T[key]=v.trim();LS.set('titles',T);drawWork();toast('ok','Title saved','Applies to all files with this name pattern, today and later')}
-async function removeRow(b){const n=b.dataset.n,k=b.dataset.k,dy=($('day').value)||state.today;if(!confirm('Remove "'+n+'" from the log for '+dy+'?\n\nUse this when a file was run by mistake. It will no longer count in Today\'s work, your goal or the report.'))return;
-  try{const r=await (await api('/api/delete?day='+dy+'&key='+encodeURIComponent(k))).json();await load(true);
-    if(r.removed)toast('ok','Removed from the log',n,['Undo',undoRemove],12000);else toast('err','Nothing was removed','That file was not found in the log.')}catch(e){toast('err','Could not remove it',e.message==='not found'?'S4C Tools needs to be closed and opened again once to finish its update.':e.message)}}
-async function undoRemove(){try{const r=await (await api('/api/undelete')).json();await load(true);toast('ok','Put back',r.restored+' run'+(r.restored===1?'':'s')+' restored to the log')}catch(e){toast('err','Could not undo',e.message)}}
 function copyName(b){const n=b.dataset.n;if(navigator.clipboard)navigator.clipboard.writeText(n).then(()=>toast('ok','Copied',n))}
 function drawWork(){const tt=totals(state.rows);$('cFiles').textContent=tt.files;$('cSlides').textContent=tt.slides;$('cPages').textContent=tt.pages;$('cRuns').textContent=state.rows.length;
-  $('tbody').innerHTML=tt.groups.length?tt.groups.map((g,i)=>{const isW=/\.docx$/i.test(g.name);const ti=titleOf(g.name);return '<tr><td>'+(i+1)+'</td><td>'+(ti.shown?'<span class="ttlc" onclick="editTitle(\''+esc(ti.key).replace(/'/g,"\\'")+'\')" title="Click to rename this title">'+esc(ti.shown)+'</span>':'<span class="ttlc none" onclick="editTitle(\''+esc(ti.key).replace(/'/g,"\\'")+'\')">+ Add title</span>')+'</td><td><div class="fn"><span class="tile" style="background:'+(isW?'var(--word)':'var(--ppt)')+'">'+(isW?'W':'P')+'</span>'+esc(g.name)+'</div></td><td class="n">'+unitTxt(g)+'</td><td>'+g.tools.map(x=>'<span class="tag">'+esc(x)+'</span>').join('')+'</td><td>'+esc(g.first===g.last?g.first:g.first+' – '+g.last)+'</td><td class="n" style="white-space:nowrap"><button class="rm cp" onclick="copyName(this)" data-n="'+esc(g.name)+'" title="Copy the file name">Copy</button> <button class="rm" data-k="'+esc(g.key)+'" data-n="'+esc(g.name)+'" onclick="removeRow(this)" title="Remove this file from the log (use it when a file was run by mistake)">Remove</button></td></tr>'}).join(''):
-    '<tr><td colspan="7" style="color:var(--fg3);padding:28px 16px">No files were saved by the tools on this day.</td></tr>'}
+  $('tbody').innerHTML=tt.groups.length?tt.groups.map((g,i)=>{const isW=/\.docx$/i.test(g.name);const ti=titleOf(g.name);return '<tr><td>'+(i+1)+'</td><td>'+(ti.shown?'<span class="ttlc" onclick="editTitle(\''+esc(ti.key).replace(/'/g,"\\'")+'\')" title="Click to rename this title">'+esc(ti.shown)+'</span>':'<span class="ttlc none" onclick="editTitle(\''+esc(ti.key).replace(/'/g,"\\'")+'\')">+ Add title</span>')+'</td><td><div class="fn"><span class="tile" style="background:'+(isW?'var(--word)':'var(--ppt)')+'">'+(isW?'W':'P')+'</span>'+esc(g.name)+'</div></td><td class="n">'+unitTxt(g)+'</td><td>'+g.tools.map(x=>'<span class="tag">'+esc(x)+'</span>').join('')+'</td><td>'+esc(g.first===g.last?g.first:g.first+' – '+g.last)+'<span class="rowact"><button onclick="copyName(this)" data-n="'+esc(g.name)+'"><svg class="s" style="width:14px;height:14px"><use href="#i-file"/></svg>Copy name</button></span></td></tr>'}).join(''):
+    '<tr><td colspan="6" style="color:var(--fg3);padding:28px 16px">No files were saved by the tools on this day.</td></tr>'}
 async function report(){const day=$('day').value||state.today;try{const r=await api('/api/report?day='+day+'&name='+encodeURIComponent(LS.get('name',''))+'&titles='+encodeURIComponent(JSON.stringify(getTitles())));const b=await r.blob();
   const cd=r.headers.get('Content-Disposition')||'';const m=/filename="([^"]+)"/.exec(cd);const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=m?m[1]:'Work report.txt';document.body.appendChild(a);a.click();a.remove();toast('ok','Report downloaded',m?m[1]:'')}catch(e){toast('err','Could not make the report',e.message)}}
 
@@ -837,11 +663,7 @@ document.addEventListener('keydown',e=>{
   if(!$('v-tools').classList.contains('on'))return;
   if(k==='ArrowDown'){e.preventDefault();select(cur+1)}else if(k==='ArrowUp'){e.preventDefault();select(cur-1)}else if(k==='Enter'){start(true)}else if(k.toLowerCase()==='u'){start(false)}});
 /* =================== extras =================== */
-/* settings (title, name, goal, theme...) are also kept in a file on this PC, because the page address changes every time S4C Tools starts and the browser would forget them */
-(function(){try{const x=new XMLHttpRequest();x.open('GET','/api/prefs',false);x.setRequestHeader('X-S4C',TOKEN);x.send();if(x.status===200){const d=JSON.parse(x.responseText||'{}');Object.keys(d).forEach(k=>{if(k.indexOf('s4c-')===0)try{localStorage.setItem(k,d[k])}catch(e){}})}}catch(e){}})();
-let prefT=null;function prefSave(){clearTimeout(prefT);prefT=setTimeout(()=>{try{const o={};for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k.indexOf('s4c-')===0&&k!=='s4c-hub-version')o[k]=localStorage.getItem(k)}fetch('/api/prefs',{method:'POST',headers:{'X-S4C':TOKEN},body:JSON.stringify(o)})}catch(e){}},400)}
-const LS={get(k,d){try{const v=localStorage.getItem('s4c-'+k);return v===null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem('s4c-'+k,JSON.stringify(v));prefSave()}catch(e){}}};
-setTimeout(prefSave,1500);
+const LS={get(k,d){try{const v=localStorage.getItem('s4c-'+k);return v===null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem('s4c-'+k,JSON.stringify(v))}catch(e){}}};
 const winName=()=>{const u=(state.user||'').replace(/[^A-Za-z].*$/,'');return u?u[0].toUpperCase()+u.slice(1).toLowerCase():''};
 const dispName=()=>LS.get('name','')||winName()||'there';
 const firstName=()=>dispName().split(/\s+/)[0];
@@ -849,9 +671,9 @@ function drawPersona(){const n=dispName();$('uname').textContent=n;const parts=n
 function openName(){$('nameIn').value=LS.get('name','')||winName();$('namebox').classList.add('on');setTimeout(()=>{$('nameIn').focus();$('nameIn').select()},10)}
 function closeName(){$('namebox').classList.remove('on');$('nameIn').blur()}
 function saveName(v){LS.set('name',(v||'').trim().slice(0,40));closeName();drawPersona();drawGreet();toast('ok','Name saved','Hello, '+firstName()+' 👋')}
-const getGoal=()=>{const g=LS.get('goal2',null);return (g&&g.n>0&&(g.unit==='slides'||g.unit==='pages'))?g:{unit:'slides',n:300}};
-const goalDone=tt=>getGoal().unit==='slides'?tt.slides:tt.pages;
-const TIPS=['Use the Slides / Pages switch under Today to pick how your goal is counted','Click your name at the top right to change it','Press Ctrl + K to run any tool from the keyboard','Right-click a tool for more options','Press D to download today\'s report','Press ? to see every shortcut','The original file is never changed by Word Fixer, SLID, Alt Text or Link Fixer','A chapter run through three tools still counts as one file'];
+const getGoal=()=>{const g=LS.get('goal2',null);return (g&&g.n>0&&(g.unit==='slides'||g.unit==='files'))?g:{unit:'slides',n:300}};
+const goalDone=tt=>getGoal().unit==='slides'?tt.slides:tt.files;
+const TIPS=['Use the Slides / Files switch under Today to pick how your goal is counted','Click your name at the top right to change it','Press Ctrl + K to run any tool from the keyboard','Right-click a tool for more options','Press D to download today\'s report','Press ? to see every shortcut','The original file is never changed by Word Fixer, SLID, Alt Text or Link Fixer','A chapter run through three tools still counts as one file'];
 let tipI=Math.floor(Math.random()*TIPS.length);
 function drawGreet(){const h=new Date().getHours();const part=h<12?'Good morning':h<17?'Good afternoon':'Good evening';const em=h<12?'☀️':h<17?'☕':'🌙';
   const tt=totals(todayRows());const G=getGoal();const done=goalDone(tt);const left=Math.max(0,G.n-done);
@@ -865,20 +687,20 @@ function streak(){const m={};days.forEach(d=>m[d.day]=d.files);let n=0;const d=n
   if(!m[iso(d)])d.setDate(d.getDate()-1);
   for(let k=0;k<70;k++){const wd=d.getDay();const v=m[iso(d)];if(v){n++}else if(wd!==0&&wd!==6){break}d.setDate(d.getDate()-1)}return n}
 function drawGoal(){const tt=totals(todayRows());const G=getGoal();const done=goalDone(tt);const pct=Math.min(1,done/G.n);const C=2*Math.PI*25;const st=streak();
-  const sub=G.unit==='slides'?tt.pages+' page'+(tt.pages===1?'':'s')+' in Word files':tt.slides+' slide'+(tt.slides===1?'':'s')+' in decks';
+  const sub=G.unit==='slides'?tt.files+' file'+(tt.files===1?'':'s')+(tt.pages?' · '+tt.pages+' page'+(tt.pages===1?'':'s'):''):tt.slides+' slides'+(tt.pages?' · '+tt.pages+' page'+(tt.pages===1?'':'s'):'');
   $('nfoot').innerHTML='<small>Today</small><div class="goal" style="margin-top:8px"><div class="ring"><svg viewBox="0 0 58 58"><circle class="bg" cx="29" cy="29" r="25"/><circle class="fg" cx="29" cy="29" r="25" stroke-dasharray="'+C+'" stroke-dashoffset="'+(C*(1-pct))+'"/></svg><b style="font-size:'+(String(Math.round(pct*100)).length>2?14:16)+'px">'+Math.round(pct*100)+'%</b></div>'+
-    '<div class="goal-t" id="goalT"><b>'+done+' / '+G.n+' '+G.unit+'</b><span>'+sub+'</span><a id="goalEdit">Change '+G.unit+' target</a></div></div>'+
-    '<div class="gseg" title="Count my daily goal in"><span>Goal in</span><div class="seg"><button data-u="slides"'+(G.unit==='slides'?' class="on"':'')+'>Slides</button><button data-u="pages"'+(G.unit==='pages'?' class="on"':'')+'>Pages</button></div></div><div id="goalBox"></div>'+
+    '<div class="goal-t" id="goalT"><b>'+done+' / '+G.n+' '+G.unit+'</b><span>'+sub+'</span><a id="goalEdit">Change target</a></div></div>'+
+    '<div class="gseg" title="Count my daily goal in"><span>Goal in</span><div class="seg"><button data-u="slides"'+(G.unit==='slides'?' class="on"':'')+'>Slides</button><button data-u="files"'+(G.unit==='files'?' class="on"':'')+'>Files</button></div></div><div id="goalBox"></div>'+
     '<div class="streak">'+(st?'🔥 <b>'+st+'</b> day streak':'Start a streak today ✨')+'</div>';
   $('goalEdit').onclick=openGoal;
-  $('nfoot').querySelectorAll('.gseg button').forEach(b=>b.onclick=()=>{const u=b.dataset.u;if(u===G.unit)return;const N=LS.get('goalN',{});N[G.unit]=G.n;LS.set('goalN',N);const n=N[u]||(u==='slides'?300:75);LS.set('goal2',{unit:u,n});drawGoal();drawGreet();toast('ok','Goal is now in '+u,n+' '+u+' a day')})}
+  $('nfoot').querySelectorAll('.gseg button').forEach(b=>b.onclick=()=>{const u=b.dataset.u;if(u===G.unit)return;const N=LS.get('goalN',{});N[G.unit]=G.n;LS.set('goalN',N);const n=N[u]||(u==='slides'?300:8);LS.set('goal2',{unit:u,n});drawGoal();drawGreet();toast('ok','Goal is now in '+u,n+' '+u+' a day')})}
 function openGoal(){const G=getGoal();let unit=G.unit;
-  $('goalEdit').style.display='none';$('goalBox').innerHTML='<div class="gedit" style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--stroke)"><small style="margin:0">Daily goal</small><div class="row"><input id="goalIn" type="number" min="1" max="5000" value="'+G.n+'"><div class="seg"><button data-u="slides">slides</button><button data-u="pages">pages</button></div></div>'+
+  $('goalEdit').style.display='none';$('goalBox').innerHTML='<div class="gedit" style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--stroke)"><small style="margin:0">Daily goal</small><div class="row"><input id="goalIn" type="number" min="1" max="5000" value="'+G.n+'"><div class="seg"><button data-u="slides">slides</button><button data-u="files">files</button></div></div>'+
     '<div class="quick" id="goalQuick"></div><div class="row"><a id="goalOk">Save</a><a id="goalNo" style="color:var(--fg3)">Cancel</a></div></div>';
-  const quick=()=>{const q=unit==='slides'?[200,300,400,500]:[50,75,100,150];$('goalQuick').innerHTML=q.map(n=>'<button data-n="'+n+'">'+n+'</button>').join('');$('goalQuick').querySelectorAll('button').forEach(b=>b.onclick=()=>{$('goalIn').value=b.dataset.n})};
+  const quick=()=>{const q=unit==='slides'?[200,300,400,500]:[5,8,10,15];$('goalQuick').innerHTML=q.map(n=>'<button data-n="'+n+'">'+n+'</button>').join('');$('goalQuick').querySelectorAll('button').forEach(b=>b.onclick=()=>{$('goalIn').value=b.dataset.n})};
   const seg=()=>{$('goalBox').querySelectorAll('.seg button').forEach(b=>b.classList.toggle('on',b.dataset.u===unit));quick()};
-  $('goalBox').querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{if(unit!==b.dataset.u){unit=b.dataset.u;const N=LS.get('goalN',{});$('goalIn').value=N[unit]||(unit==='slides'?300:75)}seg()});seg();
-  const save=()=>{const v=Math.max(1,Math.min(5000,parseInt($('goalIn').value)||(unit==='slides'?300:75)));LS.set('goal2',{unit,n:v});{const N=LS.get('goalN',{});N[unit]=v;LS.set('goalN',N)}drawGoal();drawGreet();toast('ok','Goal saved',v+' '+unit+' a day');achievements()};
+  $('goalBox').querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{if(unit!==b.dataset.u){unit=b.dataset.u;const N=LS.get('goalN',{});$('goalIn').value=N[unit]||(unit==='slides'?300:8)}seg()});seg();
+  const save=()=>{const v=Math.max(1,Math.min(5000,parseInt($('goalIn').value)||(unit==='slides'?300:8)));LS.set('goal2',{unit,n:v});{const N=LS.get('goalN',{});N[unit]=v;LS.set('goalN',N)}drawGoal();drawGreet();toast('ok','Goal saved',v+' '+unit+' a day');achievements()};
   $('goalOk').onclick=save;$('goalNo').onclick=drawGoal;$('goalIn').onkeydown=e=>{if(e.key==='Enter')save();if(e.key==='Escape')drawGoal()};$('goalIn').focus();$('goalIn').select()}
 
 /* ---------- achievements + confetti ---------- */
@@ -929,37 +751,12 @@ $('nameIn').onkeydown=e=>{if(e.key==='Enter')saveName($('nameIn').value);if(e.ke
 document.addEventListener('click',e=>{if(!e.target.closest('#namebox')&&!e.target.closest('#persona'))closeName()});
 $('q').onfocus=()=>{$('q').blur();palOpen()};
 
-const PAGE_VER=(document.querySelector('meta[name="s4c-hub-version"]')||{}).content||'0';
-const vnum=v=>String(v||'0').split('.').map(x=>parseInt(x)||0);
-const vgt=(a,b)=>{const x=vnum(a),y=vnum(b);for(let i=0;i<Math.max(x.length,y.length);i++){const d=(x[i]||0)-(y[i]||0);if(d)return d>0}return false};
-async function checkHub(n){try{const r=await (await api('/api/hub')).json();$('hubVer').textContent='Page version '+PAGE_VER+'.';
+async function checkHub(n){try{const r=await (await api('/api/hub')).json();$('hubVer').textContent='Page version '+(r.version||'?')+'.';
     if(!r.done){if((n||0)<40)setTimeout(()=>checkHub((n||0)+1),5000);return}
-    const ups=r.updated||[];const hubPs=ups.some(x=>/^S4C_Hub\.ps1 /.test(x));
-    if(r.restart){toast('inf','S4C Tools has been updated','Close the black S4C Tools window and open S4C Tools again to finish the update.',null,60000);return}
-    // an older copy of this program (it cannot restart itself) is still running although GitHub gave it a new version
-    if(hubPs&&r.restart===undefined){toast('inf','S4C Tools has been updated','This PC has an older copy running. Close the black window and open S4C Tools once more.',null,60000);return}
-    // only offer the refresh while the page on screen is older than the page on this PC
-    if(vgt(r.version,PAGE_VER))toast('inf','S4C Tools has a new look waiting','Page '+PAGE_VER+' -> '+r.version+'. Refresh to see it.',['Refresh',()=>location.reload()],30000);
+    const pg=(r.updated||[]).find(x=>/^S4C_Hub\.html /.test(x));const other=(r.updated||[]).filter(x=>!/^S4C_Hub\.html /.test(x));
+    if(pg)toast('inf','S4C Tools has a new look waiting','Updated '+pg.replace('S4C_Hub.html ','page ')+'. Refresh to see it.',['Refresh',()=>location.reload()],20000);
+    else if(other.length)toast('inf','S4C Tools updated',other.length+' file'+(other.length===1?'':'s')+' updated. Close and reopen S4C Tools to use them.',null,12000);
   }catch(e){}}
-
-/* ---------- header: check the whole tool (page files and every tool) for updates ---------- */
-let updBusy=false;
-async function updateAll(){if(updBusy)return;
-  if(job){toast('warn','A tool is running','Check for updates when it has finished.');return}
-  updBusy=true;const b=$('updAll');b.classList.add('spinning');b.disabled=true;b.querySelector('span').textContent='Checking...';
-  try{await api('/api/updateall');let r=null,hub=null;
-    for(let i=0;i<150;i++){await new Promise(x=>setTimeout(x,1500));
-      r=await (await api('/api/updateallstatus')).json();hub=await (await api('/api/hub')).json();if(r.done&&hub.done)break}
-    const tools=(r&&r.tools)||[];const upd=tools.filter(x=>x.status==='updated'||x.status==='newer');const off=tools.filter(x=>x.status==='offline');
-    const hubUp=(hub&&hub.updated)||[];
-    await load(true);drawNav();drawStats();
-    if(off.length&&!upd.length&&!hubUp.length)toast('err','Not connected to GitHub','Nothing could be checked. Using the copies on this PC.');
-    else if(upd.length||hubUp.length)toast('ok','Updated',(upd.map(x=>x.name+' ('+x.message.replace('Updated ','')+')').concat(hubUp.length?['S4C Tools']:[])).join(', ')+'.');
-    else toast('ok','Everything is up to date','S4C Tools and every tool are the newest version.');
-    checkHub(0);
-  }catch(e){toast('err','Could not check for updates',e.message)}
-  finally{updBusy=false;b.classList.remove('spinning');b.disabled=false;b.querySelector('span').textContent='Check for updates'}}
-$('updAll').onclick=updateAll;
 load().then(()=>{loadDays();checkHub(0)}).catch(()=>$('off').classList.add('on'));
 </script>
 </body>
