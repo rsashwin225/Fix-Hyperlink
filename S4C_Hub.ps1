@@ -1,5 +1,5 @@
 # S4C HUB SCRIPT - the S4C Tools window. Runs a small page on this PC only (http://localhost) and opens it
-# S4C-FILE-VERSION: 3.3
+# S4C-FILE-VERSION: 3.4
 # in the browser. From the page you pick a tool, it checks GitHub for that one tool, then opens the tool
 # in its own window exactly as before. Close this window to close S4C Tools.
 $ErrorActionPreference = 'Stop'
@@ -432,6 +432,15 @@ while ($listener.IsListening -and -not $quit) {
                 $j = $jobs[$q['id']]
                 if ($j -and $j.Tool -and -not $j.Tool.HasExited) { try { & taskkill.exe /PID $j.Tool.Id /T /F 2>&1 | Out-Null } catch { try { Stop-Process -Id $j.Tool.Id -Force } catch {} } }
                 Send $res 200 'application/json' '{}' $null
+            }
+            '/api/getfile' {
+                # sends back a finished file from the S4C Output folder, so the page can save it into the folder the person chose in the browser
+                $p = [string]$q['path']; $ok = $false
+                try {
+                    $full = [IO.Path]::GetFullPath($p); $root = [IO.Path]::GetFullPath((Get-OutputDir)).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+                    if ($full.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) -and $full -match '(?i)\.(pptx|docx|xlsx|csv)$' -and (Test-Path -LiteralPath $full -PathType Leaf)) { Send $res 200 'application/octet-stream' ([IO.File]::ReadAllBytes($full)) $null; $ok = $true }
+                } catch {}
+                if (-not $ok) { Send $res 404 'text/plain' 'not found' $null }
             }
             '/api/openfolder' {
                 $p = [string]$q['path']

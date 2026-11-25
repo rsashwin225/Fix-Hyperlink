@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="2.8">
+<meta name="s4c-hub-version" content="2.9">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -226,7 +226,6 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
 .toasts{position:fixed;right:22px;bottom:22px;display:flex;flex-direction:column;gap:10px;z-index:50}
 .toast{display:flex;gap:11px;align-items:flex-start;min-width:300px;max-width:420px;background:var(--card);border:1px solid var(--stroke);border-radius:14px;box-shadow:var(--sh3);padding:13px 16px;animation:tin .22s ease-out}
 .toast b{display:block;font-weight:600}
-.toast .tclose{margin-left:auto;align-self:flex-start;border:0;background:none;color:var(--fg3);font-size:20px;line-height:1;cursor:pointer;padding:0 2px;flex:none}.toast .tclose:hover{color:var(--fg)}
 .toast span{font-size:13px;color:var(--fg2)}
 .toast svg.ok{color:var(--ok)}.toast svg.err{color:var(--err)}.toast svg.inf{color:var(--brand)}.toast svg.warn{color:var(--warn)}
 @keyframes tin{from{opacity:0;transform:translateY(8px)}}
@@ -554,7 +553,7 @@ const unitTxt=x=>{const n=parseInt(x.count);if(isNaN(n))return '—';return n+' 
 const todayRows=()=>state.today===state.day?state.rows:(state.todayRows||[]);
 
 function toast(kind,title,text,action,ms){const ic={ok:'i-ok',err:'i-err',inf:'i-info',warn:'i-warn'}[kind];const d=document.createElement('div');d.className='toast';
-  d.innerHTML='<svg class="i '+kind+'"><use href="#'+ic+'"/></svg><div><b>'+esc(title)+'</b>'+(text?'<span>'+esc(text)+'</span>':'')+'</div>';if(action){const b=document.createElement('button');b.className='btn pri';b.style.cssText='height:30px;padding:0 12px;margin-left:8px;align-self:center';b.textContent=action[0];b.onclick=action[1];d.appendChild(b)}const x=document.createElement('button');x.className='tclose';x.setAttribute('aria-label','Close');x.innerHTML='&times;';x.onclick=()=>d.remove();d.appendChild(x);$('toasts').appendChild(d);setTimeout(()=>d.remove(),ms||5000)}
+  d.innerHTML='<svg class="i '+kind+'"><use href="#'+ic+'"/></svg><div><b>'+esc(title)+'</b>'+(text?'<span>'+esc(text)+'</span>':'')+'</div>';if(action){const b=document.createElement('button');b.className='btn pri';b.style.cssText='height:30px;padding:0 12px;margin-left:8px;align-self:center';b.textContent=action[0];b.onclick=action[1];d.appendChild(b)}$('toasts').appendChild(d);setTimeout(()=>d.remove(),ms||5000)}
 function mbar(kind,text,sub){const m=$('mbar');if(!kind){m.className='mbar';return}m.className='mbar on '+kind;
   $('mbarIcon').innerHTML='<use href="#'+({ok:'i-ok',err:'i-err',warn:'i-warn',busy:'i-sync',info:'i-info'}[kind])+'"/>';$('mbarText').innerHTML=text;$('mbarSub').textContent=sub||''}
 
@@ -649,7 +648,7 @@ function dzRender(){const t=TOOLS[cur];const list=$('dzList');
   $('dzIn').accept=dropOf(t).join(',');
   const it=dzOn();list.style.display=it.length?'':'none';
   list.innerHTML=it.map((x,i)=>'<div class="r"><span class="nm" title="'+esc(x.path||x.file.name)+'">'+esc(x.file.name)+'</span><span class="st'+(x.state==='done'?' ok':x.state==='failed'?' bad':'')+'">'+esc(x.msg)+'</span>'+
-    (x.state==='needfolder'&&!job?'<button class="btn" onclick="dzPickDir('+i+')">Choose folder</button>':'')+(x.path||x.outPath?'<button class="btn" onclick="dzOpen('+i+')">Open folder</button>':'')+(x.state==='failed'&&!job?'<button class="x" title="Remove" onclick="dzDel('+i+')">&times;</button>':'')+'</div>').join('');
+    (x.state==='needfolder'&&!job?'<button class="btn" onclick="dzPickDir('+i+')">Choose folder</button><button class="btn" onclick="dzUseDefault('+i+')">Save in Documents</button>':'')+(!x.noOpen&&(x.path||x.outPath)?'<button class="btn" onclick="dzOpen('+i+')">Open folder</button>':'')+(x.state==='failed'&&!job?'<button class="x" title="Remove" onclick="dzDel('+i+')">&times;</button>':'')+'</div>').join('');
   if(!job)$('runTxt').textContent='Choose files';
   rnDraw()}
 function dzDel(i){dz.items.splice(i,1);dzRender()}
@@ -663,7 +662,7 @@ async function dzAdd(files){const t=TOOLS[cur];if(!t.drop)return;
   const mine=[];
   for(const f of add){if(dz.items.some(x=>x.file.name===f.name&&x.file.size===f.size))continue;const x={file:f,path:'',state:'looking',msg:'Looking for the original...'};dz.items.push(x);mine.push(x)}
   dzRender();if(!mine.length)return;
-  const miss='Original not found. Press Choose folder and pick the folder it is in.';
+  const miss='Original not found. Press Choose folder and pick the folder it is in, or Save in Documents.';
   try{const r=await POSTJ('/api/locate',mine.map(x=>({name:x.file.name,size:x.file.size,mtime:x.file.lastModified})));
     const fl=[].concat(r.files||[]);
     mine.forEach(x=>{const m=fl.find(y=>y.name===x.file.name);if(m&&m.path){x.state='ready';x.path=m.path;x.msg='Found in '+folderOf(m.path)}else{x.state='needfolder';x.msg=miss}})
@@ -700,21 +699,19 @@ async function pickWait(id,hintMs){const t0=Date.now();let hinted=false;
   while(true){await new Promise(r=>setTimeout(r,500));
     if(!hinted&&Date.now()-t0>hintMs){hinted=true;toast('inf','Do not see the file window?','Look in the taskbar. It opens in front of this page.',null,12000)}
     const r=await (await api('/api/pickresult?id='+id)).json();if(r.done)return r}}
-async function pickFiles(){if(pickBusy)return;const t=TOOLS[cur];pickBusy=true;$('btnRun').disabled=true;$('runTxt').textContent='Choose in the file window...';
-  try{const id=(await (await api('/api/pick?tool='+encodeURIComponent(t.file))).json()).id;const r=await pickWait(id,4000);
-    if(r.error&&!(r.files||[]).length){toast('warn','The file window did not open','Use the browser picker instead.');$('dzIn').click();return}
-    const ok=dropOf(t);const files=(r.files||[]).filter(p=>ok.some(e=>p.toLowerCase().endsWith(e)));
-    if(!files.length)return;
-    if(dz.tool!==t.file)dz={tool:t.file,items:[]};
-    dz.items=dz.items.filter(x=>x.state!=='done');rn=null;
-    for(const p of files){if(dz.items.some(x=>x.path===p))continue;dz.items.push({file:{name:leafOf(p)},path:p,state:'ready',msg:'Chosen in '+folderOf(p)})}
-    dzRender();startDrop()
-  }catch(e){toast('err','Could not open the file window',e.message)}
-  finally{pickBusy=false;if(!job){$('btnRun').disabled=false;dzRender()}}}
-async function dzPickDir(i){const x=dzOn()[i];if(!x||pickBusy)return;pickBusy=true;
-  try{const id=(await (await api('/api/pick?mode=folder&tool='+encodeURIComponent(TOOLS[cur].file))).json()).id;const r=await pickWait(id,4000);
-    const d=(r.files||[])[0];if(d){x.dir=d;x.state='ready';x.msg='Fixed copy will be saved in '+d;dzRender();startDrop()}}
-  catch(e){toast('err','Could not open the folder window',e.message)}finally{pickBusy=false}}
+function pickFiles(){if(job)return;$('dzIn').click()}
+async function dzPickDir(i){const x=dzOn()[i];if(!x)return;
+  if(!window.showDirectoryPicker){dzUseDefault(i);toast('inf','Saved in Documents','This browser cannot pick a folder, so the fixed copy goes to Documents\\S4C Output.');return}
+  try{const hd=await window.showDirectoryPicker({mode:'readwrite'});x.dirHandle=hd;x.state='ready';x.msg='Fixed copy will be saved in the folder "'+hd.name+'"';dzRender();startDrop()}
+  catch(e){if(e&&e.name!=='AbortError')toast('warn','That folder cannot be used','Pick another folder, or use Save in Documents.')}}
+function dzUseDefault(i){const x=dzOn()[i];if(!x)return;x.dirHandle=null;x.state='ready';x.msg='Fixed copy will be saved in Documents\\S4C Output';dzRender();startDrop()}
+/* after a run for a file whose folder was chosen in the browser: the finished copy is written into that folder */
+async function dzWriteBack(x){
+  try{const leaf=leafOf(x.outPath);const rs=await fetch('/api/getfile?path='+encodeURIComponent(x.outPath),{headers:{'X-S4C':TOKEN}});if(!rs.ok)throw new Error('not found');const b=await rs.blob();
+    const fh=await x.dirHandle.getFileHandle(leaf,{create:true});const w=await fh.createWritable();await w.write(b);await w.close();
+    x.msg='Saved: '+leaf+' in the folder "'+x.dirHandle.name+'"';x.noOpen=true}
+  catch(e){x.msg+='  (could not save into the chosen folder; the copy is in Documents\\S4C Output)'}
+  dzRender()}
 /* ring */
 const RC=2*Math.PI*42;
 function rnTitle(){const t=TOOLS.find(x=>x.file===rn.tool);
@@ -760,7 +757,7 @@ function dzDone(was,r){const t=TOOLS.find(x=>x.file===was.tool);
   dz.items.filter(x=>x.state==='running').forEach(x=>{
     const leaf=leafOf(x.path);const rows=(state.rows||[]).filter(q=>q.file===leaf&&q.tool===t.name);const q=rows[rows.length-1];
     const isDoc=/\.(pptx|docx)$/i.test(x.file.name);
-    if(q){x.state='done';x.outPath=folderOf(x.path)+'\\'+q.out;x.msg=(q.out===q.file?'Fixed in place, backup kept':'Saved: '+q.out)+(q.count?'  ('+q.count+' '+q.unit+')':'')}
+    if(q){x.state='done';x.outPath=folderOf(x.path)+'\\'+q.out;x.msg=(q.out===q.file?'Fixed in place, backup kept':'Saved: '+q.out)+(q.count?'  ('+q.count+' '+q.unit+')':'');if(x.dirHandle&&q.out!==q.file)dzWriteBack(x);else if(x.dirHandle)x.msg+='  (in Documents\\S4C Output, not in your folder)'}
     else if(!isDoc){x.state='done';x.msg='Used'}
     else{x.state='failed';x.msg=(INTER.includes(was.tool)&&!(((r.progress||{}).errors)||[]).length)?'Nothing was saved (the review was not applied).':'Not saved. '+((((r.progress||{}).errors)||[])[0]||'The tool reported a problem.')}})}
 (function(){const h=document.querySelector('section.hero');
