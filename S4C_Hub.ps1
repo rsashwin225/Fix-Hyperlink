@@ -1,5 +1,5 @@
 # S4C HUB SCRIPT - the S4C Tools window. Runs a small page on this PC only (http://localhost) and opens it
-# S4C-FILE-VERSION: 2.5
+# S4C-FILE-VERSION: 2.3
 # in the browser. From the page you pick a tool, it checks GitHub for that one tool, then opens the tool
 # in its own window exactly as before. Close this window to close S4C Tools.
 $ErrorActionPreference = 'Stop'
@@ -182,9 +182,8 @@ $out = $env:S4C_PICK_OUT
 try {
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
-    Add-Type -TypeDefinition 'using System; using System.Threading; using System.Runtime.InteropServices; public class S4CFront { [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h); [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int c); [DllImport("user32.dll")] static extern void SwitchToThisWindow(IntPtr h, bool alt); [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow(); [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid); [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a, uint b, bool f); [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId(); [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint cmd); [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags); [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra); [DllImport("user32.dll", EntryPoint = "SystemParametersInfo")] static extern bool SpiGet(uint a, uint b, ref uint v, uint f); [DllImport("user32.dll", EntryPoint = "SystemParametersInfo")] static extern bool SpiSet(uint a, uint b, IntPtr v, uint f); static IntPtr ownerH; static volatile bool stop; public static uint LockOff() { uint old = 0; try { SpiGet(0x2000, 0, ref old, 0); SpiSet(0x2001, 0, IntPtr.Zero, 2); } catch (Exception) { } return old; } public static void LockRestore(uint old) { try { SpiSet(0x2001, 0, new IntPtr((int)old), 2); } catch (Exception) { } } public static void Raise(IntPtr h) { uint pid; uint ft = GetWindowThreadProcessId(GetForegroundWindow(), out pid); uint me = GetCurrentThreadId(); keybd_event(0x12, 0, 0, UIntPtr.Zero); keybd_event(0x12, 0, 2, UIntPtr.Zero); if (ft != 0 && ft != me) AttachThreadInput(me, ft, true); ShowWindow(h, 9); SetWindowPos(h, new IntPtr(-1), 0, 0, 0, 0, 3); BringWindowToTop(h); SwitchToThisWindow(h, true); SetForegroundWindow(h); if (ft != 0 && ft != me) AttachThreadInput(me, ft, false); } static void Watch() { for (int i = 0; i < 60 && !stop; i++) { Thread.Sleep(100); IntPtr d = GetWindow(ownerH, 6); if (d != IntPtr.Zero) { Raise(d); if (GetForegroundWindow() == d) { if (i > 3) break; } else { ShowWindow(d, 6); ShowWindow(d, 9); SwitchToThisWindow(d, true); } } } } public static void RaiseDialogLater(IntPtr owner) { ownerH = owner; stop = false; Thread t = new Thread(new ThreadStart(Watch)); t.IsBackground = true; t.Start(); } public static void StopWatch() { stop = true; } }'
+    Add-Type -TypeDefinition 'using System; using System.Threading; using System.Runtime.InteropServices; public class S4CFront { [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h); [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int c); [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow(); [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid); [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a, uint b, bool f); [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId(); [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint cmd); [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags); [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra); static IntPtr ownerH; public static void Raise(IntPtr h) { uint pid; uint ft = GetWindowThreadProcessId(GetForegroundWindow(), out pid); uint me = GetCurrentThreadId(); keybd_event(0x12, 0, 0, UIntPtr.Zero); keybd_event(0x12, 0, 2, UIntPtr.Zero); if (ft != 0 && ft != me) AttachThreadInput(me, ft, true); ShowWindow(h, 9); SetWindowPos(h, new IntPtr(-1), 0, 0, 0, 0, 3); BringWindowToTop(h); SetForegroundWindow(h); if (ft != 0 && ft != me) AttachThreadInput(me, ft, false); } static void Watch() { for (int i = 0; i < 40; i++) { Thread.Sleep(100); IntPtr d = GetWindow(ownerH, 6); if (d != IntPtr.Zero) { Raise(d); if (i > 5) break; } } } public static void RaiseDialogLater(IntPtr owner) { ownerH = owner; Thread t = new Thread(new ThreadStart(Watch)); t.IsBackground = true; t.Start(); } }'
     [System.Windows.Forms.Application]::EnableVisualStyles()
-    $lockOld = [S4CFront]::LockOff()
     $owner = New-Object System.Windows.Forms.Form
     $owner.TopMost = $true; $owner.ShowInTaskbar = $false; $owner.FormBorderStyle = 'None'; $owner.Opacity = 0
     $owner.StartPosition = 'CenterScreen'; $owner.Size = New-Object System.Drawing.Size(1, 1)
@@ -202,7 +201,7 @@ try {
         if ($start -and (Test-Path -LiteralPath $start)) { $d.InitialDirectory = $start }
         [S4CFront]::RaiseDialogLater($owner.Handle); if ($d.ShowDialog($owner) -eq 'OK') { $res = @($d.FileNames) }
     }
-    [S4CFront]::StopWatch(); [S4CFront]::LockRestore($lockOld); $owner.Close()
+    $owner.Close()
     [IO.File]::WriteAllLines($out, [string[]]$res, (New-Object Text.UTF8Encoding($false)))
 } catch {
     [IO.File]::WriteAllText($out + '.err', [string]$_.Exception.Message)
@@ -251,7 +250,7 @@ $ErrorActionPreference = 'Stop'
 $req = $env:S4C_WARM_REQ; $hubPid = [int]$env:S4C_HUB_PID
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
-Add-Type -TypeDefinition 'using System; using System.Threading; using System.Runtime.InteropServices; public class S4CFront { [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h); [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int c); [DllImport("user32.dll")] static extern void SwitchToThisWindow(IntPtr h, bool alt); [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow(); [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid); [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a, uint b, bool f); [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId(); [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint cmd); [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags); [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra); [DllImport("user32.dll", EntryPoint = "SystemParametersInfo")] static extern bool SpiGet(uint a, uint b, ref uint v, uint f); [DllImport("user32.dll", EntryPoint = "SystemParametersInfo")] static extern bool SpiSet(uint a, uint b, IntPtr v, uint f); static IntPtr ownerH; static volatile bool stop; public static uint LockOff() { uint old = 0; try { SpiGet(0x2000, 0, ref old, 0); SpiSet(0x2001, 0, IntPtr.Zero, 2); } catch (Exception) { } return old; } public static void LockRestore(uint old) { try { SpiSet(0x2001, 0, new IntPtr((int)old), 2); } catch (Exception) { } } public static void Raise(IntPtr h) { uint pid; uint ft = GetWindowThreadProcessId(GetForegroundWindow(), out pid); uint me = GetCurrentThreadId(); keybd_event(0x12, 0, 0, UIntPtr.Zero); keybd_event(0x12, 0, 2, UIntPtr.Zero); if (ft != 0 && ft != me) AttachThreadInput(me, ft, true); ShowWindow(h, 9); SetWindowPos(h, new IntPtr(-1), 0, 0, 0, 0, 3); BringWindowToTop(h); SwitchToThisWindow(h, true); SetForegroundWindow(h); if (ft != 0 && ft != me) AttachThreadInput(me, ft, false); } static void Watch() { for (int i = 0; i < 60 && !stop; i++) { Thread.Sleep(100); IntPtr d = GetWindow(ownerH, 6); if (d != IntPtr.Zero) { Raise(d); if (GetForegroundWindow() == d) { if (i > 3) break; } else { ShowWindow(d, 6); ShowWindow(d, 9); SwitchToThisWindow(d, true); } } } } public static void RaiseDialogLater(IntPtr owner) { ownerH = owner; stop = false; Thread t = new Thread(new ThreadStart(Watch)); t.IsBackground = true; t.Start(); } public static void StopWatch() { stop = true; } }'
+Add-Type -TypeDefinition 'using System; using System.Threading; using System.Runtime.InteropServices; public class S4CFront { [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h); [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int c); [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow(); [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid); [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a, uint b, bool f); [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId(); [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint cmd); [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags); [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra); static IntPtr ownerH; public static void Raise(IntPtr h) { uint pid; uint ft = GetWindowThreadProcessId(GetForegroundWindow(), out pid); uint me = GetCurrentThreadId(); keybd_event(0x12, 0, 0, UIntPtr.Zero); keybd_event(0x12, 0, 2, UIntPtr.Zero); if (ft != 0 && ft != me) AttachThreadInput(me, ft, true); ShowWindow(h, 9); SetWindowPos(h, new IntPtr(-1), 0, 0, 0, 0, 3); BringWindowToTop(h); SetForegroundWindow(h); if (ft != 0 && ft != me) AttachThreadInput(me, ft, false); } static void Watch() { for (int i = 0; i < 40; i++) { Thread.Sleep(100); IntPtr d = GetWindow(ownerH, 6); if (d != IntPtr.Zero) { Raise(d); if (i > 5) break; } } } public static void RaiseDialogLater(IntPtr owner) { ownerH = owner; Thread t = new Thread(new ThreadStart(Watch)); t.IsBackground = true; t.Start(); } }'
 [System.Windows.Forms.Application]::EnableVisualStyles()
 $warmUp = New-Object System.Windows.Forms.OpenFileDialog
 $warmUp.Dispose()
@@ -264,7 +263,6 @@ while ($true) {
         if ($lines.Count -ge 5) {
             $mode = $lines[0]; $filter = $lines[1]; $title = $lines[2]; $start = $lines[3]; $out = $lines[4]
             try {
-                $lockOld = [S4CFront]::LockOff()
                 $owner = New-Object System.Windows.Forms.Form
                 $owner.TopMost = $true; $owner.ShowInTaskbar = $false; $owner.FormBorderStyle = 'None'; $owner.Opacity = 0
                 $owner.StartPosition = 'CenterScreen'; $owner.Size = New-Object System.Drawing.Size(1, 1)
@@ -281,12 +279,12 @@ while ($true) {
                     if ($start -and (Test-Path -LiteralPath $start)) { $d.InitialDirectory = $start }
                     [S4CFront]::RaiseDialogLater($owner.Handle); if ($d.ShowDialog($owner) -eq 'OK') { $res = @($d.FileNames) }
                 }
-                [S4CFront]::StopWatch(); [S4CFront]::LockRestore($lockOld); $owner.Close(); $owner.Dispose()
+                $owner.Close(); $owner.Dispose()
                 [IO.File]::WriteAllLines($out, [string[]]$res, (New-Object Text.UTF8Encoding($false)))
             } catch { try { [IO.File]::WriteAllText($out + '.err', [string]$_.Exception.Message) } catch {} }
             try { [IO.File]::WriteAllText($out + '.done', '1') } catch {}
         }
-        break
+        continue
     }
     Start-Sleep -Milliseconds 50
     $tick++
@@ -455,7 +453,6 @@ while ($listener.IsListening -and -not $quit) {
                     }
                 }
                 $files = @()
-                if ($done -and $pk.Warm -and -not $pk.Respawned) { $pk.Respawned = $true; Start-Warm }
                 if ($done) {
                     if (Test-Path -LiteralPath $pk.Out) { $files = @([IO.File]::ReadAllLines($pk.Out, [Text.Encoding]::UTF8) | Where-Object { $_ }) }
                     if (Test-Path -LiteralPath ($pk.Out + '.err')) { $err = [IO.File]::ReadAllText($pk.Out + '.err') }
@@ -611,7 +608,7 @@ while ($listener.IsListening -and -not $quit) {
                 Send $res 200 'application/json' (ToJson ([ordered]@{ ok = $true })) $null
                 try {
                     $env:S4C_HUB_PORT = [string]$port; $env:S4C_HUB_NOOPEN = '1'
-                    Start-Process -FilePath $exe -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "' + $PSCommandPath + '"') -WindowStyle Minimized
+                    Start-Process -FilePath $exe -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "' + $PSCommandPath + '"')
                 } catch {}
                 $quit = $true
             }
