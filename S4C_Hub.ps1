@@ -1,5 +1,5 @@
 # S4C HUB SCRIPT - the S4C Tools window. Runs a small page on this PC only (http://localhost) and opens it
-# S4C-FILE-VERSION: 2.4
+# S4C-FILE-VERSION: 2.5
 # in the browser. From the page you pick a tool, it checks GitHub for that one tool, then opens the tool
 # in its own window exactly as before. Close this window to close S4C Tools.
 $ErrorActionPreference = 'Stop'
@@ -286,7 +286,7 @@ while ($true) {
             } catch { try { [IO.File]::WriteAllText($out + '.err', [string]$_.Exception.Message) } catch {} }
             try { [IO.File]::WriteAllText($out + '.done', '1') } catch {}
         }
-        continue
+        break
     }
     Start-Sleep -Milliseconds 50
     $tick++
@@ -455,6 +455,7 @@ while ($listener.IsListening -and -not $quit) {
                     }
                 }
                 $files = @()
+                if ($done -and $pk.Warm -and -not $pk.Respawned) { $pk.Respawned = $true; Start-Warm }
                 if ($done) {
                     if (Test-Path -LiteralPath $pk.Out) { $files = @([IO.File]::ReadAllLines($pk.Out, [Text.Encoding]::UTF8) | Where-Object { $_ }) }
                     if (Test-Path -LiteralPath ($pk.Out + '.err')) { $err = [IO.File]::ReadAllText($pk.Out + '.err') }
