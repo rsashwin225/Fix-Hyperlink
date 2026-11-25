@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="2.9">
+<meta name="s4c-hub-version" content="3.0">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -529,7 +529,14 @@ const TOOLS=[
          'Link Fixer checks each address, reads the page title and suggests clear text. You edit it on the review page and press Apply.'],
   idea:'Only the visible text changes; the address and formatting stay. Only the web address is looked up online, never your document.',
   steps:[['Choose files','Word or PowerPoint'],['Check GitHub','Newest version of this tool'],['Check links','Reads each page title'],['Review page','Edit the suggested text'],['Save a copy','Links.docx / .pptx'],['Note in today\'s work','For the daily report']],
-  checks:['No link text is a bare web address','No "click here" or "read more"','PDF links end in .pdf','Broken links were reported']}
+  checks:['No link text is a bare web address','No "click here" or "read more"','PDF links end in .pdf','Broken links were reported']},
+ {file:'Issue_Fixer.ps1',drop:['.pptx','.xlsx'],art:'slide',name:'Issue Fixer',group:1,letter:'P',tile:'var(--ppt)',out:'<name> Fixed.pptx + <name> Issue Report.xlsx',unit:'slides',
+  tagline:'Reads the tester\'s issue sheet, fixes what is really wrong and says what is a false positive.',
+  intro:['Testers send back a sheet of findings. Opening the deck to check each one by hand, and to see which are false positives, takes a long time.',
+         'Choose the issue sheet (.xlsx) and the deck (.pptx) together. The tool checks every finding on its slide, fixes the ones it safely can, and fills in the sheet\'s Status and Comment columns.'],
+  idea:'The text and objects on your slides are never changed or added to. It only fixes reading order, language tags and text colour contrast, and it stops without saving if any text would change.',
+  steps:[['Choose deck and sheet','Together'],['Check GitHub','Newest version of this tool'],['Check each finding','On its slide'],['Fix what is safe','Order, language, colour'],['Save','Fixed.pptx + Issue Report.xlsx'],['Note in today\'s work','For the daily report']],
+  checks:['Every Fixed finding looks right on its slide','False positives were confirmed','Not fixed items were handled by hand']}
 ];
 let state={tools:{},rows:[],day:'',today:''}, cur=0, job=null, gh={}, phase=-1, doneFor='';
 const $=id=>document.getElementById(id);
@@ -672,6 +679,10 @@ async function startDrop(){
   if(job){toast('warn','A tool is already running','Wait until it has finished.');return}
   const t=TOOLS[cur];if(dz.items.some(x=>x.state==='looking'||x.state==='needfolder'))return;const items=dz.items.filter(x=>x.state==='ready');if(!items.length)return;
   let chapter='';
+  if(t.file==='Issue_Fixer.ps1'){
+    const pp=items.filter(x=>/\.pptx$/i.test(x.file.name)),xx=items.filter(x=>/\.xlsx$/i.test(x.file.name));
+    if(!pp.length||!xx.length){toast('warn','One more file needed','Choose the deck (.pptx) and the issue sheet (.xlsx) together.');return}
+  }
   if(t.file==='AltText_Tool.ps1'){
     const pp=items.filter(x=>/\.pptx$/i.test(x.file.name)),xx=items.filter(x=>/\.xlsx$/i.test(x.file.name));
     if(!pp.length||!xx.length){toast('warn','One more file needed','Choose the deck (.pptx) and the Excel alt text file (.xlsx) together. Add the saved mapping (.csv) to apply the matches.');return}
@@ -688,7 +699,7 @@ async function startDrop(){
     paths.push(x.path);x.state='running';x.msg='Waiting...'}
   if(!paths.length){$('btnRun').disabled=$('btnCheck').disabled=false;dzRender();return}
   try{const r=await POSTJ('/api/runfiles',{tool:t.file,files:paths,chapter});
-    const inter=INTER.includes(t.file);const total=t.file==='AltText_Tool.ps1'?1:paths.length;
+    const inter=INTER.includes(t.file);const total=(t.file==='AltText_Tool.ps1'||t.file==='Issue_Fixer.ps1')?1:paths.length;
     job={id:r.id,tool:t.file,launch:true,drop:true};doneFor='';phase=1;stage('updating');
     rn={tool:t.file,total,inter,t0:Date.now(),ft0:Date.now(),lastDone:0,pct:3,stage:0,serving:false,cur:'',mode:'run'};
     dzRender();drawSteps();poll();
@@ -709,6 +720,7 @@ function dzUseDefault(i){const x=dzOn()[i];if(!x)return;x.dirHandle=null;x.state
 async function dzWriteBack(x){
   try{const leaf=leafOf(x.outPath);const rs=await fetch('/api/getfile?path='+encodeURIComponent(x.outPath),{headers:{'X-S4C':TOKEN}});if(!rs.ok)throw new Error('not found');const b=await rs.blob();
     const fh=await x.dirHandle.getFileHandle(leaf,{create:true});const w=await fh.createWritable();await w.write(b);await w.close();
+    if(/ Fixed\.pptx$/i.test(leaf)&&TOOLS[cur].file==='Issue_Fixer.ps1'){const rp=x.outPath.replace(/ Fixed\.pptx$/i,' Issue Report.xlsx');const r2=await fetch('/api/getfile?path='+encodeURIComponent(rp),{headers:{'X-S4C':TOKEN}});if(r2.ok){const b2=await r2.blob();const f2=await x.dirHandle.getFileHandle(leafOf(rp),{create:true});const w2=await f2.createWritable();await w2.write(b2);await w2.close()}}
     x.msg='Saved: '+leaf+' in the folder "'+x.dirHandle.name+'"';x.noOpen=true}
   catch(e){x.msg+='  (could not save into the chosen folder; the copy is in Documents\\S4C Output)'}
   dzRender()}

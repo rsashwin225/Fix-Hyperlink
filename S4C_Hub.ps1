@@ -1,5 +1,5 @@
 # S4C HUB SCRIPT - the S4C Tools window. Runs a small page on this PC only (http://localhost) and opens it
-# S4C-FILE-VERSION: 3.4
+# S4C-FILE-VERSION: 3.5
 # in the browser. From the page you pick a tool, it checks GitHub for that one tool, then opens the tool
 # in its own window exactly as before. Close this window to close S4C Tools.
 $ErrorActionPreference = 'Stop'
@@ -12,6 +12,7 @@ $TOOLS = [ordered]@{
     'SLID_Macro.ps1'   = @{ Name = 'SLID Macro';    Rx = "SLID_VERSION\s*=\s*'([^']+)'" }
     'IMBK_Macro.ps1'   = @{ Name = 'IMBK Macro';    Rx = "IMBK_VERSION\s*=\s*'([^']+)'" }
     'AltText_Tool.ps1' = @{ Name = 'Alt Text Tool'; Rx = "ALT_VERSION\s*=\s*'([^']+)'" }
+    'Issue_Fixer.ps1'  = @{ Name = 'Issue Fixer';   Rx = "IF_VERSION\s*=\s*'([^']+)'" }
     'Link_Fixer.ps1'   = @{ Name = 'Link Fixer';    Rx = '(?m)^\$LF_VERSION\s*=\s*(\d+)' }
 }
 function Get-ToolVersion([string]$file) {
@@ -87,7 +88,7 @@ function Step-Job($j) {
                 $j.Tool = Start-Process @sp
             }
             else { $j.Tool = Start-Process -FilePath $exe -ArgumentList $a -PassThru }
-            Remove-Item Env:S4C_GH_STATUS, Env:S4C_GH_MSG, Env:S4C_GH_REASON, Env:WF_FILES, Env:SLID_FILES, Env:IMBK_FILES, Env:LF_FILES, Env:ALTMATCH_MODE, Env:ALTMATCH_PPTX, Env:ALTMATCH_XLSX, Env:ALTMATCH_CHAPTER, Env:ALTMATCH_MAP, Env:S4C_AUTO -ErrorAction SilentlyContinue
+            Remove-Item Env:S4C_GH_STATUS, Env:S4C_GH_MSG, Env:S4C_GH_REASON, Env:WF_FILES, Env:SLID_FILES, Env:IMBK_FILES, Env:LF_FILES, Env:IF_PPTX, Env:IF_XLSX, Env:ALTMATCH_MODE, Env:ALTMATCH_PPTX, Env:ALTMATCH_XLSX, Env:ALTMATCH_CHAPTER, Env:ALTMATCH_MAP, Env:S4C_AUTO -ErrorAction SilentlyContinue
             $j.State = 'running'
         } else { $j.State = 'done' }
     } elseif ($j.State -eq 'running' -and $j.Tool.HasExited) { $j.State = 'done' }
@@ -247,6 +248,7 @@ $PICK_FILTERS = @{
     'SLID_Macro.ps1'   = 'PowerPoint presentations (*.pptx)|*.pptx'
     'IMBK_Macro.ps1'   = 'PowerPoint presentations (*.pptx)|*.pptx'
     'AltText_Tool.ps1' = 'Deck and Excel files (*.pptx;*.xlsx;*.csv)|*.pptx;*.xlsx;*.csv'
+    'Issue_Fixer.ps1' = 'Deck and issue sheet (*.pptx;*.xlsx)|*.pptx;*.xlsx'
     'Link_Fixer.ps1'   = 'Word and PowerPoint files (*.docx;*.pptx)|*.docx;*.pptx'
 }
 
@@ -412,7 +414,7 @@ while ($listener.IsListening -and -not $quit) {
             '/api/runfiles' {
                 $b = (Read-Body $req) | ConvertFrom-Json
                 $f = [string]$b.tool
-                $allow = @{ 'Word_Fixer.ps1' = @('.docx'); 'SLID_Macro.ps1' = @('.pptx'); 'IMBK_Macro.ps1' = @('.pptx'); 'AltText_Tool.ps1' = @('.pptx', '.xlsx', '.csv'); 'Link_Fixer.ps1' = @('.docx', '.pptx') }
+                $allow = @{ 'Word_Fixer.ps1' = @('.docx'); 'SLID_Macro.ps1' = @('.pptx'); 'IMBK_Macro.ps1' = @('.pptx'); 'AltText_Tool.ps1' = @('.pptx', '.xlsx', '.csv'); 'Link_Fixer.ps1' = @('.docx', '.pptx'); 'Issue_Fixer.ps1' = @('.pptx', '.xlsx') }
                 if (-not $TOOLS.Contains($f) -or -not $allow.ContainsKey($f)) { Send $res 400 'text/plain' 'this tool does not take chosen files' $null; break }
                 $ok = @($b.files | Where-Object { $_ -and ($_.IndexOf(';') -lt 0) -and (Test-Path -LiteralPath $_ -PathType Leaf) -and ($allow[$f] -contains [IO.Path]::GetExtension($_).ToLowerInvariant()) })
                 if ($ok.Count -eq 0) { Send $res 400 'text/plain' 'no usable files' $null; break }
@@ -424,7 +426,12 @@ while ($listener.IsListening -and -not $quit) {
                     if ($cc.Count -gt 0) { $envs['ALTMATCH_MODE'] = '2'; $envs['ALTMATCH_MAP'] = $cc[0] } else { $envs['ALTMATCH_MODE'] = '1'; $envs['ALTMATCH_CHAPTER'] = [string]$b.chapter }
                     $jobFiles = @($pp[0])
                 }
-                $id = Start-Job2 $f $true $jobFiles $envs $(if ($f -eq 'AltText_Tool.ps1') { 1 } else { $jobFiles.Count })
+                if ($f -eq 'Issue_Fixer.ps1') {
+                    $pp = @($ok | Where-Object { $_.ToLowerInvariant().EndsWith('.pptx') }); $xx = @($ok | Where-Object { $_.ToLowerInvariant().EndsWith('.xlsx') })
+                    if ($pp.Count -eq 0 -or $xx.Count -eq 0) { Send $res 400 'text/plain' 'Issue Fixer needs the deck (.pptx) and the issue sheet (.xlsx)' $null; break }
+                    $envs['IF_PPTX'] = $pp[0]; $envs['IF_XLSX'] = $xx[0]; $jobFiles = @($pp[0])
+                }
+                $id = Start-Job2 $f $true $jobFiles $envs $(if ($f -eq 'AltText_Tool.ps1' -or $f -eq 'Issue_Fixer.ps1') { 1 } else { $jobFiles.Count })
                 Send $res 200 'application/json' (ToJson @{ id = $id }) $null
             }
             '/api/stop' {
