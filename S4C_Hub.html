@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="2.5">
+<meta name="s4c-hub-version" content="2.6">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -932,14 +932,12 @@ $('q').onfocus=()=>{$('q').blur();palOpen()};
 const PAGE_VER=(document.querySelector('meta[name="s4c-hub-version"]')||{}).content||'0';
 const vnum=v=>String(v||'0').split('.').map(x=>parseInt(x)||0);
 const vgt=(a,b)=>{const x=vnum(a),y=vnum(b);for(let i=0;i<Math.max(x.length,y.length);i++){const d=(x[i]||0)-(y[i]||0);if(d)return d>0}return false};
-async function restartHub(){toast('inf','Restarting S4C Tools','This page reloads by itself in a few seconds.',null,8000);try{await api('/api/restart')}catch(e){}
-  let t=0;const iv=setInterval(async()=>{t++;try{const r=await fetch('/',{cache:'no-store'});if(r.ok&&t>2){clearInterval(iv);location.reload()}}catch(e){}if(t>40)clearInterval(iv)},1500)}
 async function checkHub(n){try{const r=await (await api('/api/hub')).json();$('hubVer').textContent='Page version '+PAGE_VER+'.';
     if(!r.done){if((n||0)<40)setTimeout(()=>checkHub((n||0)+1),5000);return}
     const ups=r.updated||[];const hubPs=ups.some(x=>/^S4C_Hub\.ps1 /.test(x));
-    if(r.restart){toast('inf','S4C Tools has been updated','Press Refresh. It restarts by itself and reloads this page.',['Refresh',restartHub],60000);return}
+    if(r.restart){toast('inf','S4C Tools has been updated','Close the black S4C Tools window and open S4C Tools again to finish the update.',null,60000);return}
     // an older copy of this program (it cannot restart itself) is still running although GitHub gave it a new version
-    if(hubPs&&r.restart===undefined){toast('inf','S4C Tools has been updated','This PC has an older copy running. Close the black window and open S4C Tools once more. After this, Refresh does everything.',null,60000);return}
+    if(hubPs&&r.restart===undefined){toast('inf','S4C Tools has been updated','This PC has an older copy running. Close the black window and open S4C Tools once more.',null,60000);return}
     // only offer the refresh while the page on screen is older than the page on this PC
     if(vgt(r.version,PAGE_VER))toast('inf','S4C Tools has a new look waiting','Page '+PAGE_VER+' -> '+r.version+'. Refresh to see it.',['Refresh',()=>location.reload()],30000);
   }catch(e){}}

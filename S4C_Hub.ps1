@@ -1,5 +1,5 @@
 # S4C HUB SCRIPT - the S4C Tools window. Runs a small page on this PC only (http://localhost) and opens it
-# S4C-FILE-VERSION: 3.0
+# S4C-FILE-VERSION: 3.1
 # in the browser. From the page you pick a tool, it checks GitHub for that one tool, then opens the tool
 # in its own window exactly as before. Close this window to close S4C Tools.
 $ErrorActionPreference = 'Stop'
@@ -541,15 +541,6 @@ while ($listener.IsListening -and -not $quit) {
                 $hv = [regex]::Match([IO.File]::ReadAllText((Join-Path $here 'S4C_Hub.html')), 'name="s4c-hub-version" content="([0-9.]+)"').Groups[1].Value
                 $nowVer = Get-HubVer; $need = [bool]($startVer -and $nowVer -and $nowVer -gt $startVer)
                 Send $res 200 'application/json' (ToJson ([ordered]@{ done = $done; status = $st; updated = $upd; version = $hv; restart = $need })) $null
-            }
-            '/api/restart' {
-                # starts a fresh copy of this script on the same address, then closes this one (used after GitHub updated this script)
-                Send $res 200 'application/json' (ToJson ([ordered]@{ ok = $true })) $null
-                try {
-                    $env:S4C_HUB_PORT = [string]$port; $env:S4C_HUB_NOOPEN = '1'
-                    Start-Process -FilePath $exe -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "' + $PSCommandPath + '"') -WindowStyle Minimized
-                } catch {}
-                $quit = $true
             }
             '/api/quit' { Send $res 200 'text/plain' 'bye' $null; $quit = $true }
             default { Send $res 404 'text/plain' 'not found' $null }
