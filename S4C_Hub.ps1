@@ -1,5 +1,5 @@
 # S4C HUB SCRIPT - the S4C Tools window. Runs a small page on this PC only (http://localhost) and opens it
-# S4C-FILE-VERSION: 2.6
+# S4C-FILE-VERSION: 2.9
 # in the browser. From the page you pick a tool, it checks GitHub for that one tool, then opens the tool
 # in its own window exactly as before. Close this window to close S4C Tools.
 $ErrorActionPreference = 'Stop'
@@ -226,14 +226,6 @@ function Start-Pick([string]$mode, [string]$filter, [string]$title) {
         $picks[$id] = @{ Out = $out; Proc = $null; Mode = $mode }
         return $id
     }
-    if (Test-WarmAlive) {
-        # hand the request to the waiting helper (written to a temp name first, then renamed, so it is never read half written)
-        $tmp = $script:warmReq + '.tmp'
-        [IO.File]::WriteAllLines($tmp, [string[]]@($mode, $filter, $title, (Get-LastFolder), $out), (New-Object Text.UTF8Encoding($false)))
-        Move-Item -LiteralPath $tmp -Destination $script:warmReq -Force
-        $picks[$id] = @{ Out = $out; Proc = $null; Mode = $mode; Warm = $true; Req = $script:warmReq; T0 = (Get-Date); Filter = $filter; Title = $title }
-        return $id
-    }
     $env:S4C_PICK_MODE = $mode; $env:S4C_PICK_FILTER = $filter; $env:S4C_PICK_TITLE = $title; $env:S4C_PICK_OUT = $out; $env:S4C_PICK_START = (Get-LastFolder)
     $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($PICK_SCRIPT))
     $sp = @{ FilePath = $exe; ArgumentList = @('-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $enc); PassThru = $true }
@@ -243,70 +235,6 @@ function Start-Pick([string]$mode, [string]$filter, [string]$title) {
     $picks[$id] = @{ Out = $out; Proc = $proc; Mode = $mode }
     return $id
 }
-
-# A helper that is started once when S4C Tools opens and waits with the file window ready, so the window appears at once
-# when Choose files is pressed (starting a new PowerShell for every click took 2 to 3 seconds).
-$WARM_SCRIPT = @'
-$ErrorActionPreference = 'Stop'
-$req = $env:S4C_WARM_REQ; $hubPid = [int]$env:S4C_HUB_PID
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-Add-Type -TypeDefinition 'using System; using System.Threading; using System.Runtime.InteropServices; public class S4CFront { [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h); [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int c); [DllImport("user32.dll")] static extern void SwitchToThisWindow(IntPtr h, bool alt); [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow(); [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid); [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a, uint b, bool f); [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId(); [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint cmd); [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags); [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra); [DllImport("user32.dll", EntryPoint = "SystemParametersInfo")] static extern bool SpiGet(uint a, uint b, ref uint v, uint f); [DllImport("user32.dll", EntryPoint = "SystemParametersInfo")] static extern bool SpiSet(uint a, uint b, IntPtr v, uint f); static IntPtr ownerH; static volatile bool stop; public static uint LockOff() { uint old = 0; try { SpiGet(0x2000, 0, ref old, 0); SpiSet(0x2001, 0, IntPtr.Zero, 2); } catch (Exception) { } return old; } public static void LockRestore(uint old) { try { SpiSet(0x2001, 0, new IntPtr((int)old), 2); } catch (Exception) { } } public static void Raise(IntPtr h) { uint pid; uint ft = GetWindowThreadProcessId(GetForegroundWindow(), out pid); uint me = GetCurrentThreadId(); keybd_event(0x12, 0, 0, UIntPtr.Zero); keybd_event(0x12, 0, 2, UIntPtr.Zero); if (ft != 0 && ft != me) AttachThreadInput(me, ft, true); ShowWindow(h, 9); SetWindowPos(h, new IntPtr(-1), 0, 0, 0, 0, 3); BringWindowToTop(h); SwitchToThisWindow(h, true); SetForegroundWindow(h); if (ft != 0 && ft != me) AttachThreadInput(me, ft, false); } static void Watch() { for (int i = 0; i < 60 && !stop; i++) { Thread.Sleep(100); IntPtr d = GetWindow(ownerH, 6); if (d != IntPtr.Zero) { Raise(d); if (GetForegroundWindow() == d) { if (i > 3) break; } else { ShowWindow(d, 6); ShowWindow(d, 9); SwitchToThisWindow(d, true); } } } } public static void RaiseDialogLater(IntPtr owner) { ownerH = owner; stop = false; Thread t = new Thread(new ThreadStart(Watch)); t.IsBackground = true; t.Start(); } public static void StopWatch() { stop = true; } }'
-[System.Windows.Forms.Application]::EnableVisualStyles()
-$warmUp = New-Object System.Windows.Forms.OpenFileDialog
-$warmUp.Dispose()
-[IO.File]::WriteAllText($req + '.ready', '1')
-$tick = 0
-while ($true) {
-    if (Test-Path -LiteralPath $req) {
-        $lines = $null
-        try { $lines = [IO.File]::ReadAllLines($req, [Text.Encoding]::UTF8); Remove-Item -LiteralPath $req -Force } catch { Start-Sleep -Milliseconds 40; continue }
-        if ($lines.Count -ge 5) {
-            $mode = $lines[0]; $filter = $lines[1]; $title = $lines[2]; $start = $lines[3]; $out = $lines[4]
-            try {
-                $lockOld = [S4CFront]::LockOff()
-                $owner = New-Object System.Windows.Forms.Form
-                $owner.TopMost = $true; $owner.ShowInTaskbar = $false; $owner.FormBorderStyle = 'None'; $owner.Opacity = 0
-                $owner.StartPosition = 'CenterScreen'; $owner.Size = New-Object System.Drawing.Size(1, 1)
-                $owner.Show(); $owner.Activate(); [S4CFront]::Raise($owner.Handle)
-                $res = @()
-                if ($mode -eq 'folder') {
-                    $d = New-Object System.Windows.Forms.FolderBrowserDialog
-                    $d.Description = $title
-                    if ($start -and (Test-Path -LiteralPath $start)) { $d.SelectedPath = $start }
-                    [S4CFront]::RaiseDialogLater($owner.Handle); if ($d.ShowDialog($owner) -eq 'OK') { $res = @($d.SelectedPath) }
-                } else {
-                    $d = New-Object System.Windows.Forms.OpenFileDialog
-                    $d.Title = $title; $d.Filter = $filter; $d.Multiselect = $true
-                    if ($start -and (Test-Path -LiteralPath $start)) { $d.InitialDirectory = $start }
-                    [S4CFront]::RaiseDialogLater($owner.Handle); if ($d.ShowDialog($owner) -eq 'OK') { $res = @($d.FileNames) }
-                }
-                [S4CFront]::StopWatch(); [S4CFront]::LockRestore($lockOld); $owner.Close(); $owner.Dispose()
-                [IO.File]::WriteAllLines($out, [string[]]$res, (New-Object Text.UTF8Encoding($false)))
-            } catch { try { [IO.File]::WriteAllText($out + '.err', [string]$_.Exception.Message) } catch {} }
-            try { [IO.File]::WriteAllText($out + '.done', '1') } catch {}
-        }
-        break
-    }
-    Start-Sleep -Milliseconds 50
-    $tick++
-    if ($tick % 40 -eq 0 -and -not (Get-Process -Id $hubPid -ErrorAction SilentlyContinue)) { break }
-}
-'@
-$script:warm = $null; $script:warmReq = $null
-function Start-Warm {
-    if ($env:S4C_PICK_FAKE) { return }
-    try {
-        $script:warmReq = Join-Path ([IO.Path]::GetTempPath()) ('s4c_warm_' + [guid]::NewGuid().ToString('N').Substring(0, 8) + '.txt')
-        $env:S4C_WARM_REQ = $script:warmReq; $env:S4C_HUB_PID = [string]$PID
-        $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($WARM_SCRIPT))
-        $sp = @{ FilePath = $exe; ArgumentList = @('-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $enc); PassThru = $true }
-        if (-not ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows)) { $sp['WindowStyle'] = 'Hidden' }
-        $script:warm = Start-Process @sp
-        Remove-Item Env:S4C_WARM_REQ, Env:S4C_HUB_PID -ErrorAction SilentlyContinue
-    } catch { $script:warm = $null }
-}
-function Test-WarmAlive { return ($script:warm -and -not $script:warm.HasExited -and $script:warmReq) }
 
 $PICK_FILTERS = @{
     'Word_Fixer.ps1'   = 'Word documents (*.docx)|*.docx'
@@ -391,12 +319,15 @@ function Send($res, [int]$code, [string]$ctype, $body, [string]$fileName) {
 }
 function ToJson($o) { return ($o | ConvertTo-Json -Depth 6 -Compress) }
 
-Start-Warm
+function Write-HubLog([string]$m) { try { $lb = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }; $ld = Join-Path $lb 'S4C_Tools'; if (-not (Test-Path -LiteralPath $ld)) { [void](New-Item -ItemType Directory -Path $ld -Force) }; $lf = Join-Path $ld 'hub.log'; if ((Test-Path -LiteralPath $lf) -and (Get-Item -LiteralPath $lf).Length -gt 200000) { Remove-Item -LiteralPath $lf -Force }; [IO.File]::AppendAllText($lf, ((Get-Date).ToString('yyyy-MM-dd HH:mm:ss') + '  ' + $m + [Environment]::NewLine)) } catch {} }
+Write-HubLog ('hub started, script ' + $startVer + ', port ' + $port + ', pid ' + $PID)
 $quit = $false
 while ($listener.IsListening -and -not $quit) {
-    $ctx = $listener.GetContext(); $req = $ctx.Request; $res = $ctx.Response
+    try { $ctx = $listener.GetContext() } catch { Write-HubLog ('GetContext failed: ' + $_.Exception.Message); Start-Sleep -Milliseconds 300; continue }
+    $req = $ctx.Request; $res = $ctx.Response
     try {
         $path = $req.Url.AbsolutePath
+        if ($path -ne '/api/job' -and $path -ne '/api/hub' -and $path -ne '/api/pickresult') { Write-HubLog ('request ' + $req.HttpMethod + ' ' + $path) }
         $q = @{}; foreach ($k in $req.QueryString.AllKeys) { if ($k) { $q[$k] = $req.QueryString[$k] } }
         if ($path -eq '/' -or $path -eq '/index.html') {
             $html = [IO.File]::ReadAllText((Join-Path $here 'S4C_Hub.html'), [Text.Encoding]::UTF8).Replace('__S4C_TOKEN__', $token)
@@ -441,21 +372,7 @@ while ($listener.IsListening -and -not $quit) {
                 if (-not $pk) { Send $res 404 'text/plain' 'no such window' $null; break }
                 $done = Test-Path -LiteralPath ($pk.Out + '.done'); $err = ''
                 if (-not $done -and $pk.Proc -and $pk.Proc.HasExited) { $done = $true; $err = 'The file window closed unexpectedly.' }
-                if (-not $done -and $pk.Warm) {
-                    # the waiting helper did not pick the request up (not started, or stuck): open the window the slower way instead
-                    if (-not (Test-WarmAlive)) { $done = $true; $err = 'The file window could not start.'; Start-Warm }
-                    elseif ((Test-Path -LiteralPath $pk.Req) -and ((Get-Date) - $pk.T0).TotalSeconds -gt 8) {
-                        Remove-Item -LiteralPath $pk.Req -Force -ErrorAction SilentlyContinue
-                        $env:S4C_PICK_MODE = $pk.Mode; $env:S4C_PICK_FILTER = $pk.Filter; $env:S4C_PICK_TITLE = $pk.Title; $env:S4C_PICK_OUT = $pk.Out; $env:S4C_PICK_START = (Get-LastFolder)
-                        $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($PICK_SCRIPT))
-                        $sp = @{ FilePath = $exe; ArgumentList = @('-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $enc); PassThru = $true }
-                        if (-not ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows)) { $sp['WindowStyle'] = 'Hidden' }
-                        $pk.Proc = Start-Process @sp; $pk.Warm = $false
-                        Remove-Item Env:S4C_PICK_MODE, Env:S4C_PICK_FILTER, Env:S4C_PICK_TITLE, Env:S4C_PICK_OUT, Env:S4C_PICK_START -ErrorAction SilentlyContinue
-                    }
-                }
                 $files = @()
-                if ($done -and $pk.Warm -and -not $pk.Respawned) { $pk.Respawned = $true; Start-Warm }
                 if ($done) {
                     if (Test-Path -LiteralPath $pk.Out) { $files = @([IO.File]::ReadAllLines($pk.Out, [Text.Encoding]::UTF8) | Where-Object { $_ }) }
                     if (Test-Path -LiteralPath ($pk.Out + '.err')) { $err = [IO.File]::ReadAllText($pk.Out + '.err') }
@@ -635,5 +552,5 @@ while ($listener.IsListening -and -not $quit) {
         try { Send $res 500 'text/plain' $_.Exception.Message $null } catch {}
     }
 }
+Write-HubLog ('hub loop ended, quit=' + $quit + ', listening=' + $listener.IsListening)
 $listener.Stop()
-try { if ($script:warm -and -not $script:warm.HasExited) { $script:warm.Kill() } } catch {}
