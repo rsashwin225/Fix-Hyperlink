@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="2.1">
+<meta name="s4c-hub-version" content="2.2">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -647,7 +647,7 @@ function dzRender(){const t=TOOLS[cur];const list=$('dzList');
   $('dzIn').accept=dropOf(t).join(',');
   const it=dzOn();list.style.display=it.length?'':'none';
   list.innerHTML=it.map((x,i)=>'<div class="r"><span class="nm" title="'+esc(x.path||x.file.name)+'">'+esc(x.file.name)+'</span><span class="st'+(x.state==='done'?' ok':x.state==='failed'?' bad':'')+'">'+esc(x.msg)+'</span>'+
-    (x.path||x.outPath?'<button class="btn" onclick="dzOpen('+i+')">Open folder</button>':'')+(x.state==='failed'&&!job?'<button class="x" title="Remove" onclick="dzDel('+i+')">&times;</button>':'')+'</div>').join('');
+    (x.state==='needfolder'&&!job?'<button class="btn" onclick="dzPickDir('+i+')">Choose folder</button>':'')+(x.path||x.outPath?'<button class="btn" onclick="dzOpen('+i+')">Open folder</button>':'')+(x.state==='failed'&&!job?'<button class="x" title="Remove" onclick="dzDel('+i+')">&times;</button>':'')+'</div>').join('');
   if(!job)$('runTxt').textContent='Choose files';
   rnDraw()}
 function dzDel(i){dz.items.splice(i,1);dzRender()}
@@ -661,15 +661,15 @@ async function dzAdd(files){const t=TOOLS[cur];if(!t.drop)return;
   const mine=[];
   for(const f of add){if(dz.items.some(x=>x.file.name===f.name&&x.file.size===f.size))continue;const x={file:f,path:'',state:'looking',msg:'Looking for the original...'};dz.items.push(x);mine.push(x)}
   dzRender();if(!mine.length)return;
-  const miss='Original not found: a copy goes to Documents\\S4C Output';
+  const miss='Original not found. Press Choose folder and pick the folder it is in.';
   try{const r=await POSTJ('/api/locate',mine.map(x=>({name:x.file.name,size:x.file.size,mtime:x.file.lastModified})));
     const fl=[].concat(r.files||[]);
-    mine.forEach(x=>{const m=fl.find(y=>y.name===x.file.name);x.state='ready';if(m&&m.path){x.path=m.path;x.msg='Found in '+folderOf(m.path)}else x.msg=miss})
-  }catch(e){mine.forEach(x=>{x.state='ready';x.msg=miss})}
+    mine.forEach(x=>{const m=fl.find(y=>y.name===x.file.name);if(m&&m.path){x.state='ready';x.path=m.path;x.msg='Found in '+folderOf(m.path)}else{x.state='needfolder';x.msg=miss}})
+  }catch(e){mine.forEach(x=>{x.state='needfolder';x.msg=miss})}
   dzRender();startDrop()}
 async function startDrop(){
   if(job){toast('warn','A tool is already running','Wait until it has finished.');return}
-  const t=TOOLS[cur];const items=dz.items.filter(x=>x.state==='ready');if(!items.length)return;
+  const t=TOOLS[cur];if(dz.items.some(x=>x.state==='looking'||x.state==='needfolder'))return;const items=dz.items.filter(x=>x.state==='ready');if(!items.length)return;
   let chapter='';
   if(t.file==='AltText_Tool.ps1'){
     const pp=items.filter(x=>/\.pptx$/i.test(x.file.name)),xx=items.filter(x=>/\.xlsx$/i.test(x.file.name));
@@ -681,8 +681,8 @@ async function startDrop(){
   }
   $('btnRun').disabled=$('btnCheck').disabled=true;const paths=[];
   for(const x of items){
-    if(!x.path){x.msg='Copying to Documents\\S4C Output...';dzRender();
-      try{const r=await (await fetch('/api/upload?name='+encodeURIComponent(x.file.name),{method:'POST',headers:{'X-S4C':TOKEN},body:x.file})).json();x.path=r.path}
+    if(!x.path){x.msg='Preparing...';dzRender();
+      try{const r=await (await fetch('/api/upload?name='+encodeURIComponent(x.file.name)+'&dir='+encodeURIComponent(x.dir||''),{method:'POST',headers:{'X-S4C':TOKEN},body:x.file})).json();x.path=r.path}
       catch(e){x.state='failed';x.msg='Could not copy: '+e.message;continue}}
     paths.push(x.path);x.state='running';x.msg='Waiting...'}
   if(!paths.length){$('btnRun').disabled=$('btnCheck').disabled=false;dzRender();return}
@@ -692,6 +692,27 @@ async function startDrop(){
     rn={tool:t.file,total,inter,t0:Date.now(),ft0:Date.now(),lastDone:0,pct:3,stage:0,serving:false,cur:'',mode:'run'};
     dzRender();drawSteps();poll();
   }catch(e){$('btnRun').disabled=$('btnCheck').disabled=false;items.forEach(x=>{if(x.state==='running'){x.state='failed';x.msg='Could not start: '+e.message}});rn=null;dzRender();toast('err','Could not start',e.message)}}
+/* the Windows file window: the real folder is known, so the fixed copy is saved right there */
+let pickBusy=false;
+async function pickWait(id,hintMs){const t0=Date.now();let hinted=false;
+  while(true){await new Promise(r=>setTimeout(r,500));
+    if(!hinted&&Date.now()-t0>hintMs){hinted=true;toast('inf','Do not see the file window?','Look in the taskbar. It opens in front of this page.',null,12000)}
+    const r=await (await api('/api/pickresult?id='+id)).json();if(r.done)return r}}
+async function pickFiles(){if(pickBusy)return;const t=TOOLS[cur];pickBusy=true;$('btnRun').disabled=true;$('runTxt').textContent='Choose in the file window...';
+  try{const id=(await (await api('/api/pick?tool='+encodeURIComponent(t.file))).json()).id;const r=await pickWait(id,4000);
+    if(r.error&&!(r.files||[]).length){toast('warn','The file window did not open','Use the browser picker instead.');$('dzIn').click();return}
+    const ok=dropOf(t);const files=(r.files||[]).filter(p=>ok.some(e=>p.toLowerCase().endsWith(e)));
+    if(!files.length)return;
+    if(dz.tool!==t.file)dz={tool:t.file,items:[]};
+    dz.items=dz.items.filter(x=>x.state!=='done');rn=null;
+    for(const p of files){if(dz.items.some(x=>x.path===p))continue;dz.items.push({file:{name:leafOf(p)},path:p,state:'ready',msg:'Chosen in '+folderOf(p)})}
+    dzRender();startDrop()
+  }catch(e){toast('err','Could not open the file window',e.message)}
+  finally{pickBusy=false;if(!job){$('btnRun').disabled=false;dzRender()}}}
+async function dzPickDir(i){const x=dzOn()[i];if(!x||pickBusy)return;pickBusy=true;
+  try{const id=(await (await api('/api/pick?mode=folder&tool='+encodeURIComponent(TOOLS[cur].file))).json()).id;const r=await pickWait(id,4000);
+    const d=(r.files||[])[0];if(d){x.dir=d;x.state='ready';x.msg='Fixed copy will be saved in '+d;dzRender();startDrop()}}
+  catch(e){toast('err','Could not open the folder window',e.message)}finally{pickBusy=false}}
 /* ring */
 const RC=2*Math.PI*42;
 function rnTitle(){const t=TOOLS.find(x=>x.file===rn.tool);
@@ -750,7 +771,7 @@ function dzDone(was,r){const t=TOOLS.find(x=>x.file===was.tool);
 })();
 /* ---------- run ---------- */
 async function start(launch){
-  if(launch&&TOOLS[cur].drop&&!job){$('dzIn').click();return}
+  if(launch&&TOOLS[cur].drop&&!job){return pickFiles()}
   if(job){toast('warn','A tool is already starting','Wait until it has opened.');return}
   const t=TOOLS[cur];
   try{const r=await (await api('/api/run?tool='+encodeURIComponent(t.file)+'&launch='+(launch?1:0))).json();

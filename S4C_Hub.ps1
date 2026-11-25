@@ -1,5 +1,5 @@
 # S4C HUB SCRIPT - the S4C Tools window. Runs a small page on this PC only (http://localhost) and opens it
-# S4C-FILE-VERSION: 2.0
+# S4C-FILE-VERSION: 2.1
 # in the browser. From the page you pick a tool, it checks GitHub for that one tool, then opens the tool
 # in its own window exactly as before. Close this window to close S4C Tools.
 $ErrorActionPreference = 'Stop'
@@ -155,6 +155,74 @@ if (Test-Path -LiteralPath (Join-Path $here 'S4C_SelfUpdate.ps1')) {
 }
 
 
+# ---------------------------------------------------------------- the Windows file / folder window (opened by this program so the real path is known)
+$picks = @{}
+$PICK_SCRIPT = @'
+$ErrorActionPreference = 'Stop'
+$out = $env:S4C_PICK_OUT
+try {
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+    Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class S4CFront { [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h); [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int c); [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra); public static void Raise(IntPtr h) { keybd_event(0x12, 0, 0, UIntPtr.Zero); keybd_event(0x12, 0, 2, UIntPtr.Zero); ShowWindow(h, 9); BringWindowToTop(h); SetForegroundWindow(h); } }'
+    [System.Windows.Forms.Application]::EnableVisualStyles()
+    $owner = New-Object System.Windows.Forms.Form
+    $owner.TopMost = $true; $owner.ShowInTaskbar = $false; $owner.FormBorderStyle = 'None'; $owner.Opacity = 0
+    $owner.StartPosition = 'CenterScreen'; $owner.Size = New-Object System.Drawing.Size(1, 1)
+    $owner.Show(); $owner.Activate(); [S4CFront]::Raise($owner.Handle)
+    $start = $env:S4C_PICK_START
+    $res = @()
+    if ($env:S4C_PICK_MODE -eq 'folder') {
+        $d = New-Object System.Windows.Forms.FolderBrowserDialog
+        $d.Description = $env:S4C_PICK_TITLE
+        if ($start -and (Test-Path -LiteralPath $start)) { $d.SelectedPath = $start }
+        if ($d.ShowDialog($owner) -eq 'OK') { $res = @($d.SelectedPath) }
+    } else {
+        $d = New-Object System.Windows.Forms.OpenFileDialog
+        $d.Title = $env:S4C_PICK_TITLE; $d.Filter = $env:S4C_PICK_FILTER; $d.Multiselect = $true
+        if ($start -and (Test-Path -LiteralPath $start)) { $d.InitialDirectory = $start }
+        if ($d.ShowDialog($owner) -eq 'OK') { $res = @($d.FileNames) }
+    }
+    $owner.Close()
+    [IO.File]::WriteAllLines($out, [string[]]$res, (New-Object Text.UTF8Encoding($false)))
+} catch {
+    [IO.File]::WriteAllText($out + '.err', [string]$_.Exception.Message)
+}
+[IO.File]::WriteAllText($out + '.done', '1')
+'@
+function Get-LastFolderFile { $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }; $d = Join-Path $base 'S4C_Tools'; if (-not (Test-Path -LiteralPath $d)) { [void](New-Item -ItemType Directory -Path $d) }; return (Join-Path $d 'lastfolder.txt') }
+function Get-LastFolder {
+    try { $f = Get-LastFolderFile; if (Test-Path -LiteralPath $f) { $v = ([IO.File]::ReadAllText($f)).Trim(); if ($v -and (Test-Path -LiteralPath $v)) { return $v } } } catch {}
+    $dl = if ($env:USERPROFILE) { Join-Path $env:USERPROFILE 'Downloads' } else { '' }
+    if ($dl -and (Test-Path -LiteralPath $dl)) { return $dl }
+    return [Environment]::GetFolderPath('MyDocuments')
+}
+function Start-Pick([string]$mode, [string]$filter, [string]$title) {
+    $id = [guid]::NewGuid().ToString('N').Substring(0, 10)
+    $out = Join-Path ([IO.Path]::GetTempPath()) ("s4c_pick_$id.txt")
+    if ($env:S4C_PICK_FAKE) {
+        $val = if ($mode -eq 'folder') { $env:S4C_PICK_FAKE_DIR } else { $env:S4C_PICK_FAKE }
+        [IO.File]::WriteAllLines($out, [string[]]@($val -split ';' | Where-Object { $_ }))
+        [IO.File]::WriteAllText($out + '.done', '1')
+        $picks[$id] = @{ Out = $out; Proc = $null; Mode = $mode }
+        return $id
+    }
+    $env:S4C_PICK_MODE = $mode; $env:S4C_PICK_FILTER = $filter; $env:S4C_PICK_TITLE = $title; $env:S4C_PICK_OUT = $out; $env:S4C_PICK_START = (Get-LastFolder)
+    $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($PICK_SCRIPT))
+    $sp = @{ FilePath = $exe; ArgumentList = @('-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $enc); PassThru = $true }
+    if (-not ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows)) { $sp['WindowStyle'] = 'Hidden' }
+    $proc = Start-Process @sp
+    Remove-Item Env:S4C_PICK_MODE, Env:S4C_PICK_FILTER, Env:S4C_PICK_TITLE, Env:S4C_PICK_OUT, Env:S4C_PICK_START -ErrorAction SilentlyContinue
+    $picks[$id] = @{ Out = $out; Proc = $proc; Mode = $mode }
+    return $id
+}
+$PICK_FILTERS = @{
+    'Word_Fixer.ps1'   = 'Word documents (*.docx)|*.docx'
+    'SLID_Macro.ps1'   = 'PowerPoint presentations (*.pptx)|*.pptx'
+    'IMBK_Macro.ps1'   = 'PowerPoint presentations (*.pptx)|*.pptx'
+    'AltText_Tool.ps1' = 'Deck and Excel files (*.pptx;*.xlsx;*.csv)|*.pptx;*.xlsx;*.csv'
+    'Link_Fixer.ps1'   = 'Word and PowerPoint files (*.docx;*.pptx)|*.docx;*.pptx'
+}
+
 # ---------------------------------------------------------------- files dropped on the page: find the original, save uploads
 function Read-Body($req) { $sr = New-Object IO.StreamReader($req.InputStream, [Text.Encoding]::UTF8); try { return $sr.ReadToEnd() } finally { $sr.Close() } }
 function Get-SearchRoots {
@@ -266,6 +334,30 @@ while ($listener.IsListening -and -not $quit) {
                 $list = @(); foreach ($d in ($map.Keys | Sort-Object)) { $list += [ordered]@{ day = $d; files = $map[$d].Count } }
                 Send $res 200 'application/json' (ToJson @{ days = $list }) $null
             }
+            '/api/pick' {
+                $mode = if ($q['mode'] -eq 'folder') { 'folder' } else { 'file' }
+                $tool = [string]$q['tool']
+                $flt = if ($PICK_FILTERS.ContainsKey($tool)) { $PICK_FILTERS[$tool] } else { 'Word and PowerPoint files (*.docx;*.pptx)|*.docx;*.pptx' }
+                $ttl = if ($mode -eq 'folder') { 'Choose the folder this file is in' } else { 'Choose the file(s) to fix' }
+                $id = Start-Pick $mode $flt $ttl
+                Send $res 200 'application/json' (ToJson @{ id = $id }) $null
+            }
+            '/api/pickresult' {
+                $pk = $picks[$q['id']]
+                if (-not $pk) { Send $res 404 'text/plain' 'no such window' $null; break }
+                $done = Test-Path -LiteralPath ($pk.Out + '.done'); $err = ''
+                if (-not $done -and $pk.Proc -and $pk.Proc.HasExited) { $done = $true; $err = 'The file window closed unexpectedly.' }
+                $files = @()
+                if ($done) {
+                    if (Test-Path -LiteralPath $pk.Out) { $files = @([IO.File]::ReadAllLines($pk.Out, [Text.Encoding]::UTF8) | Where-Object { $_ }) }
+                    if (Test-Path -LiteralPath ($pk.Out + '.err')) { $err = [IO.File]::ReadAllText($pk.Out + '.err') }
+                    if ($files.Count -gt 0) {
+                        $lf = if ($pk.Mode -eq 'folder') { $files[0] } else { Split-Path -Parent $files[0] }
+                        try { [IO.File]::WriteAllText((Get-LastFolderFile), $lf) } catch {}
+                    }
+                }
+                Send $res 200 'application/json; charset=utf-8' (ToJson @{ done = $done; files = $files; error = $err }) $null
+            }
             '/api/locate' {
                 $items = @((Read-Body $req) | ConvertFrom-Json)
                 $found = Find-Originals $items
@@ -273,11 +365,17 @@ while ($listener.IsListening -and -not $quit) {
                 Send $res 200 'application/json; charset=utf-8' (ToJson @{ files = $out }) $null
             }
             '/api/upload' {
-                # a file whose original could not be found: saved in Documents\S4C Output, the fixed copy is saved beside it
+                # the file as dropped on the page, written into the folder the person chose (an identical file already there is left alone)
                 $leaf = [IO.Path]::GetFileName([string]$q['name']) -replace '[;\\/:*?"<>|]', '_'
                 if ($leaf -notmatch '(?i)\.(pptx|docx|xlsx|csv)$') { Send $res 400 'text/plain' 'not a file type these tools use' $null; break }
-                $dir = Get-OutputDir; $dest = Join-Path $dir $leaf
-                $fs = [IO.File]::Create($dest); try { $req.InputStream.CopyTo($fs) } finally { $fs.Close() }
+                $dir = [string]$q['dir']
+                if ($dir -and (Test-Path -LiteralPath $dir -PathType Container)) { } else { $dir = Get-OutputDir }
+                $dest = Join-Path $dir $leaf
+                if ((Test-Path -LiteralPath $dest -PathType Leaf) -and ([long](Get-Item -LiteralPath $dest).Length -eq [long]$req.ContentLength64)) {
+                    $null = $req.InputStream.CopyTo([IO.Stream]::Null)
+                } else {
+                    $fs = [IO.File]::Create($dest); try { $req.InputStream.CopyTo($fs) } finally { $fs.Close() }
+                }
                 Send $res 200 'application/json; charset=utf-8' (ToJson @{ path = $dest }) $null
             }
             '/api/runfiles' {
