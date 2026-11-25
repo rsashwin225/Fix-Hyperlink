@@ -1,5 +1,5 @@
 # S4C HUB SCRIPT - the S4C Tools window. Runs a small page on this PC only (http://localhost) and opens it
-# S4C-FILE-VERSION: 2.9
+# S4C-FILE-VERSION: 3.0
 # in the browser. From the page you pick a tool, it checks GitHub for that one tool, then opens the tool
 # in its own window exactly as before. Close this window to close S4C Tools.
 $ErrorActionPreference = 'Stop'
@@ -160,6 +160,12 @@ Start-SelfUpdate
 
 # the "Check for updates" button at the top of the page: the page files and every tool are checked against GitHub
 $script:allProc = $null; $script:allOut = ''
+# small helper scripts are written to a .ps1 file in the temp folder and started with -File (some PCs stop a window that starts PowerShell with -EncodedCommand)
+function Save-TempScript([string]$name, [string]$content) {
+    $p = Join-Path ([IO.Path]::GetTempPath()) ('s4c_' + $name + '_' + $token.Substring(0, 8) + '.ps1')
+    [IO.File]::WriteAllText($p, $content, (New-Object Text.UTF8Encoding($false)))
+    return $p
+}
 function Start-UpdateAll {
     if ($script:allProc -and -not $script:allProc.HasExited) { return }
     Start-SelfUpdate
@@ -167,8 +173,8 @@ function Start-UpdateAll {
     $upd = Join-Path $here 'S4C_Update.ps1'
     $names = ($TOOLS.Keys | ForEach-Object { "'" + $_ + "'" }) -join ','
     $cmd = "foreach (`$t in @($names)) { Write-Host ('### ' + `$t); & '$upd' -Tool `$t }"
-    $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd))
-    $sp = @{ FilePath = $exe; ArgumentList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $enc); PassThru = $true; RedirectStandardOutput = $script:allOut; RedirectStandardError = ($script:allOut + '.err') }
+    $cf = Save-TempScript 'updall' $cmd
+    $sp = @{ FilePath = $exe; ArgumentList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $cf + '"')); PassThru = $true; RedirectStandardOutput = $script:allOut; RedirectStandardError = ($script:allOut + '.err') }
     if (-not ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows)) { $sp['WindowStyle'] = 'Hidden' }
     try { $script:allProc = Start-Process @sp } catch { $script:allProc = $null }
 }
@@ -227,8 +233,8 @@ function Start-Pick([string]$mode, [string]$filter, [string]$title) {
         return $id
     }
     $env:S4C_PICK_MODE = $mode; $env:S4C_PICK_FILTER = $filter; $env:S4C_PICK_TITLE = $title; $env:S4C_PICK_OUT = $out; $env:S4C_PICK_START = (Get-LastFolder)
-    $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($PICK_SCRIPT))
-    $sp = @{ FilePath = $exe; ArgumentList = @('-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $enc); PassThru = $true }
+    $pf = Save-TempScript 'pick' $PICK_SCRIPT
+    $sp = @{ FilePath = $exe; ArgumentList = @('-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $pf + '"')); PassThru = $true }
     if (-not ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows)) { $sp['WindowStyle'] = 'Hidden' }
     $proc = Start-Process @sp
     Remove-Item Env:S4C_PICK_MODE, Env:S4C_PICK_FILTER, Env:S4C_PICK_TITLE, Env:S4C_PICK_OUT, Env:S4C_PICK_START -ErrorAction SilentlyContinue
