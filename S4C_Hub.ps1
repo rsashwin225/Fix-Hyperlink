@@ -1,11 +1,14 @@
 # S4C HUB SCRIPT - the S4C Tools window. Runs a small page on this PC only (http://localhost) and opens it
-# S4C-FILE-VERSION: 3.10
+# S4C-FILE-VERSION: 3.12
 # in the browser. From the page you pick a tool, it checks GitHub for that one tool, then opens the tool
 # in its own window exactly as before. Close this window to close S4C Tools.
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
 $exe = (Get-Process -Id $PID).Path
 $ci = [Globalization.CultureInfo]::InvariantCulture
+# ---- keep running: a closed or locked-down console must never stop this program
+function Write-Host { try { Microsoft.PowerShell.Utility\Write-Host @args } catch {} }
+try { [Console]::TreatControlCAsInput = $true } catch {}
 
 $TOOLS = [ordered]@{
     'Word_Fixer.ps1'   = @{ Name = 'Word Tool';    Rx = "WF_VERSION\s*=\s*'([^']+)'" }
@@ -49,19 +52,42 @@ function Read-Status([string]$text) {
 
 # ---------------------------------------------------------------- jobs: GitHub check, then the tool in its own window
 $jobs = @{}
+# Runs a script INSIDE this program (a background runspace): no second PowerShell process is started, so nothing can touch this window or its console.
+# HasExited works like it does for a process; Stop() ends it (Id is 0 because there is no process).
+function Start-InProc([string]$body, [bool]$sta = $false) {
+    $rs = [runspacefactory]::CreateRunspace()
+    if ($sta) { $rs.ApartmentState = 'STA'; $rs.ThreadOptions = 'ReuseThread' }
+    $rs.Open()
+    $ps = [powershell]::Create(); $ps.Runspace = $rs
+    [void]$ps.AddScript($body)
+    $h = $ps.BeginInvoke()
+    $o = [pscustomobject]@{ PS = $ps; RS = $rs; H = $h; Stopped = $false; Id = 0 }
+    $o | Add-Member -MemberType ScriptProperty -Name HasExited -Value { $this.Stopped -or $this.H.IsCompleted }
+    $o | Add-Member -MemberType ScriptMethod -Name Stop -Value { $this.Stopped = $true; try { [void]$this.PS.BeginStop($null, $null) } catch {} }
+    return $o
+}
+function ConvertTo-EnvPrefix([hashtable]$m) { $b = ''; foreach ($k in $m.Keys) { $b += '$env:' + $k + " = '" + ([string]$m[$k]).Replace("'", "''") + "'; " }; return $b }
 function Start-Job2([string]$file, [bool]$launch, [string[]]$files = @(), [hashtable]$envs = @{}, [int]$total = 0) {
     $id = [guid]::NewGuid().ToString('N').Substring(0, 10)
     $out = Join-Path ([IO.Path]::GetTempPath()) ("s4c_upd_$id.txt"); $err = $out + '.err'
     $args1 = '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $here 'S4C_Update.ps1') + '" -Tool ' + $file
     $sf = $out + '.status'
     $env:S4C_STATUS_FILE = $sf
+    # every run also checks the page and the helper scripts against GitHub (in the background of this program)
+    try {
+        $sfile = Join-Path $here 'S4C_SelfUpdate.ps1'
+        if ((Test-Path -LiteralPath $sfile) -and (-not $script:selfProc -or $script:selfProc.HasExited)) {
+            Remove-Item -LiteralPath $selfStatus -Force -ErrorAction SilentlyContinue
+            $script:selfProc = Start-InProc ("`$env:S4C_SELF_STATUS = '" + $selfStatus + "'; & '" + $sfile + "' *>&1 | Out-Null")
+        }
+    } catch { Write-HubLog ('run: page update check could not start: ' + $_.Exception.Message) }
     $p = Start-Process -FilePath $exe -ArgumentList $args1 -NoNewWindow -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
     Remove-Item Env:S4C_STATUS_FILE -ErrorAction SilentlyContinue
     $jobs[$id] = @{ Id = $id; File = $file; Launch = $launch; State = 'updating'; Upd = $p; Out = $out; Err = $err; Sf = $sf; Status = $null; Tool = $null; Started = (Get-Date); Files = $files; Envs = $envs; Total = $(if ($total -gt 0) { $total } else { $files.Count }); Log = ($out + '.run.txt') }
     return $id
 }
 function Step-Job($j) {
-    if ($j.State -eq 'updating' -and $j.Upd.HasExited) {
+    if ($j.State -eq 'updating' -and $j.Upd.HasExited -and ((-not $script:selfProc) -or $script:selfProc.HasExited -or ((Get-Date) - $j.Started).TotalSeconds -gt 75)) {
         $txt = ''; try { $txt = [IO.File]::ReadAllText($j.Out) } catch {}
         $j.Status = Read-Status $txt
         if (Test-Path -LiteralPath $j.Sf) {
@@ -76,6 +102,7 @@ function Step-Job($j) {
             # files chosen on the page: hand them to the tool and run it hidden, its messages go to a log the page reads
             $fileEnv = @{ 'Word_Fixer.ps1' = 'WF_FILES'; 'SLID_Macro.ps1' = 'SLID_FILES'; 'IMBK_Macro.ps1' = 'IMBK_FILES'; 'Link_Fixer.ps1' = 'LF_FILES' }[$j.File]
             $hidden = ($j.Files -and $j.Files.Count -gt 0)
+            $env:S4C_GH_STATUS = [string]$j.Status.status; $env:S4C_GH_MSG = [string]$j.Status.message; $env:S4C_GH_REASON = [string]$j.Status.reason
             if ($hidden) {
                 if ($fileEnv) { Set-Item -Path ('Env:' + $fileEnv) -Value ($j.Files -join ';') }
                 foreach ($k in $j.Envs.Keys) { Set-Item -Path ('Env:' + $k) -Value ([string]$j.Envs[$k]) }
@@ -88,7 +115,8 @@ function Step-Job($j) {
                 $j.Tool = Start-Process @sp
             }
             else { $j.Tool = Start-Process -FilePath $exe -ArgumentList $a -PassThru }
-            Remove-Item Env:S4C_GH_STATUS, Env:S4C_GH_MSG, Env:S4C_GH_REASON, Env:WF_FILES, Env:SLID_FILES, Env:IMBK_FILES, Env:LF_FILES, Env:IF_PPTX, Env:IF_XLSX, Env:ALTMATCH_MODE, Env:ALTMATCH_PPTX, Env:ALTMATCH_XLSX, Env:ALTMATCH_CHAPTER, Env:ALTMATCH_MAP, Env:S4C_AUTO -ErrorAction SilentlyContinue
+            Remove-Item Env:S4C_GH_STATUS, Env:S4C_GH_MSG, Env:S4C_GH_REASON, Env:S4C_AUTO, Env:WF_FILES, Env:SLID_FILES, Env:IMBK_FILES, Env:LF_FILES -ErrorAction SilentlyContinue
+            foreach ($k in $j.Envs.Keys) { Remove-Item -Path ('Env:' + $k) -ErrorAction SilentlyContinue }
             $j.State = 'running'
         } else { $j.State = 'done' }
     } elseif ($j.State -eq 'running' -and $j.Tool.HasExited) { $j.State = 'done' }
@@ -129,23 +157,41 @@ function Get-JobProgress($j) {
 $hubVerRx = '# S4C-FILE-VERSION: ([0-9.]+)'
 function Get-HubVer { try { $m = [regex]::Match([IO.File]::ReadAllText($PSCommandPath), $hubVerRx); if ($m.Success) { return [version]$m.Groups[1].Value } } catch {}; return $null }
 $startVer = Get-HubVer
-$token = [guid]::NewGuid().ToString('N')
+$hubBase = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }
+$resumeFile = Join-Path (Join-Path $hubBase 'S4C_Tools') 'resume.txt'
+$resumePort = 0; $resumeTok = ''
+# after an update the launcher starts this program again with the same address, so the open page simply reconnects
+if ($env:S4C_RESUME -eq '1') {
+    try { if (Test-Path -LiteralPath $resumeFile) { $rp = ([IO.File]::ReadAllText($resumeFile)).Trim().Split('|'); if ($rp.Count -ge 2 -and $rp[0] -match '^\d+$' -and $rp[1] -match '^[0-9a-f]{32}$') { $resumePort = [int]$rp[0]; $resumeTok = $rp[1] } }; Remove-Item -LiteralPath $resumeFile -Force -ErrorAction SilentlyContinue } catch {}
+}
+$token = if ($resumeTok) { $resumeTok } else { [guid]::NewGuid().ToString('N') }
 $listener = $null; $port = 0
 foreach ($try in 1..40) {
     $port = Get-Random -Minimum 49200 -Maximum 49900
     if ($env:S4C_HUB_PORT) { $port = [int]$env:S4C_HUB_PORT }
+    if ($resumePort) { $port = $resumePort }
     $l = New-Object System.Net.HttpListener
     $l.Prefixes.Add("http://localhost:$port/")
-    try { $l.Start(); $listener = $l; break } catch { $l.Close(); if ($env:S4C_HUB_PORT) { Start-Sleep -Milliseconds 700 } }
+    try { $l.Start(); $listener = $l; break } catch { $l.Close(); if ($env:S4C_HUB_PORT -or $resumePort) { Start-Sleep -Milliseconds 700 } }
+}
+if (-not $listener) {
+    # some PCs do not allow the name "localhost": try the plain loopback address
+    foreach ($try in 1..40) {
+        $port = Get-Random -Minimum 49200 -Maximum 49900
+        $l = New-Object System.Net.HttpListener
+        $l.Prefixes.Add("http://127.0.0.1:$port/")
+        try { $l.Start(); $listener = $l; $script:LoopHost = '127.0.0.1'; break } catch { $l.Close() }
+    }
 }
 if (-not $listener) { Write-Host 'Could not start S4C Tools (no free port).' -ForegroundColor Red; exit 1 }
-$url = "http://localhost:$port/"
+$url = if ($script:LoopHost) { "http://$($script:LoopHost):$port/" } else { "http://localhost:$port/" }
 Write-Host ''
 Write-Host '  S4C Tools is open in your browser.' -ForegroundColor Green
 Write-Host ('  Address: ' + $url)
 Write-Host '  Keep this window open while you work. Close it to close S4C Tools.' -ForegroundColor DarkGray
 Write-Host ''
-if (-not $env:S4C_HUB_TEST -and -not $env:S4C_HUB_NOOPEN) { Start-Process $url }
+if ($resumePort) { Write-Host '  S4C Tools was updated and is running again.' -ForegroundColor Green }
+if (-not $env:S4C_HUB_TEST -and -not $env:S4C_HUB_NOOPEN -and -not $resumePort) { try { Start-Process $url } catch { Write-Host ('  Could not open the browser by itself. Open this address in your browser: ' + $url) -ForegroundColor Yellow } }
 
 # the page files keep themselves up to date from GitHub in the background (the page opens straight away)
 $selfStatus = Join-Path ([IO.Path]::GetTempPath()) ('s4c_self_' + $token.Substring(0, 8) + '.txt')
@@ -167,17 +213,6 @@ function Save-TempScript([string]$name, [string]$content) {
     $p = Join-Path ([IO.Path]::GetTempPath()) ('s4c_' + $name + '_' + $token.Substring(0, 8) + '.ps1')
     [IO.File]::WriteAllText($p, $content, (New-Object Text.UTF8Encoding($false)))
     return $p
-}
-# The "Check for updates" button runs the update scripts INSIDE this program (a background runspace): no second PowerShell process is started,
-# so nothing can touch this window or its console. HasExited works like it does for a process, so the rest of the code is unchanged.
-function Start-InProc([string]$body) {
-    $rs = [runspacefactory]::CreateRunspace(); $rs.Open()
-    $ps = [powershell]::Create(); $ps.Runspace = $rs
-    [void]$ps.AddScript($body)
-    $h = $ps.BeginInvoke()
-    $o = [pscustomobject]@{ PS = $ps; RS = $rs; H = $h }
-    $o | Add-Member -MemberType ScriptProperty -Name HasExited -Value { $this.H.IsCompleted }
-    return $o
 }
 function Start-UpdateAll {
     if ($script:allProc -and -not $script:allProc.HasExited) { return }
@@ -204,7 +239,7 @@ $out = $env:S4C_PICK_OUT
 try {
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
-    Add-Type -TypeDefinition 'using System; using System.Threading; using System.Runtime.InteropServices; public class S4CFront { [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h); [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int c); [DllImport("user32.dll")] static extern void SwitchToThisWindow(IntPtr h, bool alt); [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow(); [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid); [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a, uint b, bool f); [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId(); [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint cmd); [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags); [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra); [DllImport("user32.dll", EntryPoint = "SystemParametersInfo")] static extern bool SpiGet(uint a, uint b, ref uint v, uint f); [DllImport("user32.dll", EntryPoint = "SystemParametersInfo")] static extern bool SpiSet(uint a, uint b, IntPtr v, uint f); static IntPtr ownerH; static volatile bool stop; public static uint LockOff() { uint old = 0; try { SpiGet(0x2000, 0, ref old, 0); SpiSet(0x2001, 0, IntPtr.Zero, 2); } catch (Exception) { } return old; } public static void LockRestore(uint old) { try { SpiSet(0x2001, 0, new IntPtr((int)old), 2); } catch (Exception) { } } public static void Raise(IntPtr h) { uint pid; uint ft = GetWindowThreadProcessId(GetForegroundWindow(), out pid); uint me = GetCurrentThreadId(); keybd_event(0x12, 0, 0, UIntPtr.Zero); keybd_event(0x12, 0, 2, UIntPtr.Zero); if (ft != 0 && ft != me) AttachThreadInput(me, ft, true); ShowWindow(h, 9); SetWindowPos(h, new IntPtr(-1), 0, 0, 0, 0, 3); BringWindowToTop(h); SwitchToThisWindow(h, true); SetForegroundWindow(h); if (ft != 0 && ft != me) AttachThreadInput(me, ft, false); } static void Watch() { for (int i = 0; i < 60 && !stop; i++) { Thread.Sleep(100); IntPtr d = GetWindow(ownerH, 6); if (d != IntPtr.Zero) { Raise(d); if (GetForegroundWindow() == d) { if (i > 3) break; } else { ShowWindow(d, 6); ShowWindow(d, 9); SwitchToThisWindow(d, true); } } } } public static void RaiseDialogLater(IntPtr owner) { ownerH = owner; stop = false; Thread t = new Thread(new ThreadStart(Watch)); t.IsBackground = true; t.Start(); } public static void StopWatch() { stop = true; } }'
+    if (-not ('S4CFront' -as [type])) { Add-Type -TypeDefinition 'using System; using System.Threading; using System.Runtime.InteropServices; public class S4CFront { [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h); [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int c); [DllImport("user32.dll")] static extern void SwitchToThisWindow(IntPtr h, bool alt); [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow(); [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid); [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a, uint b, bool f); [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId(); [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint cmd); [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags); [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra); [DllImport("user32.dll", EntryPoint = "SystemParametersInfo")] static extern bool SpiGet(uint a, uint b, ref uint v, uint f); [DllImport("user32.dll", EntryPoint = "SystemParametersInfo")] static extern bool SpiSet(uint a, uint b, IntPtr v, uint f); static IntPtr ownerH; static volatile bool stop; public static uint LockOff() { uint old = 0; try { SpiGet(0x2000, 0, ref old, 0); SpiSet(0x2001, 0, IntPtr.Zero, 2); } catch (Exception) { } return old; } public static void LockRestore(uint old) { try { SpiSet(0x2001, 0, new IntPtr((int)old), 2); } catch (Exception) { } } public static void Raise(IntPtr h) { uint pid; uint ft = GetWindowThreadProcessId(GetForegroundWindow(), out pid); uint me = GetCurrentThreadId(); keybd_event(0x12, 0, 0, UIntPtr.Zero); keybd_event(0x12, 0, 2, UIntPtr.Zero); if (ft != 0 && ft != me) AttachThreadInput(me, ft, true); ShowWindow(h, 9); SetWindowPos(h, new IntPtr(-1), 0, 0, 0, 0, 3); BringWindowToTop(h); SwitchToThisWindow(h, true); SetForegroundWindow(h); if (ft != 0 && ft != me) AttachThreadInput(me, ft, false); } static void Watch() { for (int i = 0; i < 60 && !stop; i++) { Thread.Sleep(100); IntPtr d = GetWindow(ownerH, 6); if (d != IntPtr.Zero) { Raise(d); if (GetForegroundWindow() == d) { if (i > 3) break; } else { ShowWindow(d, 6); ShowWindow(d, 9); SwitchToThisWindow(d, true); } } } } public static void RaiseDialogLater(IntPtr owner) { ownerH = owner; stop = false; Thread t = new Thread(new ThreadStart(Watch)); t.IsBackground = true; t.Start(); } public static void StopWatch() { stop = true; } }' }
     [System.Windows.Forms.Application]::EnableVisualStyles()
     $lockOld = [S4CFront]::LockOff()
     $owner = New-Object System.Windows.Forms.Form
@@ -343,7 +378,7 @@ function Send($res, [int]$code, [string]$ctype, $body, [string]$fileName) {
 function ToJson($o) { return ($o | ConvertTo-Json -Depth 6 -Compress) }
 
 function Write-HubLog([string]$m) { try { $lb = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }; $ld = Join-Path $lb 'S4C_Tools'; if (-not (Test-Path -LiteralPath $ld)) { [void](New-Item -ItemType Directory -Path $ld -Force) }; $lf = Join-Path $ld 'hub.log'; if ((Test-Path -LiteralPath $lf) -and (Get-Item -LiteralPath $lf).Length -gt 200000) { Remove-Item -LiteralPath $lf -Force }; [IO.File]::AppendAllText($lf, ((Get-Date).ToString('yyyy-MM-dd HH:mm:ss') + '  ' + $m + [Environment]::NewLine)) } catch {} }
-Write-HubLog ('hub started, script ' + $startVer + ', port ' + $port + ', pid ' + $PID)
+Write-HubLog ('hub started, script ' + $startVer + ', port ' + $port + ', pid ' + $PID + ', PowerShell ' + $PSVersionTable.PSVersion + ', language mode ' + $ExecutionContext.SessionState.LanguageMode)
 $quit = $false
 while ($listener.IsListening -and -not $quit) {
     try { $ctx = $listener.GetContext() } catch { Write-HubLog ('GetContext failed: ' + $_.Exception.Message); Start-Sleep -Milliseconds 300; continue }
@@ -452,7 +487,8 @@ while ($listener.IsListening -and -not $quit) {
             '/api/stop' {
                 # ends a tool that is waiting for the person to finish in its review page
                 $j = $jobs[$q['id']]
-                if ($j -and $j.Tool -and -not $j.Tool.HasExited) { try { & taskkill.exe /PID $j.Tool.Id /T /F 2>&1 | Out-Null } catch { try { Stop-Process -Id $j.Tool.Id -Force } catch {} } }
+                if ($j -and $j.Tool -and -not $j.Tool.HasExited -and $j.Tool.Id -eq 0) { try { $j.Tool.Stop() } catch {} }
+                elseif ($j -and $j.Tool -and -not $j.Tool.HasExited) { try { & taskkill.exe /PID $j.Tool.Id /T /F 2>&1 | Out-Null } catch { try { Stop-Process -Id $j.Tool.Id -Force } catch {} } }
                 Send $res 200 'application/json' '{}' $null
             }
             '/api/getfile' {
@@ -575,7 +611,13 @@ while ($listener.IsListening -and -not $quit) {
                 if ($done -and (Test-Path -LiteralPath $selfStatus)) { $lines = [IO.File]::ReadAllText($selfStatus).Split("`n") | Where-Object { $_ }; if ($lines) { $st = $lines[0]; $upd = @($lines | Select-Object -Skip 1) } }
                 $hv = [regex]::Match([IO.File]::ReadAllText((Join-Path $here 'S4C_Hub.html')), 'name="s4c-hub-version" content="([0-9.]+)"').Groups[1].Value
                 $nowVer = Get-HubVer; $need = [bool]($startVer -and $nowVer -and $nowVer -gt $startVer)
-                Send $res 200 'application/json' (ToJson ([ordered]@{ done = $done; status = $st; updated = $upd; version = $hv; restart = $need })) $null
+                Send $res 200 'application/json' (ToJson ([ordered]@{ done = $done; status = $st; updated = $upd; version = $hv; restart = $need; canRestart = ($env:S4C_FROM_CMD -eq '1') })) $null
+            }
+            '/api/restart' {
+                # applies an update of this program: it ends with code 75 and the launcher starts it again on the same address
+                if ($env:S4C_FROM_CMD -ne '1') { Send $res 409 'text/plain' 'cannot restart from here' $null; break }
+                try { [IO.File]::WriteAllText($resumeFile, ([string]$port + '|' + $token)) } catch { Send $res 500 'text/plain' 'cannot restart' $null; break }
+                Send $res 200 'application/json' '{}' $null; $script:restart = $true; $quit = $true
             }
             '/api/quit' { Send $res 200 'text/plain' 'bye' $null; $quit = $true }
             default { Send $res 404 'text/plain' 'not found' $null }
@@ -586,3 +628,4 @@ while ($listener.IsListening -and -not $quit) {
 }
 Write-HubLog ('hub loop ended, quit=' + $quit + ', listening=' + $listener.IsListening)
 $listener.Stop()
+if ($script:restart) { exit 75 }

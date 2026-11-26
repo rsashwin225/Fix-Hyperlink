@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="3.7">
+<meta name="s4c-hub-version" content="3.8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -705,7 +705,7 @@ async function startDrop(){
   if(!paths.length){$('btnRun').disabled=$('btnCheck').disabled=false;dzRender();return}
   try{const r=await POSTJ('/api/runfiles',{tool:t.file,files:paths,chapter});
     const inter=INTER.includes(t.file);const total=(t.file==='AltText_Tool.ps1'||t.file==='Issue_Fixer.ps1')?1:paths.length;
-    job={id:r.id,tool:t.file,launch:true,drop:true};doneFor='';phase=1;stage('updating');
+    job={id:r.id,tool:t.file,launch:true,drop:true};doneFor='';phase=1;stage('updating');setTimeout(()=>checkHub(0),6000);
     rn={tool:t.file,total,inter,t0:Date.now(),ft0:Date.now(),lastDone:0,pct:3,stage:0,serving:false,cur:'',mode:'run'};
     dzRender();drawSteps();poll();
   }catch(e){$('btnRun').disabled=$('btnCheck').disabled=false;items.forEach(x=>{if(x.state==='running'){x.state='failed';x.msg='Could not start: '+e.message}});rn=null;dzRender();toast('err','Could not start',e.message)}}
@@ -796,7 +796,7 @@ async function start(launch){
   const t=TOOLS[cur];
   try{const r=await (await api('/api/run?tool='+encodeURIComponent(t.file)+'&launch='+(launch?1:0))).json();
     job={id:r.id,tool:t.file,launch};doneFor='';phase=1;stage('updating');$('btnRun').disabled=$('btnCheck').disabled=true;
-    mbar('busy','<b>Checking GitHub</b>for the newest '+esc(t.name)+'... this can take up to a minute.');drawSteps();poll();
+    mbar('busy','<b>Checking GitHub</b>for the newest '+esc(t.name)+'... this can take up to a minute.');drawSteps();poll();setTimeout(()=>checkHub(0),6000);
   }catch(e){toast('err','Could not start',e.message)}
 }
 async function poll(){
@@ -950,14 +950,27 @@ $('q').onfocus=()=>{$('q').blur();palOpen()};
 const PAGE_VER=(document.querySelector('meta[name="s4c-hub-version"]')||{}).content||'0';
 const vnum=v=>String(v||'0').split('.').map(x=>parseInt(x)||0);
 const vgt=(a,b)=>{const x=vnum(a),y=vnum(b);for(let i=0;i<Math.max(x.length,y.length);i++){const d=(x[i]||0)-(y[i]||0);if(d)return d>0}return false};
+let refreshShown=false,refreshing=false;
+const wait=ms=>new Promise(x=>setTimeout(x,ms));
+// Refresh: the page is replaced by the new one. When the program itself was updated it is started again first (no window to close or open).
+async function doRefresh(needRestart){if(refreshing)return;refreshing=true;
+  mbar('busy','<b>Updating S4C Tools</b>','This page reloads by itself in a moment.');
+  try{
+    if(needRestart){await api('/api/restart');
+      for(let i=0;i<16;i++){await wait(500);let up=true;try{const r=await fetch('/api/hub',{headers:{'X-S4C':TOKEN}});up=r.ok}catch(e){up=false}if(!up)break}
+      for(let i=0;i<80;i++){await wait(750);try{const r=await fetch('/api/hub',{headers:{'X-S4C':TOKEN}});if(r.ok)break}catch(e){}}}
+  }catch(e){refreshing=false;mbar(null);toast('inf','S4C Tools has been updated','Close the black S4C Tools window and open S4C Tools again to finish the update.',null,60000);return}
+  location.reload()}
+function offerRefresh(needRestart,from,to){if(refreshShown)return;refreshShown=true;
+  toast('inf','Update ready','S4C Tools '+(from&&to?(from+' -> '+to):'has a newer version')+'. Press Refresh to use it.',['Refresh',()=>doRefresh(needRestart)],600000)}
 async function checkHub(n){try{const r=await (await api('/api/hub')).json();$('hubVer').textContent='Page version '+PAGE_VER+'.';
     if(!r.done){if((n||0)<40)setTimeout(()=>checkHub((n||0)+1),5000);return}
     const ups=r.updated||[];const hubPs=ups.some(x=>/^S4C_Hub\.ps1 /.test(x));
-    if(r.restart){toast('inf','S4C Tools has been updated','Close the black S4C Tools window and open S4C Tools again to finish the update.',null,60000);return}
+    if(r.restart){if(r.canRestart)offerRefresh(true);else toast('inf','S4C Tools has been updated','Close the black S4C Tools window and open S4C Tools again to finish the update.',null,60000);return}
     // an older copy of this program (it cannot restart itself) is still running although GitHub gave it a new version
     if(hubPs&&r.restart===undefined){toast('inf','S4C Tools has been updated','This PC has an older copy running. Close the black window and open S4C Tools once more.',null,60000);return}
     // only offer the refresh while the page on screen is older than the page on this PC
-    if(vgt(r.version,PAGE_VER))toast('inf','S4C Tools has a new look waiting','Page '+PAGE_VER+' -> '+r.version+'. Refresh to see it.',['Refresh',()=>location.reload()],30000);
+    if(vgt(r.version,PAGE_VER))offerRefresh(false,PAGE_VER,r.version);
   }catch(e){}}
 
 /* ---------- header: check the whole tool (page files and every tool) for updates ---------- */
@@ -974,7 +987,10 @@ async function updateAll(){if(updBusy)return;
     if(off.length&&!upd.length&&!hubUp.length)toast('err','Not connected to GitHub','Nothing could be checked. Using the copies on this PC.');
     else if(upd.length||hubUp.length)toast('ok','Updated',(upd.map(x=>x.name+' ('+x.message.replace('Updated ','')+')').concat(hubUp.length?['S4C Tools']:[])).join(', ')+'.');
     else toast('ok','Everything is up to date','S4C Tools and every tool are the newest version.');
-    checkHub(0);
+    const needPage=hub&&(vgt(hub.version,PAGE_VER)||hubUp.length>0);
+    if(hub&&hub.restart){if(hub.canRestart)offerRefresh(true);else toast('inf','S4C Tools has been updated','Close the black S4C Tools window and open S4C Tools again to finish the update.',null,60000)}
+    else if(needPage&&vgt(hub.version,PAGE_VER))offerRefresh(false,PAGE_VER,hub.version);
+    else checkHub(0);
   }catch(e){toast('err','Could not check for updates',e.message)}
   finally{updBusy=false;b.classList.remove('spinning');b.disabled=false;b.querySelector('span').textContent='Check for updates'}}
 $('updAll').onclick=updateAll;

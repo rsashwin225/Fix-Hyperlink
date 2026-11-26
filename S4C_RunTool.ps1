@@ -1,5 +1,5 @@
 # S4C RUNTOOL SCRIPT - opens one tool in its own window, the same way the menu did, and waits for Enter at the end.
-# S4C-FILE-VERSION: 1.7
+# S4C-FILE-VERSION: 1.8
 param([string]$Tool, [switch]$Test)
 $sta = @{ 'Word_Fixer.ps1' = $true; 'SLID_Macro.ps1' = $true; 'IMBK_Macro.ps1' = $false; 'AltText_Tool.ps1' = $true; 'Link_Fixer.ps1' = $true; 'Issue_Fixer.ps1' = $false }
 if (-not $sta.ContainsKey($Tool)) { Write-Host ('Unknown tool: ' + $Tool); exit 1 }
