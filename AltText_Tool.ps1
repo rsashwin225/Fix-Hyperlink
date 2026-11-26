@@ -1,6 +1,6 @@
 # ALT TEXT TOOL SCRIPT
 # PPT Alt-Text Filler (S4Carlisle). Self-updates from GitHub through AltText_Update.ps1.
-$ALT_VERSION = '3.4'   # shown at the start of the window; the updater compares this number with GitHub
+$ALT_VERSION = '3.5'   # shown at the start of the window; the updater compares this number with GitHub
 # ---- work log: notes each saved file (name, slides or pages) for the daily report in S4C Tools ----
 # Only reads the saved file; never changes it and never stops the tool if something goes wrong.
 function Add-WorkLog([string]$tool, [string]$inPath, [string]$outPath) {
@@ -145,16 +145,22 @@ function Get-AltRows([string]$xlsx) {
         foreach ($sh in $ordered) {
             $grid = Read-Sheet $zip $sh.Part $strings
             foreach ($rn in ($grid.Keys | Sort-Object)) {
-                $vals = @($grid[$rn].Values)
-                if ($vals -contains 'Element Number' -and ($vals -contains 'Alt Text - Short')) { $best = @{ Grid = $grid; Header = $rn }; break }
+                $vals = @($grid[$rn].Values | ForEach-Object { ([string]$_).ToLowerInvariant() -replace '[^a-z0-9]', '' })
+                if ($vals -contains 'elementnumber' -and ($vals -contains 'alttextshort' -or $vals -contains 'shortalttext')) { $best = @{ Grid = $grid; Header = $rn }; break }
             }
             if ($best) { break }
         }
-        if (-not $best) { throw 'The Excel file has no sheet with the columns Element Number and Alt Text - Short.' }
+        if (-not $best) { throw 'The Excel file has no sheet with the columns Element Number and Short Alt Text (or Alt Text - Short).' }
 
         $hdr = $best.Grid[$best.Header]
         $col = @{}
-        foreach ($k in $hdr.Keys) { $col[$hdr[$k].Trim()] = $k }
+        # the column titles are matched by their words, so 'Alt Text - Short' and 'Short Alt Text' (and Long) both work
+        $canon = @{ 'elementnumber' = 'Element Number'; 'alttextshort' = 'Alt Text - Short'; 'shortalttext' = 'Alt Text - Short'; 'alttextlong' = 'Alt Text - Long'; 'longalttext' = 'Alt Text - Long'; 'chapternumber' = 'Chapter Number'; 'usage' = 'Usage'; 'decorative' = 'Decorative' }
+        foreach ($k in $hdr.Keys) {
+            $nm = ([string]$hdr[$k]).ToLowerInvariant() -replace '[^a-z0-9]', ''
+            if ($canon.ContainsKey($nm) -and -not $col.ContainsKey($canon[$nm])) { $col[$canon[$nm]] = $k }
+            $col[$hdr[$k].Trim()] = $k
+        }
         $get = { param($row, $name) if ($col.ContainsKey($name) -and $row.ContainsKey($col[$name])) { return [string]$row[$col[$name]] } else { return '' } }
 
         $out = New-Object System.Collections.Generic.List[object]

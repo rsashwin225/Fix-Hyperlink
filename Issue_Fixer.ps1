@@ -2,27 +2,21 @@
 # safely (reading order, language tags, colour contrast), says which findings look like false positives, and fills the sheet's
 # Status / Owner / Comment columns. The text and objects of the deck are NEVER changed or added to.
 # S4C ISSUE FIXER SCRIPT
-$IF_VERSION = '1.0'   # shown at the start of the window; the updater compares this number with GitHub
+$IF_VERSION = '1.4'   # shown at the start of the window; the updater compares this number with GitHub
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $ci = [Globalization.CultureInfo]::InvariantCulture
 $utf8 = New-Object Text.UTF8Encoding($false)
 
+# notes the saved file in today's work, but with no slide or page count (running Issue Fixer must not add to the slides / pages goal)
 function Add-WorkLog([string]$tool, [string]$inPath, [string]$outPath) {
     try {
-        $count = ''; $unit = ''
-        $z = [IO.Compression.ZipFile]::OpenRead($outPath)
-        try {
-            $unit = 'slides'
-            $e = $z.GetEntry('ppt/presentation.xml')
-            if ($e) { $sr = New-Object IO.StreamReader($e.Open()); $t = $sr.ReadToEnd(); $sr.Close(); $count = [regex]::Matches($t, '<p:sldId\s').Count }
-        } finally { $z.Dispose() }
         $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }
         $dir = Join-Path (Join-Path $base 'S4C_Tools') 'WorkLog'
         if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
         $now = Get-Date
-        $line = @($now.ToString('yyyy-MM-dd', $ci), $now.ToString('HH:mm', $ci), $env:USERNAME, $tool, [IO.Path]::GetFullPath($inPath), [IO.Path]::GetFullPath($outPath), $count, $unit) -join "`t"
+        $line = @($now.ToString('yyyy-MM-dd', $ci), $now.ToString('HH:mm', $ci), $env:USERNAME, $tool, [IO.Path]::GetFullPath($inPath), [IO.Path]::GetFullPath($outPath), '', '') -join "`t"
         [IO.File]::AppendAllText((Join-Path $dir 'worklog.tsv'), $line + "`r`n", $utf8)
     } catch { }
 }
@@ -204,7 +198,9 @@ try {
         $x = $sh.SelectSingleNode('p:spPr/a:xfrm', $n)
         if (-not $x) { $x = $sh.SelectSingleNode('p:xfrm', $n) }
         if (-not $x) { $x = $sh.SelectSingleNode('p:grpSpPr/a:xfrm', $n) }
+        $fromLayout = $false
         if (-not $x) {
+            $fromLayout = $true
             $ph = $sh.SelectSingleNode('p:nvSpPr/p:nvPr/p:ph', $n)
             if ($ph) {
                 $lay = Rel-Target $slidePart 'slideLayout'
@@ -224,33 +220,185 @@ try {
         }
         if (-not $x) { return $null }
         $o = $x.SelectSingleNode('a:off', $n); $e = $x.SelectSingleNode('a:ext', $n); if (-not $o -or -not $e) { return $null }
+        if ($fromLayout) { return @([long]$o.GetAttribute('x'), [long]$o.GetAttribute('y'), [long]$e.GetAttribute('cx'), [long]$e.GetAttribute('cy'), 'L') }
         return @([long]$o.GetAttribute('x'), [long]$o.GetAttribute('y'), [long]$e.GetAttribute('cx'), [long]$e.GetAttribute('cy'))
     }
-    # the order a person would read the slide in: title first, then top to bottom, left to right
-    function Get-WantedOrder($shapes, [string]$part) {
-        $items = @(); $i = 0
-        foreach ($sh in $shapes) {
-            $b = Get-Bounds $sh $part
-            if (-not $b) { return $null }
-            $items += [pscustomobject]@{ Sh = $sh; T = [bool](Is-Title $sh); X = $b[0]; Y = $b[1]; W = $b[2]; H = $b[3]; I = $i }; $i++
+    # ---- the reading order and shape names SLID Macro uses: title first, then column by column (or row by row) as the slide is laid out;
+    # a shape that sits mostly behind a picture stays behind it. Shapes are named Title / Picture / TextBox (TextBox 1, TextBox 2 ... when there are several).
+    $sldW = 12192000.0; $mW = [regex]::Match($pres, '<p:sldSz\s[^>]*?cx="(\d+)"'); if ($mW.Success) { $sldW = [double]$mW.Groups[1].Value }
+    $slideWpt = $sldW / 12700
+    function Get-SlideOrder([string]$part, [int]$slideIdx) {
+        $d = Get-Doc $part; $m = Get-Nsm $d
+        $tree = $d.SelectSingleNode('//p:cSld/p:spTree', $m)
+        $items = New-Object System.Collections.Generic.List[object]; $order = 0
+        foreach ($c in $tree.ChildNodes) {
+            if ($c.NodeType -ne 'Element') { continue }
+            $order++
+            if (@('sp', 'pic', 'grpSp', 'graphicFrame', 'cxnSp') -notcontains $c.LocalName) { continue }
+            $kind = ''; $nv = $null
+            switch ($c.LocalName) {
+                'sp' {
+                    $nv = $c.SelectSingleNode('p:nvSpPr/p:cNvPr', $m)
+                    $ph = $c.SelectSingleNode('p:nvSpPr/p:nvPr/p:ph', $m)
+                    $pt = if ($ph) { $ph.GetAttribute('type') } else { '' }
+                    $txt = Shape-Text $c
+                    if ($pt -eq 'title' -or $pt -eq 'ctrTitle') { $kind = 'Title' }
+                    elseif ($pt -eq 'pic') { $kind = 'Picture' }
+                    elseif ($txt.Length -gt 0) { if ($pt -eq 'subTitle') { $kind = 'Subtitle' } else { $kind = 'TextBox' } }
+                }
+                'pic' { $nv = $c.SelectSingleNode('p:nvPicPr/p:cNvPr', $m); $kind = 'Picture' }
+                'grpSp' { $nv = $c.SelectSingleNode('p:nvGrpSpPr/p:cNvPr', $m); if ($c.SelectSingleNode('.//p:pic', $m)) { $kind = 'Picture' } }
+            }
+            $rk = 1; if ($kind -eq 'Title') { $rk = 0 }
+            $b = Get-Bounds $c $part
+            if ($b) { $x = [double]$b[0]; $y = [double]$b[1]; $w = [double]$b[2]; $h = [double]$b[3]; if ($b.Count -gt 4) { $h = 0.0 } } else { $x = 0.0; $y = 1e12; $w = 0.0; $h = 0.0 }
+            $items.Add([pscustomobject]@{ Kind = $kind; Nv = $nv; Node = $c; RK = $rk; Y = [Math]::Round($y / 12700); X = $x; CX = (($x + $w / 2) / 12700); Order = $order; L = $x; T = $y; W = $w; H = $h })
         }
-        for ($a = 0; $a -lt $items.Count; $a++) { for ($c = $a + 1; $c -lt $items.Count; $c++) {
-            $p = $items[$a]; $q = $items[$c]
-            $ox = [math]::Min($p.X + $p.W, $q.X + $q.W) - [math]::Max($p.X, $q.X); $oy = [math]::Min($p.Y + $p.H, $q.Y + $q.H) - [math]::Max($p.Y, $q.Y)
-            if ($ox -gt 12700 -and $oy -gt 12700) { return 'overlap' }
-        } }
-        $sorted = @($items | Sort-Object @{ Expression = { if ($_.T) { 0 } else { 1 } } }, @{ Expression = { [math]::Round($_.Y / 342900) } }, @{ Expression = { $_.X } }, @{ Expression = { $_.I } })
-        return ,$sorted
+        if ($slideIdx -eq 0 -and -not @($items | Where-Object { $_.Kind -eq 'Subtitle' }).Count) {
+            $tbs = @($items | Where-Object { $_.Kind -eq 'TextBox' }); if ($tbs.Count -eq 1) { $tbs[0].Kind = 'Subtitle' }
+        }
+        $sorted = New-Object System.Collections.Generic.List[object]
+        foreach ($it in @($items | Where-Object { $_.RK -eq 0 } | Sort-Object Y, X, Order)) { $sorted.Add($it) }
+        $rest = @($items | Where-Object { $_.RK -ne 0 })
+        $placed = @($rest | Where-Object { $_.Y -lt 1e9 } | Sort-Object CX, Y, Order)
+        $unplaced = @($rest | Where-Object { $_.Y -ge 1e9 } | Sort-Object Order)
+        $clusters = New-Object System.Collections.Generic.List[object]; $cur = $null
+        foreach ($it in $placed) {
+            if ($null -eq $cur -or ($it.CX - $cur.Last) -gt ($slideWpt * 0.15)) { $cur = [pscustomobject]@{ Last = $it.CX; Items = (New-Object System.Collections.Generic.List[object]) }; $clusters.Add($cur) }
+            $cur.Items.Add($it); $cur.Last = $it.CX
+        }
+        $multi = @($clusters | Where-Object { $_.Items.Count -ge 2 }).Count
+        if ($clusters.Count -ge 2 -and $multi -ge 2) {
+            foreach ($cl in $clusters) { foreach ($it in @($cl.Items | Sort-Object Y, X, Order)) { $sorted.Add($it) } }
+        } else {
+            $rowList = New-Object System.Collections.Generic.List[object]; $rowItems = $null; $rowStart = 0
+            foreach ($it in @($placed | Sort-Object Y, X, Order)) {
+                if ($null -eq $rowItems -or ($it.Y - $rowStart) -gt 18) { $rowItems = New-Object System.Collections.Generic.List[object]; $rowStart = $it.Y; $rowList.Add($rowItems) }
+                $rowItems.Add($it)
+            }
+            foreach ($r in $rowList) { foreach ($it in @($r | Sort-Object X, Order)) { $sorted.Add($it) } }
+        }
+        foreach ($it in $unplaced) { $sorted.Add($it) }
+        $guard = 0; $moved = $true
+        while ($moved -and $guard -lt 50) {
+            $moved = $false; $guard++
+            for ($i = 0; $i -lt $sorted.Count -and -not $moved; $i++) {
+                $s1 = $sorted[$i]
+                if ($s1.RK -eq 0 -or $s1.Kind -eq 'Picture' -or $s1.W -le 0 -or $s1.H -le 0 -or $s1.T -ge 1e11) { continue }
+                for ($j = 0; $j -lt $i; $j++) {
+                    $pc = $sorted[$j]
+                    if ($pc.Kind -ne 'Picture' -or $pc.Order -le $s1.Order -or $pc.W -le 0 -or $pc.H -le 0 -or $pc.T -ge 1e11) { continue }
+                    $ow = [Math]::Min($s1.L + $s1.W, $pc.L + $pc.W) - [Math]::Max($s1.L, $pc.L)
+                    $oh = [Math]::Min($s1.T + $s1.H, $pc.T + $pc.H) - [Math]::Max($s1.T, $pc.T)
+                    if ($ow -le 0 -or $oh -le 0) { continue }
+                    if (($ow * $oh) / ($s1.W * $s1.H) -gt 0.5) { $sorted.RemoveAt($i); $sorted.Insert($j, $s1); $moved = $true; break }
+                }
+            }
+        }
+        return [pscustomobject]@{ Tree = $tree; Items = $items; Sorted = @($sorted.ToArray()) }
     }
-    function Apply-Order($tree, $sorted) {
-        $first = $null
-        foreach ($c in $tree.ChildNodes) { if ($c.NodeType -eq 'Element' -and $c.LocalName -eq 'grpSpPr') { $first = $c } }
-        $anchor = $first
-        foreach ($it in $sorted) {
-            $tree.RemoveChild($it.Sh) | Out-Null
-            if ($anchor.NextSibling) { $tree.InsertBefore($it.Sh, $anchor.NextSibling) | Out-Null } else { $tree.AppendChild($it.Sh) | Out-Null }
-            $anchor = $it.Sh
+    # puts the shapes of a slide in that reading order; -Rename also gives the text shapes their TextBox names. Returns what changed.
+    function Apply-SlideOrder([string]$part, [int]$slideIdx, [bool]$rename) {
+        $o = Get-SlideOrder $part $slideIdx
+        $orderChanged = $false
+        for ($i = 0; $i -lt $o.Sorted.Count; $i++) { if ($o.Sorted[$i].Order -ne $o.Items[$i].Order) { $orderChanged = $true; break } }
+        if ($orderChanged) {
+            $anchor = $o.Tree.SelectSingleNode('p:extLst', (Get-Nsm $o.Tree.OwnerDocument))
+            foreach ($it in $o.Sorted) {
+                [void]$o.Tree.RemoveChild($it.Node)
+                if ($anchor) { [void]$o.Tree.InsertBefore($it.Node, $anchor) } else { [void]$o.Tree.AppendChild($it.Node) }
+            }
         }
+        $renamed = 0
+        if ($rename) {
+            # a placeholder that was already on the slide is never renamed or replaced; only plain text boxes and the placeholders this tool just gave them
+            $tot = @($o.Sorted | Where-Object { $_.Nv -and ($_.Kind -eq 'TextBox' -or $_.Kind -eq 'Subtitle') -and ((-not $_.Node.SelectSingleNode('p:nvSpPr/p:nvPr/p:ph', (Get-Nsm $_.Node.OwnerDocument))) -or ($script:convNodes -contains $_.Node)) })
+            $byKind = @{}; foreach ($it in $tot) { if ($byKind.ContainsKey($it.Kind)) { $byKind[$it.Kind]++ } else { $byKind[$it.Kind] = 1 } }
+            $run = @{}
+            foreach ($it in $tot) {
+                if ($run.ContainsKey($it.Kind)) { $run[$it.Kind]++ } else { $run[$it.Kind] = 1 }
+                $nm = if ($byKind[$it.Kind] -eq 1) { $it.Kind } else { $it.Kind + ' ' + $run[$it.Kind] }
+                if ($it.Nv.GetAttribute('name') -ne $nm) { $it.Nv.SetAttribute('name', $nm); $renamed++ }
+            }
+        }
+        return [pscustomobject]@{ OrderChanged = $orderChanged; Renamed = $renamed; Count = $o.Sorted.Count }
+    }
+    # ---- loose text boxes get the placeholder their role needs: a credit line / other text gets a text (body) placeholder, a title gets the title placeholder,
+    # the only text on the first slide gets the subtitle placeholder. Position, size, text and look stay as they are (the box keeps its own xfrm; bullets and spacing the
+    # master would add to a body placeholder are switched off, and a missing font size is set to the 18 pt a text box has).
+    $script:convNodes = New-Object System.Collections.Generic.List[object]
+    function Convert-Loose([string]$part, [int]$slideIdx) {
+        $out = [pscustomobject]@{ Credit = 0; Title = 0; Subtitle = 0; Body = 0 }
+        $d = Get-Doc $part; $n = Get-Nsm $d
+        $tree = $d.SelectSingleNode('//p:cSld/p:spTree', $n)
+        $hasTitle = $false; $hasSub = $false; $used = New-Object System.Collections.Generic.List[int]; $loose = New-Object System.Collections.Generic.List[object]
+        foreach ($sh in (Shape-Children $tree)) {
+            if ($sh.LocalName -ne 'sp') { continue }
+            $ph = $sh.SelectSingleNode('p:nvSpPr/p:nvPr/p:ph', $n)
+            if ($ph) {
+                if (@('title', 'ctrTitle') -contains $ph.GetAttribute('type')) { $hasTitle = $true }
+                if ($ph.GetAttribute('type') -eq 'subTitle') { $hasSub = $true }
+                $ix = $ph.GetAttribute('idx'); if ($ix -match '^\d+$') { $used.Add([int]$ix) }
+            } elseif ((Shape-Text $sh).Trim()) { $loose.Add($sh) }
+        }
+        if ($loose.Count -eq 0) { return $out }
+        $layout = Rel-Target $part 'slideLayout'; $layHasSub = $false
+        if ($layout) {
+            $ld = Get-Doc $layout; if ($ld) {
+                $ln = Get-Nsm $ld
+                foreach ($p2 in @($ld.SelectNodes('//p:sp/p:nvSpPr/p:nvPr/p:ph', $ln))) {
+                    $ix = $p2.GetAttribute('idx'); if ($ix -match '^\d+$') { $used.Add([int]$ix) }
+                    if ($p2.GetAttribute('type') -eq 'subTitle') { $layHasSub = $true }
+                }
+            }
+        }
+        $next = 10; foreach ($u in $used) { if ($u -ge $next) { $next = $u + 1 } }
+        # the topmost loose box is the title when the slide has none and it sits in the top fifth of the slide
+        $sldH = 6858000.0; $mH = [regex]::Match($pres, '<p:sldSz\s[^>]*?cy="(\d+)"'); if ($mH.Success) { $sldH = [double]$mH.Groups[1].Value }
+        $order = @($loose | Sort-Object { $b = Get-Bounds $_ $part; if ($b) { [double]$b[1] } else { 1e12 } })
+        $subDone = $false
+        foreach ($sh in $order) {
+            $text = (Shape-Text $sh).Trim()
+            $b = Get-Bounds $sh $part
+            $role = 'body'
+            if ($text -match '^(\u00A9|\(c\)|credit|source\s*:|photo|image\s+credit)' -or $text -match '^\s*.?\s*\u00A9') { $role = 'credit' }
+            elseif (-not $hasTitle -and $b -and ([double]$b[1] -lt ($sldH * 0.2))) { $role = 'title' }
+            elseif ($slideIdx -eq 0 -and $layHasSub -and -not $subDone -and -not $hasSub -and $loose.Count -eq 1) { $role = 'subtitle' }
+            $nvPr = $sh.SelectSingleNode('p:nvSpPr/p:nvPr', $n); $ph = $d.CreateElement('p', 'ph', $nsP)
+            if ($role -eq 'title') { $ph.SetAttribute('type', 'title'); $hasTitle = $true }
+            elseif ($role -eq 'subtitle') { $ph.SetAttribute('type', 'subTitle'); $ph.SetAttribute('idx', '1'); $subDone = $true }
+            else { $ph.SetAttribute('type', 'body'); $ph.SetAttribute('sz', 'quarter'); $ph.SetAttribute('idx', [string]$next); $next++ }
+            [void]$nvPr.PrependChild($ph); $script:convNodes.Add($sh)
+            $cnv = $sh.SelectSingleNode('p:nvSpPr/p:cNvSpPr', $n)
+            if ($cnv) {
+                if ($cnv.GetAttribute('txBox')) { [void]$cnv.Attributes.RemoveNamedItem('txBox') }
+                if (-not $cnv.SelectSingleNode('a:spLocks', $n)) { $lk = $d.CreateElement('a', 'spLocks', $nsA); $lk.SetAttribute('noGrp', '1'); [void]$cnv.AppendChild($lk) }
+            }
+            if ($role -eq 'title') {
+                $nv = $sh.SelectSingleNode('p:nvSpPr/p:cNvPr', $n); if ($nv -and $nv.GetAttribute('name') -notmatch '^Title') { $nv.SetAttribute('name', 'Title 1') }
+            }
+            if ($role -ne 'title') {
+                foreach ($para in @($sh.SelectNodes('p:txBody/a:p', $n))) {
+                    $pPr = $para.SelectSingleNode('a:pPr', $n)
+                    if (-not $pPr) { $pPr = $d.CreateElement('a', 'pPr', $nsA); [void]$para.PrependChild($pPr) }
+                    if (-not $pPr.HasAttribute('marL')) { $pPr.SetAttribute('marL', '0') }
+                    if (-not $pPr.HasAttribute('indent')) { $pPr.SetAttribute('indent', '0') }
+                    if (-not $pPr.SelectSingleNode('a:spcBef', $n)) {
+                        $sb = $d.CreateElement('a', 'spcBef', $nsA); $sp = $d.CreateElement('a', 'spcPts', $nsA); $sp.SetAttribute('val', '0'); [void]$sb.AppendChild($sp)
+                        $after = $pPr.SelectSingleNode('a:lnSpc', $n)
+                        if ($after) { [void]$pPr.InsertAfter($sb, $after) } else { [void]$pPr.PrependChild($sb) }
+                    }
+                    if (-not ($pPr.SelectSingleNode('a:buNone', $n) -or $pPr.SelectSingleNode('a:buChar', $n) -or $pPr.SelectSingleNode('a:buAutoNum', $n))) {
+                        $bu = $d.CreateElement('a', 'buNone', $nsA)
+                        $anchor = $null; foreach ($nm in @('buFont', 'buClr', 'buSzPct', 'buSzPts', 'buSzTx', 'spcAft', 'spcBef', 'lnSpc')) { $anchor = $pPr.SelectSingleNode('a:' + $nm, $n); if ($anchor) { break } }
+                        if ($anchor) { [void]$pPr.InsertAfter($bu, $anchor) } else { [void]$pPr.PrependChild($bu) }
+                    }
+                    foreach ($rp in @($para.SelectNodes('a:r/a:rPr', $n))) { if (-not $rp.HasAttribute('sz')) { $rp.SetAttribute('sz', '1800') } }
+                }
+            }
+            if ($role -eq 'credit') { $out.Credit++ } elseif ($role -eq 'title') { $out.Title++ } elseif ($role -eq 'subtitle') { $out.Subtitle++ } else { $out.Body++ }
+        }
+        return $out
     }
     function Mark-Dirty([string]$part) { $dirty[$part] = $true }
     function Text-Bag($d) { $n = Get-Nsm $d; return ((@($d.SelectNodes('//a:t', $n)) | ForEach-Object { $_.InnerText } | Sort-Object) -join "`n") }
@@ -313,30 +461,51 @@ try {
                 $status = 'Fixed'; $why = 'Moved the title to the start of the reading order. Nothing was moved on the slide and no text changed.'
             }
         }
-        elseif ($f.Cond -match '(?i)reading order may not match') {
-            $tree = $d.SelectSingleNode('//p:cSld/p:spTree', (Get-Nsm $d)); $sh = Shape-Children $tree
-            $w = Get-WantedOrder $sh $part
-            if ($null -eq $w) { $why = 'The position of some shapes could not be read, so the order was not changed.' }
-            elseif ($w -is [string]) { $why = 'Some shapes overlap, so changing their order could change how the slide looks. Please set the order in the Selection Pane.' }
-            else {
-                $same = $true; for ($i = 0; $i -lt $w.Count; $i++) { if (-not [object]::ReferenceEquals($w[$i].Sh, $sh[$i])) { $same = $false; break } }
-                if ($same) { $status = 'False positive (likely)'; $why = 'The reading order already follows the visual order (title first, then top to bottom, left to right).' }
-                else { Apply-Order $tree $w; Mark-Dirty $part; $status = 'Fixed'; $why = 'Put the ' + $w.Count + ' shapes in reading order (title first, then top to bottom, left to right). The shapes do not overlap, so nothing changes on screen, and no text changed.' }
-            }
-        }
-        elseif ($f.Cond -match '(?i)loose text box') {
-            $tree = $d.SelectSingleNode('//p:cSld/p:spTree', (Get-Nsm $d)); $sh = Shape-Children $tree
-            $loose = @(); foreach ($s in $sh) { if ($s.LocalName -eq 'sp' -and -not $s.SelectSingleNode('p:nvSpPr/p:nvPr/p:ph', (Get-Nsm $d)) -and (Shape-Text $s).Trim()) { $loose += $s } }
-            $cr = [string][char]169
-            $credit = $true; foreach ($s in $loose) { if ((Shape-Text $s).Trim() -notmatch ('(?i)^(' + $cr + '|\(c\)|source|photo|credit|courtesy|image|reprinted|used with)')) { $credit = $false } }
-            $w = Get-WantedOrder $sh $part
-            $okOrder = $false
-            if ($w -and -not ($w -is [string])) { $okOrder = $true; for ($i = 0; $i -lt $w.Count; $i++) { if (-not [object]::ReferenceEquals($w[$i].Sh, $sh[$i])) { $okOrder = $false; break } } }
-            if ($loose.Count -gt 0 -and $credit) { $status = 'False positive (likely)'; $why = 'The text box(es) are credit or source lines, which normally sit next to their picture as text boxes. Reading order was checked.' }
-            elseif ($okOrder) { $status = 'False positive (likely)'; $why = 'The text boxes are already in the right reading order (title first, then top to bottom, left to right). Moving the text into placeholders would change the layout, so it was left as it is.' }
-            else { $why = 'The text boxes are not in a clear reading order and the slide has overlapping or unreadable shapes. Please check the Selection Pane.' }
+        elseif ($f.Cond -match '(?i)reading order may not match|loose text box') {
+            # handled after the other findings: the slide gets the SLID Macro reading order and shape names in one go
+            $status = 'DEFER'
         }
         } catch { $status = 'Not fixed - needs a person'; $why = 'The tool could not process this finding: ' + $_.Exception.Message }
+        $res[$f.Row] = @{ Status = $status; Why = $why; Sl = $sl; Part = $part }
+    }
+    # reading order + names (SLID Macro rules) once per slide, then every deferred finding on that slide gets the result
+    $slideDone = @{}
+    $looseParts = @{}; foreach ($f in $findings) { if ($res[$f.Row].Status -eq 'DEFER' -and $f.Cond -match '(?i)loose text box' -and $res[$f.Row].Part) { $looseParts[$res[$f.Row].Part] = $true } }
+    foreach ($f in $findings) {
+        if ($res[$f.Row].Status -ne 'DEFER') { continue }
+        $part = $res[$f.Row].Part; $why = ''; $status = 'Not fixed - needs a person'
+        try {
+            if (-not $part) { $why = 'The slide named in this finding was not found in the deck.' }
+            else {
+                if (-not $slideDone.ContainsKey($part)) {
+                    $idx = [int]$res[$f.Row].Sl - 1
+                    $cv = $null
+                    if ($looseParts.ContainsKey($part)) { $cv = Convert-Loose $part $idx; if ($cv.Credit + $cv.Title + $cv.Subtitle + $cv.Body) { Mark-Dirty $part } }
+                    $slideDone[$part] = Apply-SlideOrder $part $idx $true
+                    $slideDone[$part] | Add-Member -NotePropertyName Conv -NotePropertyValue $cv
+                    if ($slideDone[$part].OrderChanged -or $slideDone[$part].Renamed) { Mark-Dirty $part }
+                }
+                $r = $slideDone[$part]; $isLoose = ($f.Cond -match '(?i)loose text box')
+                $cvn = 0; if ($r.Conv) { $cvn = $r.Conv.Credit + $r.Conv.Title + $r.Conv.Subtitle + $r.Conv.Body }
+                if ($isLoose -and $cvn) {
+                    $status = 'Fixed'; $bits = @()
+                    if ($r.Conv.Credit) { $bits += ('a text placeholder for ' + $r.Conv.Credit + ' credit line(s)') }
+                    if ($r.Conv.Title) { $bits += 'the title placeholder for the slide title' }
+                    if ($r.Conv.Subtitle) { $bits += 'the subtitle placeholder for the subtitle' }
+                    if ($r.Conv.Body) { $bits += ('a text placeholder for ' + $r.Conv.Body + ' text box(es)') }
+                    $why = 'Gave ' + ($bits -join ', ') + ', named TextBox in the Selection Pane and placed in the reading order. Text, position, size and look are unchanged.'
+                } elseif ($r.OrderChanged -or $r.Renamed) {
+                    $status = 'Fixed'
+                    $why = 'Put the shapes in the reading order SLID Macro uses (title first, then column by column or top to bottom, left to right; anything sitting behind a picture stays behind it)'
+                    if ($r.Renamed) { $why += ' and named the text boxes TextBox in the Selection Pane (TextBox 1, TextBox 2 when there are several)' }
+                    $why += '. Credit lines are text boxes too. Text, position, size and look are unchanged.'
+                } else {
+                    $status = 'False positive (likely)'
+                    if ($isLoose) { $why = 'The text boxes are already in the correct reading order and named TextBox in the Selection Pane. Credit lines normally stay as text boxes, so nothing was changed.' }
+                    else { $why = 'The reading order already follows the visual order (title first, then the layout of the slide).' }
+                }
+            }
+        } catch { $why = 'The tool could not process this finding: ' + $_.Exception.Message }
         $res[$f.Row] = @{ Status = $status; Why = $why }
     }
 
