@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="3.4">
+<meta name="s4c-hub-version" content="3.6">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -225,6 +225,10 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
 /* toast + offline */
 .toasts{position:fixed;right:22px;bottom:22px;display:flex;flex-direction:column;gap:10px;z-index:50}
 .toast{display:flex;gap:11px;align-items:flex-start;min-width:300px;max-width:420px;background:var(--card);border:1px solid var(--stroke);border-radius:14px;box-shadow:var(--sh3);padding:13px 16px;animation:tin .22s ease-out}
+.tclose,.xbtn{margin-left:auto;align-self:flex-start;border:0;background:transparent;color:var(--fg3);font-size:20px;line-height:1;width:26px;height:26px;border-radius:8px;cursor:pointer;flex:none}
+.tclose:hover,.xbtn:hover{background:rgba(0,0,0,.08);color:var(--fg)}
+.rnc{position:relative}.rnc .xbtn{position:absolute;top:8px;right:10px;margin:0}
+.mbar .xbtn{position:relative;z-index:1}
 .toast b{display:block;font-weight:600}
 .toast span{font-size:13px;color:var(--fg2)}
 .toast svg.ok{color:var(--ok)}.toast svg.err{color:var(--err)}.toast svg.inf{color:var(--brand)}.toast svg.warn{color:var(--warn)}
@@ -411,7 +415,7 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
             <button class="btn pri" id="btnRun"><svg class="s"><use href="#i-run"/></svg><span id="runTxt">Run</span></button>
             <button class="btn" id="btnCheck"><svg class="s"><use href="#i-sync"/></svg>Check for updates</button>
           </div>
-          <div class="mbar" id="mbar"><svg class="i" id="mbarIcon"><use href="#i-info"/></svg><div><span id="mbarText"></span><span class="r" id="mbarSub"></span></div><div class="prog"></div></div>
+          <div class="mbar" id="mbar"><svg class="i" id="mbarIcon"><use href="#i-info"/></svg><div><span id="mbarText"></span><span class="r" id="mbarSub"></span></div><button type="button" class="xbtn" aria-label="Close" onclick="mbar(null)">&times;</button><div class="prog"></div></div>
         </div>
         <div class="hero-r" id="stage"><div class="art" id="art"></div>
           <div class="legend"><span><i style="background:#d98b3a"></i>to GitHub</span><span><i style="background:#5f9a52"></i>update back</span><span><i style="background:var(--fg3)"></i>your file</span></div></div>
@@ -561,7 +565,7 @@ const unitTxt=x=>{const n=parseInt(x.count);if(isNaN(n))return '—';return n+' 
 const todayRows=()=>state.today===state.day?state.rows:(state.todayRows||[]);
 
 function toast(kind,title,text,action,ms){const ic={ok:'i-ok',err:'i-err',inf:'i-info',warn:'i-warn'}[kind];const d=document.createElement('div');d.className='toast';
-  d.innerHTML='<svg class="i '+kind+'"><use href="#'+ic+'"/></svg><div><b>'+esc(title)+'</b>'+(text?'<span>'+esc(text)+'</span>':'')+'</div>';if(action){const b=document.createElement('button');b.className='btn pri';b.style.cssText='height:30px;padding:0 12px;margin-left:8px;align-self:center';b.textContent=action[0];b.onclick=action[1];d.appendChild(b)}$('toasts').appendChild(d);setTimeout(()=>d.remove(),ms||5000)}
+  d.innerHTML='<svg class="i '+kind+'"><use href="#'+ic+'"/></svg><div><b>'+esc(title)+'</b>'+(text?'<span>'+esc(text)+'</span>':'')+'</div>';if(action){const b=document.createElement('button');b.className='btn pri';b.style.cssText='height:30px;padding:0 12px;margin-left:8px;align-self:center';b.textContent=action[0];b.onclick=action[1];d.appendChild(b)}const x=document.createElement('button');x.className='tclose';x.type='button';x.setAttribute('aria-label','Close');x.innerHTML='&times;';x.onclick=()=>d.remove();d.appendChild(x);$('toasts').appendChild(d);setTimeout(()=>d.remove(),ms||5000)}
 function mbar(kind,text,sub){const m=$('mbar');if(!kind){m.className='mbar';return}m.className='mbar on '+kind;
   $('mbarIcon').innerHTML='<use href="#'+({ok:'i-ok',err:'i-err',warn:'i-warn',busy:'i-sync',info:'i-info'}[kind])+'"/>';$('mbarText').innerHTML=text;$('mbarSub').textContent=sub||''}
 
@@ -608,7 +612,7 @@ function ghInfo(f){const g=gh[f];if(!g)return {t:'Not checked',c:'',sub:'Checked
 function drawStats(){const t=TOOLS[cur];const mine=todayRows().filter(r=>r.tool===(t.key||t.name));const tt=totals(mine);const g=ghInfo(t.file);const last=mine.length?mine[mine.length-1].time:'';
   const n=t.unit==='pages'?tt.pages:tt.slides+tt.pages;
   $('stats').innerHTML=
-    '<div class="card stat"><small><svg><use href="#i-tag"/></svg>Version on this PC</small><b>'+esc(state.tools[t.file]||'—')+'</b><span>'+esc(t.file)+'</span></div>'+
+    '<div class="card stat"><small><svg><use href="#i-tag"/></svg>Version on this PC</small><b>'+esc(state.tools[t.file]||'—')+'</b><span style="word-break:break-all">'+esc(t.file)+'<br><small style="opacity:.7;text-transform:none;letter-spacing:0">'+esc(state.dir||'')+'</small></span></div>'+
     '<div class="card stat" title="'+esc(gh[t.file]&&gh[t.file].reason||'')+'"><small><svg><use href="#i-cloud"/></svg>GitHub</small><b class="'+g.c+'"><span class="dot '+g.c+'" style="display:inline-block"></span>'+esc(g.t)+'</b><span>'+esc(g.sub)+'</span></div>'+
     '<div class="card stat"><small><svg><use href="#i-file"/></svg>Files today</small><b>'+(tt.files||0)+'</b><span>'+(last?'Last saved at '+esc(last):'None yet today')+'</span></div>'+
     '<div class="card stat"><small><svg><use href="#i-slides"/></svg>'+(t.unit==='pages'?'Pages today':'Slides today')+'</small><b>'+(n||0)+'</b><span>'+(t.unit==='pages'?'As saved by Word':'Across today\'s decks')+'</span></div>';
@@ -733,7 +737,7 @@ function rnTitle(){const t=TOOLS.find(x=>x.file===rn.tool);
   return 'Fixing '+rn.total+(rn.total===1?' file':' files')+'...'}
 function rnDraw(){const c=$('rnCard');if(!rn||rn.tool!==TOOLS[cur].file){c.style.display='none';return}
   c.style.display='';
-  if(rn.mode!=='run'){c.className='rnc rnd'+(rn.mode==='bad'?' bad':'');c.innerHTML=rn.html;return}
+  if(rn.mode!=='run'){c.className='rnc rnd'+(rn.mode==='bad'?' bad':'');c.innerHTML=rn.html+'<button type="button" class="xbtn" aria-label="Close" onclick="rnClose()">&times;</button>';return}
   c.className='rnc';
   c.innerHTML='<div class="rnw"><svg viewBox="0 0 100 100" width="92" height="92"><circle cx="50" cy="50" r="42" fill="none" stroke="var(--stroke2)" stroke-width="9"/><circle id="rnArc" cx="50" cy="50" r="42" fill="none" stroke="#b4532e" stroke-width="9" stroke-linecap="round" stroke-dasharray="'+RC+'" stroke-dashoffset="'+RC+'" transform="rotate(-90 50 50)" style="transition:stroke-dashoffset .7s"/></svg><b id="rnPct">0%</b><i class="rno"></i></div>'+
    '<div class="rnt"><h4 id="rnH"></h4><p id="rnP"></p><div class="rns" id="rnS">'+(RN_STEPS[rn.tool]||RN_STEPS.d).map(x=>'<span>'+esc(disp(x))+'</span>').join('')+'</div><div id="rnB"></div></div>';
@@ -743,6 +747,7 @@ function rnPaint(){if(!rn||rn.mode!=='run'||!$('rnArc'))return;
   $('rnP').textContent=rn.serving?'Finish in your browser, then press the button below.':(rn.cur||'');
   [...$('rnS').children].forEach((x,k)=>{x.className=k<rn.stage?'dn':k===rn.stage?'on':''});
   $('rnB').innerHTML=rn.serving?'<button class="btn" onclick="rnStop()">I have finished in the review page</button>':''}
+function rnClose(){const c=$('rnCard');c.style.display='none';if(rn&&rn.mode!=='run')rn=null}
 function rnStop(){if(job)api('/api/stop?id='+job.id)}
 function rnUpdate(r){if(!rn)return;const p=r.progress||{total:rn.total,done:0};let stage=0,pct=rn.pct;
   if(r.state==='running'){const el=(Date.now()-rn.t0)/1000;stage=1;
@@ -810,7 +815,7 @@ async function poll(){
 async function load(keep){const day=$('day').value||'';const r=await (await api('/api/state'+(day?'?day='+day:''))).json();
   const tv={};r.tools.forEach(x=>tv[x.file]=x.version);
   let tr=r.rows||[];if(r.day!==r.today){try{tr=(await (await api('/api/state')).json()).rows||[]}catch(e){}}
-  state={tools:tv,rows:r.rows||[],day:r.day,today:r.today,todayRows:tr,user:r.user,pc:r.pc};
+  state={tools:tv,rows:r.rows||[],day:r.day,today:r.today,todayRows:tr,user:r.user,pc:r.pc,dir:r.dir};
   if(!$('day').value)$('day').value=r.today;
   drawPersona();$('upc').textContent=r.pc||'This PC';
   drawWork();if(keep){drawNav();drawStats()}else select(cur);drawGreet();drawGoal();achievements()}

@@ -1,5 +1,5 @@
 # S4C HUB SCRIPT - the S4C Tools window. Runs a small page on this PC only (http://localhost) and opens it
-# S4C-FILE-VERSION: 3.8
+# S4C-FILE-VERSION: 3.9
 # in the browser. From the page you pick a tool, it checks GitHub for that one tool, then opens the tool
 # in its own window exactly as before. Close this window to close S4C Tools.
 $ErrorActionPreference = 'Stop'
@@ -360,7 +360,7 @@ while ($listener.IsListening -and -not $quit) {
             '/api/state' {
                 $day = if ($q['day']) { $q['day'] } else { (Get-Date).ToString('yyyy-MM-dd', $ci) }
                 $tl = @(); foreach ($k in $TOOLS.Keys) { $tl += [ordered]@{ file = $k; version = (Get-ToolVersion $k) } }
-                $body = [ordered]@{ day = $day; today = (Get-Date).ToString('yyyy-MM-dd', $ci); user = $env:USERNAME; pc = $env:COMPUTERNAME; tools = $tl; rows = (Get-LogRows $day) }
+                $body = [ordered]@{ day = $day; today = (Get-Date).ToString('yyyy-MM-dd', $ci); user = $env:USERNAME; pc = $env:COMPUTERNAME; dir = $here; tools = $tl; rows = (Get-LogRows $day) }
                 Send $res 200 'application/json; charset=utf-8' (ToJson $body) $null
             }
             '/api/days' {
