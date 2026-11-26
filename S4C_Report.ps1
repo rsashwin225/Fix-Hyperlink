@@ -1,5 +1,5 @@
 # S4C REPORT SCRIPT - makes the daily work report from the work log the tools keep on this PC.
-# S4C-FILE-VERSION: 1.2
+# S4C-FILE-VERSION: 1.4
 # The log is %LOCALAPPDATA%\S4C_Tools\WorkLog\worklog.tsv (one line per file a tool saved).
 $ErrorActionPreference = 'Stop'
 $ci = [Globalization.CultureInfo]::InvariantCulture
@@ -26,7 +26,7 @@ if (Test-Path -LiteralPath $logPath) {
     foreach ($l in [IO.File]::ReadAllLines($logPath, [Text.Encoding]::UTF8)) {
         $c = $l.Split("`t")
         if ($c.Count -lt 8 -or $c[0] -ne $key) { continue }
-        $rows += [pscustomobject]@{ Time = $c[1]; User = $c[2]; Tool = $c[3]; In = $c[4]; Out = $c[5]; Count = $c[6]; Unit = $c[7] }
+        $rows += [pscustomobject]@{ Time = $c[1]; User = $c[2]; Tool = $(switch ($c[3]) { 'Word Fixer' { 'Word Tool' } 'SLID Macro' { 'SLID Tool' } 'IMBK Macro' { 'IMBK Tool' } 'Issue Fixer' { 'Issues Fix' } 'Link Fixer' { 'Hyperlink Tool' } default { $c[3] } }); In = $c[4]; Out = $c[5]; Count = $c[6]; Unit = $c[7] }
     }
 }
 
@@ -41,7 +41,7 @@ foreach ($r in $rows) {
     if (-not $groups.Contains($k)) { $groups[$k] = [pscustomobject]@{ Name = $leaf; Count = ''; Unit = $r.Unit; Tools = New-Object System.Collections.Generic.List[string]; First = $r.Time; Last = $r.Time } }
     $g = $groups[$k]
     if ($leaf.Length -lt $g.Name.Length) { $g.Name = $leaf }
-    if ($r.Count -ne '') { $g.Count = $r.Count }
+    if ($r.Count -ne '') { $g.Count = $r.Count; $g.Unit = $r.Unit }
     if (-not $g.Tools.Contains($r.Tool)) { $g.Tools.Add($r.Tool) }
     if ([string]::CompareOrdinal($r.Time, $g.First) -lt 0) { $g.First = $r.Time }
     if ([string]::CompareOrdinal($r.Time, $g.Last) -gt 0) { $g.Last = $r.Time }

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="3.0">
+<meta name="s4c-hub-version" content="3.4">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -380,7 +380,7 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
 
 <header class="hdr">
   <button class="waffle" title="S4C Tools"><svg class="i"><use href="#i-waffle"/></svg></button>
-  <div class="appname"><b>S4C Tools</b><span>S4Carlisle remediation</span><em class="testing">Testing build</em></div>
+  <div class="appname"><b>S4C Tools</b><span>S4Carlisle remediation</span></div>
   <label class="hsearch"><svg class="s"><use href="#i-search"/></svg><input id="q" placeholder="Search tools"><kbd>Ctrl+K</kbd></label>
   <div class="sp"></div>
   <button class="hbtn pill" id="updAll" title="Check GitHub for a newer S4C Tools and newer versions of every tool"><svg class="i"><use href="#i-sync"/></svg><span>Check for updates</span></button>
@@ -456,7 +456,7 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
       <div class="help">
         <div class="card"><h3><svg class="i"><use href="#i-run"/></svg>Pick a tool and press Run</h3><p>Choose a tool on the left and press <b>Run</b> (or Enter). S4C Tools checks GitHub for that one tool, then opens it in its own window, exactly as before. Pick your files in that window.</p></div>
         <div class="card"><h3><svg class="i"><use href="#i-sync"/></svg>Updates from GitHub</h3><p>Only the tool you choose is checked. The bar at the top says <b>Newest version</b>, <b>Updated</b> or <b>Not connected</b>. If GitHub can't be reached, the copy on this PC is used and the tool still runs.</p></div>
-        <div class="card"><h3><svg class="i"><use href="#i-shield"/></svg>Your files are safe</h3><p>Each tool saves a new copy next to your file (<code>Fixed</code>, <code>Remediated</code>, <code>AltText</code>, <code>Links</code>). IMBK Macro works on the file itself and keeps a backup named <code>_BEFORE_IMBKfix</code>.</p></div>
+        <div class="card"><h3><svg class="i"><use href="#i-shield"/></svg>Your files are safe</h3><p>Each tool saves a new copy next to your file (<code>Fixed</code>, <code>Remediated</code>, <code>AltText</code>, <code>Links</code>). IMBK Tool works on the file itself and keeps a backup named <code>_BEFORE_IMBKfix</code>.</p></div>
         <div class="card"><h3><svg class="i"><use href="#i-cal"/></svg>Daily report</h3><p>Every saved file is noted with its slide or page count. Open <b>Today's work</b> and press <b>Download report</b>. A chapter run through several tools counts once.</p></div>
         <div class="card"><h3><svg class="i"><use href="#i-window"/></svg>Keep the S4C Tools window open</h3><p>This page runs from the small S4C Tools window. Closing that window closes S4C Tools. Double-click <code>S4C Tools.cmd</code> to open it again.</p></div>
         <div class="card"><h3><svg class="i"><use href="#i-help"/></svg>Something not working?</h3><p>Use <code>S4C Tools - classic menu.cmd</code> in the same folder; it runs the same tools from a text menu. Send a screenshot of any red message to Hari.</p></div>
@@ -495,24 +495,24 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
 const TOKEN='__S4C_TOKEN__';
 const GROUPS=['Word','PowerPoint','Word and PowerPoint'];
 const TOOLS=[
- {file:'Word_Fixer.ps1',drop:'.docx',art:'doc',name:'Word Fixer',group:0,letter:'W',tile:'var(--word)',out:'<name> Fixed.docx',unit:'pages',
+ {file:'Word_Fixer.ps1',drop:'.docx',art:'doc',name:'Word Tool',key:'Word Fixer',group:0,letter:'W',tile:'var(--word)',out:'<name> Fixed.docx',unit:'pages',
   tagline:'Turns typed headings and outlines into real Word headings and list levels.',
   intro:['Many chapters arrive with headings that are only bold text and lists typed by hand (<code>I.</code> <code>A.</code> <code>1.</code> <code>a.</code>), so a screen reader hears no structure.',
-         'Word Fixer makes the first two lines the Title and section titles Heading 1 (Heading 2 only for a sub-heading), and turns typed outlines into real list levels.'],
+         'Word Tool makes the first two lines the Title and section titles Heading 1 (Heading 2 only for a sub-heading), and turns typed outlines into real list levels.'],
   idea:'The text is never changed. A safety check compares every word before the copy is saved.',
   steps:[['Choose files','In the tool window'],['Check GitHub','Newest version of this tool'],['Fix headings','Title, Heading 1, Heading 2'],['Fix list levels','I, A, 1, a, i, (a), (i)'],['Save a copy','Fixed.docx + report'],['Note in today\'s work','For the daily report']],
   checks:['Title is the first two lines','Section titles are Heading 1','No heading level is skipped','Roman numerals are lists, not headings','List ladder: I, A, 1, a, i, (a), (i)']},
- {file:'SLID_Macro.ps1',drop:'.pptx',art:'slide',name:'SLID Macro',group:1,letter:'P',tile:'var(--ppt)',out:'<name> Remediated.pptx',unit:'slides',
+ {file:'SLID_Macro.ps1',drop:'.pptx',art:'slide',name:'SLID Tool',key:'SLID Macro',group:1,letter:'P',tile:'var(--ppt)',out:'<name> Remediated.pptx',unit:'slides',
   tagline:'Slide titles, shape names and reading order. SDRS credit lines too.',
   intro:['Repeated slide titles sound identical to a screen reader, shapes named <code>Rectangle 6</code> say nothing, and loose caption and credit boxes are read in the wrong place.',
-         'SLID Macro adds <code>(1 of 10)</code> to repeated titles, names shapes Title, TextBox and Picture in reading order, sets the language to English (US) and fills the document title.'],
+         'SLID Tool adds <code>(1 of 10)</code> to repeated titles, names shapes Title, TextBox and Picture in reading order, sets the language to English (US) and fills the document title.'],
   idea:'For SDRS files (the file name contains SDRS) it also turns sideways photo credits upright and places them under their picture, so the reading order is title, picture, credit, caption. Other files are not touched this way.',
   steps:[['Pick files','PowerPoint decks'],['Check GitHub','Newest version of this tool'],['Number titles','(1 of N) on repeated titles'],['Name shapes','Title, TextBox, Picture'],['Reading order','Title, picture, credit, caption'],['Save','Remediated.pptx']],
   checks:['Repeated titles end in (1 of N)','Shapes are named in reading order','SDRS files: credit sits under its picture','Language is English (US) and the document title is set']},
- {file:'IMBK_Macro.ps1',drop:'.pptx',art:'layout',name:'IMBK Macro',group:1,letter:'P',tile:'var(--ppt)',out:'<name> (same file, backup kept)',unit:'slides',
+ {file:'IMBK_Macro.ps1',drop:'.pptx',art:'layout',name:'IMBK Tool',key:'IMBK Macro',group:1,letter:'P',tile:'var(--ppt)',out:'<name> (same file, backup kept)',unit:'slides',
   tagline:'IMBK chapter decks: figures, captions and credits laid out.',
   intro:['IMBK decks have figures, captions and credits that must sit in a fixed layout and be real placeholders.',
-         'IMBK Macro lays them out, numbers repeated titles, names shapes, sets the language and the document title.'],
+         'IMBK Tool lays them out, numbers repeated titles, names shapes, sets the language and the document title.'],
   idea:'It works on the file itself and keeps a backup named <code>_BEFORE_IMBKfix</code> next to it.',
   steps:[['Pick files','IMBK decks'],['Check GitHub','Newest version of this tool'],['Lay out figures','Captions and credits'],['Name shapes','Title, TextBox, Picture'],['Save','Same file + backup']],
   checks:['Figures, captions and credits are in place','Repeated titles end in (1 of N)','A _BEFORE_IMBKfix backup exists']},
@@ -523,14 +523,14 @@ const TOOLS=[
   idea:'Pictures that already have alt text are kept, and rows marked Decorative are marked decorative.',
   steps:[['Choose deck and Excel','In the tool window'],['Check GitHub','Newest version of this tool'],['Match figures','By figure number first'],['Review page','Confirm or change each match'],['Save a copy','AltText.pptx + report'],['Note in today\'s work','For the daily report']],
   checks:['Every picture has alt text or is decorative','Figure numbers matched the right rows','"Not sure" items were written by hand','Long descriptions came through']},
- {file:'Link_Fixer.ps1',drop:['.docx','.pptx'],art:'link',name:'Link Fixer',group:2,letter:'L',tile:'var(--both)',out:'<name> Links.docx / .pptx',unit:'slides',
+ {file:'Link_Fixer.ps1',drop:['.docx','.pptx'],art:'link',name:'Hyperlink Tool',key:'Link Fixer',group:2,letter:'L',tile:'var(--both)',out:'<name> Links.docx / .pptx',unit:'slides',
   tagline:'Replaces raw web addresses and "click here" with meaningful link text.',
   intro:['Screen reader users often jump from link to link. "Click here", "link" or a long web address tells them nothing about where it goes.',
          'Link Fixer checks each address, reads the page title and suggests clear text. You edit it on the review page and press Apply.'],
   idea:'Only the visible text changes; the address and formatting stay. Only the web address is looked up online, never your document.',
   steps:[['Choose files','Word or PowerPoint'],['Check GitHub','Newest version of this tool'],['Check links','Reads each page title'],['Review page','Edit the suggested text'],['Save a copy','Links.docx / .pptx'],['Note in today\'s work','For the daily report']],
   checks:['No link text is a bare web address','No "click here" or "read more"','PDF links end in .pdf','Broken links were reported']},
- {file:'Issue_Fixer.ps1',drop:['.pptx','.xlsx'],art:'slide',name:'Issue Fixer',group:1,letter:'P',tile:'var(--ppt)',out:'<name> Fixed.pptx + <name> Issue Report.xlsx',unit:'slides',
+ {file:'Issue_Fixer.ps1',drop:['.pptx','.xlsx'],art:'slide',name:'Issues Fix',key:'Issue Fixer',group:1,letter:'P',tile:'var(--ppt)',out:'<name> Fixed.pptx + <name> Issue Report.xlsx',unit:'slides',
   tagline:'Reads the tester\'s issue sheet, fixes what is really wrong and says what is a false positive.',
   intro:['Testers send back a sheet of findings. Opening the deck to check each one by hand, and to see which are false positives, takes a long time.',
          'Choose the issue sheet (.xlsx) and the deck (.pptx) together. The tool checks every finding on its slide, fixes the ones it safely can, and fills in the sheet\'s Status and Comment columns.'],
@@ -538,6 +538,7 @@ const TOOLS=[
   steps:[['Choose deck and sheet','Together'],['Check GitHub','Newest version of this tool'],['Check each finding','On its slide'],['Fix what is safe','Order, language, colour'],['Save','Fixed.pptx + Issue Report.xlsx'],['Note in today\'s work','For the daily report']],
   checks:['Every Fixed finding looks right on its slide','False positives were confirmed','Not fixed items were handled by hand']}
 ];
+const disp=x=>{const t=TOOLS.find(q=>(q.key||q.name)===x);return t?t.name:x};
 let state={tools:{},rows:[],day:'',today:''}, cur=0, job=null, gh={}, phase=-1, doneFor='';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -547,7 +548,7 @@ async function api(p){const r=await fetch(p,{headers:{'X-S4C':TOKEN}});if(!r.ok)
 const SUF=/(\s+(Remediated|AltText|Links|Fixed)|_BEFORE_IMBKfix\d*)+$/i;
 function groupRows(rows){const m=new Map();rows.forEach(r=>{const dot=r.file.lastIndexOf('.');const stem=(dot>0?r.file.slice(0,dot):r.file).replace(SUF,'');const ext=dot>0?r.file.slice(dot):'';const k=(stem+ext).toLowerCase();
   if(!m.has(k))m.set(k,{key:k,name:r.file,count:'',unit:r.unit,tools:[],first:r.time,last:r.time});const g=m.get(k);
-  if(r.file.length<g.name.length)g.name=r.file;if(r.count!=='')g.count=r.count;if(!g.tools.includes(r.tool))g.tools.push(r.tool);if(r.time<g.first)g.first=r.time;if(r.time>g.last)g.last=r.time});return [...m.values()]}
+  if(r.file.length<g.name.length)g.name=r.file;if(r.count!==''){g.count=r.count;g.unit=r.unit}if(!g.tools.includes(r.tool))g.tools.push(r.tool);if(r.time<g.first)g.first=r.time;if(r.time>g.last)g.last=r.time});return [...m.values()]}
 function totals(rows){const g=groupRows(rows);let s=0,p=0;g.forEach(x=>{const n=parseInt(x.count)||0;if(x.unit==='slides')s+=n;else if(x.unit==='pages')p+=n});return {files:g.length,slides:s,pages:p,groups:g}}
 /* title from the file-name pattern: the part before the chapter / part / appendix marker (or a leading ISBN) */
 const CHAP=/[\s_.\-]*\b(?:ch(?:apter)?|chap|app(?:endix)?|part|unit|sec(?:tion)?|front|back|preface|index|glossary|intro(?:duction)?|ex(?:ercise)?)s?[\s_.\-]*(?:\d+|[a-z]\b)?.*$/i;
@@ -604,7 +605,7 @@ function drawNav(){const q=$('q').value.trim().toLowerCase();const tr=todayRows(
 function ghInfo(f){const g=gh[f];if(!g)return {t:'Not checked',c:'',sub:'Checked when you run the tool'};
   if(g.status==='latest'||g.status==='newer')return {t:'Connected',c:'ok',sub:g.message};if(g.status==='updated')return {t:'Updated',c:'ok',sub:g.message};
   if(g.status==='offline')return {t:'Not connected',c:'err',sub:'Using the copy on this PC'};if(g.status==='kept')return {t:'Kept local copy',c:'warn',sub:g.message};return {t:'Checked',c:'',sub:''}}
-function drawStats(){const t=TOOLS[cur];const mine=todayRows().filter(r=>r.tool===t.name);const tt=totals(mine);const g=ghInfo(t.file);const last=mine.length?mine[mine.length-1].time:'';
+function drawStats(){const t=TOOLS[cur];const mine=todayRows().filter(r=>r.tool===(t.key||t.name));const tt=totals(mine);const g=ghInfo(t.file);const last=mine.length?mine[mine.length-1].time:'';
   const n=t.unit==='pages'?tt.pages:tt.slides+tt.pages;
   $('stats').innerHTML=
     '<div class="card stat"><small><svg><use href="#i-tag"/></svg>Version on this PC</small><b>'+esc(state.tools[t.file]||'—')+'</b><span>'+esc(t.file)+'</span></div>'+
@@ -735,7 +736,7 @@ function rnDraw(){const c=$('rnCard');if(!rn||rn.tool!==TOOLS[cur].file){c.style
   if(rn.mode!=='run'){c.className='rnc rnd'+(rn.mode==='bad'?' bad':'');c.innerHTML=rn.html;return}
   c.className='rnc';
   c.innerHTML='<div class="rnw"><svg viewBox="0 0 100 100" width="92" height="92"><circle cx="50" cy="50" r="42" fill="none" stroke="var(--stroke2)" stroke-width="9"/><circle id="rnArc" cx="50" cy="50" r="42" fill="none" stroke="#b4532e" stroke-width="9" stroke-linecap="round" stroke-dasharray="'+RC+'" stroke-dashoffset="'+RC+'" transform="rotate(-90 50 50)" style="transition:stroke-dashoffset .7s"/></svg><b id="rnPct">0%</b><i class="rno"></i></div>'+
-   '<div class="rnt"><h4 id="rnH"></h4><p id="rnP"></p><div class="rns" id="rnS">'+(RN_STEPS[rn.tool]||RN_STEPS.d).map(x=>'<span>'+esc(x)+'</span>').join('')+'</div><div id="rnB"></div></div>';
+   '<div class="rnt"><h4 id="rnH"></h4><p id="rnP"></p><div class="rns" id="rnS">'+(RN_STEPS[rn.tool]||RN_STEPS.d).map(x=>'<span>'+esc(disp(x))+'</span>').join('')+'</div><div id="rnB"></div></div>';
   rnPaint()}
 function rnPaint(){if(!rn||rn.mode!=='run'||!$('rnArc'))return;
   $('rnArc').style.strokeDashoffset=RC*(1-rn.pct/100);$('rnPct').textContent=Math.round(rn.pct)+'%';$('rnH').textContent=rnTitle();
@@ -767,7 +768,7 @@ function rnFinish(was,r){const it=dz.items;const ok=it.length&&it.every(x=>x.sta
   rnDraw()}
 function dzDone(was,r){const t=TOOLS.find(x=>x.file===was.tool);
   dz.items.filter(x=>x.state==='running').forEach(x=>{
-    const leaf=leafOf(x.path);const rows=(state.rows||[]).filter(q=>q.file===leaf&&q.tool===t.name);const q=rows[rows.length-1];
+    const leaf=leafOf(x.path);const rows=(state.rows||[]).filter(q=>q.file===leaf&&q.tool===(t.key||t.name));const q=rows[rows.length-1];
     const isDoc=/\.(pptx|docx)$/i.test(x.file.name);
     if(q){x.state='done';x.outPath=folderOf(x.path)+'\\'+q.out;x.msg=(q.out===q.file?'Fixed in place, backup kept':'Saved: '+q.out)+(q.count?'  ('+q.count+' '+q.unit+')':'');if(x.dirHandle&&q.out!==q.file)dzWriteBack(x);else if(x.dirHandle)x.msg+='  (in Documents\\S4C Output, not in your folder)'}
     else if(!isDoc){x.state='done';x.msg='Used'}
@@ -820,7 +821,7 @@ async function removeRow(b){const n=b.dataset.n,k=b.dataset.k,dy=($('day').value
 async function undoRemove(){try{const r=await (await api('/api/undelete')).json();await load(true);toast('ok','Put back',r.restored+' run'+(r.restored===1?'':'s')+' restored to the log')}catch(e){toast('err','Could not undo',e.message)}}
 function copyName(b){const n=b.dataset.n;if(navigator.clipboard)navigator.clipboard.writeText(n).then(()=>toast('ok','Copied',n))}
 function drawWork(){const tt=totals(state.rows);$('cFiles').textContent=tt.files;$('cSlides').textContent=tt.slides;$('cPages').textContent=tt.pages;$('cRuns').textContent=state.rows.length;
-  $('tbody').innerHTML=tt.groups.length?tt.groups.map((g,i)=>{const isW=/\.docx$/i.test(g.name);const ti=titleOf(g.name);return '<tr><td>'+(i+1)+'</td><td>'+(ti.shown?'<span class="ttlc" onclick="editTitle(\''+esc(ti.key).replace(/'/g,"\\'")+'\')" title="Click to rename this title">'+esc(ti.shown)+'</span>':'<span class="ttlc none" onclick="editTitle(\''+esc(ti.key).replace(/'/g,"\\'")+'\')">+ Add title</span>')+'</td><td><div class="fn"><span class="tile" style="background:'+(isW?'var(--word)':'var(--ppt)')+'">'+(isW?'W':'P')+'</span>'+esc(g.name)+'</div></td><td class="n">'+unitTxt(g)+'</td><td>'+g.tools.map(x=>'<span class="tag">'+esc(x)+'</span>').join('')+'</td><td>'+esc(g.first===g.last?g.first:g.first+' – '+g.last)+'</td><td class="n" style="white-space:nowrap"><button class="rm cp" onclick="copyName(this)" data-n="'+esc(g.name)+'" title="Copy the file name">Copy</button> <button class="rm" data-k="'+esc(g.key)+'" data-n="'+esc(g.name)+'" onclick="removeRow(this)" title="Remove this file from the log (use it when a file was run by mistake)">Remove</button></td></tr>'}).join(''):
+  $('tbody').innerHTML=tt.groups.length?tt.groups.map((g,i)=>{const isW=/\.docx$/i.test(g.name);const ti=titleOf(g.name);return '<tr><td>'+(i+1)+'</td><td>'+(ti.shown?'<span class="ttlc" onclick="editTitle(\''+esc(ti.key).replace(/'/g,"\\'")+'\')" title="Click to rename this title">'+esc(ti.shown)+'</span>':'<span class="ttlc none" onclick="editTitle(\''+esc(ti.key).replace(/'/g,"\\'")+'\')">+ Add title</span>')+'</td><td><div class="fn"><span class="tile" style="background:'+(isW?'var(--word)':'var(--ppt)')+'">'+(isW?'W':'P')+'</span>'+esc(g.name)+'</div></td><td class="n">'+unitTxt(g)+'</td><td>'+g.tools.map(x=>'<span class="tag">'+esc(disp(x))+'</span>').join('')+'</td><td>'+esc(g.first===g.last?g.first:g.first+' – '+g.last)+'</td><td class="n" style="white-space:nowrap"><button class="rm cp" onclick="copyName(this)" data-n="'+esc(g.name)+'" title="Copy the file name">Copy</button> <button class="rm" data-k="'+esc(g.key)+'" data-n="'+esc(g.name)+'" onclick="removeRow(this)" title="Remove this file from the log (use it when a file was run by mistake)">Remove</button></td></tr>'}).join(''):
     '<tr><td colspan="7" style="color:var(--fg3);padding:28px 16px">No files were saved by the tools on this day.</td></tr>'}
 async function report(){const day=$('day').value||state.today;try{const r=await api('/api/report?day='+day+'&name='+encodeURIComponent(LS.get('name',''))+'&titles='+encodeURIComponent(JSON.stringify(getTitles())));const b=await r.blob();
   const cd=r.headers.get('Content-Disposition')||'';const m=/filename="([^"]+)"/.exec(cd);const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=m?m[1]:'Work report.txt';document.body.appendChild(a);a.click();a.remove();toast('ok','Report downloaded',m?m[1]:'')}catch(e){toast('err','Could not make the report',e.message)}}
@@ -860,7 +861,7 @@ function closeName(){$('namebox').classList.remove('on');$('nameIn').blur()}
 function saveName(v){LS.set('name',(v||'').trim().slice(0,40));closeName();drawPersona();drawGreet();toast('ok','Name saved','Hello, '+firstName()+' 👋')}
 const getGoal=()=>{const g=LS.get('goal2',null);return (g&&g.n>0&&(g.unit==='slides'||g.unit==='pages'))?g:{unit:'slides',n:300}};
 const goalDone=tt=>getGoal().unit==='slides'?tt.slides:tt.pages;
-const TIPS=['Use the Slides / Pages switch under Today to pick how your goal is counted','Click your name at the top right to change it','Press Ctrl + K to run any tool from the keyboard','Right-click a tool for more options','Press D to download today\'s report','Press ? to see every shortcut','The original file is never changed by Word Fixer, SLID, Alt Text or Link Fixer','A chapter run through three tools still counts as one file'];
+const TIPS=['Use the Slides / Pages switch under Today to pick how your goal is counted','Click your name at the top right to change it','Press Ctrl + K to run any tool from the keyboard','Right-click a tool for more options','Press D to download today\'s report','Press ? to see every shortcut','The original file is never changed by Word Tool, SLID, Alt Text or Hyperlink Tool','A chapter run through three tools still counts as one file'];
 let tipI=Math.floor(Math.random()*TIPS.length);
 function drawGreet(){const h=new Date().getHours();const part=h<12?'Good morning':h<17?'Good afternoon':'Good evening';const em=h<12?'☀️':h<17?'☕':'🌙';
   const tt=totals(todayRows());const G=getGoal();const done=goalDone(tt);const left=Math.max(0,G.n-done);

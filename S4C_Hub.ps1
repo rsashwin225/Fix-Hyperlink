@@ -1,5 +1,5 @@
 # S4C HUB SCRIPT - the S4C Tools window. Runs a small page on this PC only (http://localhost) and opens it
-# S4C-FILE-VERSION: 3.5
+# S4C-FILE-VERSION: 3.7
 # in the browser. From the page you pick a tool, it checks GitHub for that one tool, then opens the tool
 # in its own window exactly as before. Close this window to close S4C Tools.
 $ErrorActionPreference = 'Stop'
@@ -8,12 +8,12 @@ $exe = (Get-Process -Id $PID).Path
 $ci = [Globalization.CultureInfo]::InvariantCulture
 
 $TOOLS = [ordered]@{
-    'Word_Fixer.ps1'   = @{ Name = 'Word Fixer';    Rx = "WF_VERSION\s*=\s*'([^']+)'" }
-    'SLID_Macro.ps1'   = @{ Name = 'SLID Macro';    Rx = "SLID_VERSION\s*=\s*'([^']+)'" }
-    'IMBK_Macro.ps1'   = @{ Name = 'IMBK Macro';    Rx = "IMBK_VERSION\s*=\s*'([^']+)'" }
+    'Word_Fixer.ps1'   = @{ Name = 'Word Tool';    Rx = "WF_VERSION\s*=\s*'([^']+)'" }
+    'SLID_Macro.ps1'   = @{ Name = 'SLID Tool';    Rx = "SLID_VERSION\s*=\s*'([^']+)'" }
+    'IMBK_Macro.ps1'   = @{ Name = 'IMBK Tool';    Rx = "IMBK_VERSION\s*=\s*'([^']+)'" }
     'AltText_Tool.ps1' = @{ Name = 'Alt Text Tool'; Rx = "ALT_VERSION\s*=\s*'([^']+)'" }
-    'Issue_Fixer.ps1'  = @{ Name = 'Issue Fixer';   Rx = "IF_VERSION\s*=\s*'([^']+)'" }
-    'Link_Fixer.ps1'   = @{ Name = 'Link Fixer';    Rx = '(?m)^\$LF_VERSION\s*=\s*(\d+)' }
+    'Issue_Fixer.ps1'  = @{ Name = 'Issues Fix';   Rx = "IF_VERSION\s*=\s*'([^']+)'" }
+    'Link_Fixer.ps1'   = @{ Name = 'Hyperlink Tool';    Rx = '(?m)^\$LF_VERSION\s*=\s*(\d+)' }
 }
 function Get-ToolVersion([string]$file) {
     $p = Join-Path $here $file
@@ -428,7 +428,7 @@ while ($listener.IsListening -and -not $quit) {
                 }
                 if ($f -eq 'Issue_Fixer.ps1') {
                     $pp = @($ok | Where-Object { $_.ToLowerInvariant().EndsWith('.pptx') }); $xx = @($ok | Where-Object { $_.ToLowerInvariant().EndsWith('.xlsx') })
-                    if ($pp.Count -eq 0 -or $xx.Count -eq 0) { Send $res 400 'text/plain' 'Issue Fixer needs the deck (.pptx) and the issue sheet (.xlsx)' $null; break }
+                    if ($pp.Count -eq 0 -or $xx.Count -eq 0) { Send $res 400 'text/plain' 'Issues Fix needs the deck (.pptx) and the issue sheet (.xlsx)' $null; break }
                     $envs['IF_PPTX'] = $pp[0]; $envs['IF_XLSX'] = $xx[0]; $jobFiles = @($pp[0])
                 }
                 $id = Start-Job2 $f $true $jobFiles $envs $(if ($f -eq 'AltText_Tool.ps1' -or $f -eq 'Issue_Fixer.ps1') { 1 } else { $jobFiles.Count })

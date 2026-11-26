@@ -1,15 +1,15 @@
-# S4C UPDATE SCRIPT (TESTING BUILD) - checks the 'testing' branch on GitHub for ONE tool and replaces the local copy
-# S4C-FILE-VERSION: 1.4
+# S4C UPDATE SCRIPT - checks the 'testing' branch on GitHub for ONE tool and replaces the local copy
+# S4C-FILE-VERSION: 1.6
 # only when GitHub has a HIGHER version number. An older or same-numbered file on GitHub never replaces the copy here.
 # Used by "S4C Tools.cmd" for the tool you pick. Never stops the tool from running.
 param([string]$Tool)
 $info = @{
-    'Word_Fixer.ps1'   = @('Word Fixer',    'WORD FIXER SCRIPT',    "WF_VERSION\s*=\s*'([^']+)'")
-    'IMBK_Macro.ps1'   = @('IMBK Macro',    'IMBK FIGURE LAYOUT',   "IMBK_VERSION\s*=\s*'([^']+)'")
-    'SLID_Macro.ps1'   = @('SLID Macro',    'SLID MACRO SCRIPT',    "SLID_VERSION\s*=\s*'([^']+)'")
+    'Word_Fixer.ps1'   = @('Word Tool',    'WORD FIXER SCRIPT',    "WF_VERSION\s*=\s*'([^']+)'")
+    'IMBK_Macro.ps1'   = @('IMBK Tool',    'IMBK FIGURE LAYOUT',   "IMBK_VERSION\s*=\s*'([^']+)'")
+    'SLID_Macro.ps1'   = @('SLID Tool',    'SLID MACRO SCRIPT',    "SLID_VERSION\s*=\s*'([^']+)'")
     'AltText_Tool.ps1' = @('Alt Text Tool', 'ALT TEXT TOOL SCRIPT', "ALT_VERSION\s*=\s*'([^']+)'")
-    'Issue_Fixer.ps1'  = @('Issue Fixer',   'S4C ISSUE FIXER SCRIPT', "IF_VERSION\s*=\s*'([^']+)'")
-    'Link_Fixer.ps1'   = @('Link Fixer',    '# Link_Fixer.ps1',     '(?m)^\$LF_VERSION\s*=\s*(\d+)')
+    'Issue_Fixer.ps1'  = @('Issues Fix',   'S4C ISSUE FIXER SCRIPT', "IF_VERSION\s*=\s*'([^']+)'")
+    'Link_Fixer.ps1'   = @('Hyperlink Tool',    '# Link_Fixer.ps1',     '(?m)^\$LF_VERSION\s*=\s*(\d+)')
 }[$Tool]
 if (-not $info) { Write-Host ('Unknown tool: ' + $Tool) -ForegroundColor Red; exit 0 }
 $File = $Tool; $Name = $info[0]; $Marker = $info[1]; $VerRx = $info[2]
