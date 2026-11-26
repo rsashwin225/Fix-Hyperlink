@@ -148,17 +148,35 @@ function IG-NoLabels([string]$s) { return ([regex]::Replace($s, $script:IG_Label
 function IG-Row([string]$result, [string]$type, [string]$loc, [string]$seg, [string]$before, [string]$after, [string]$why) {
     return [pscustomobject]@{ Result = $result; Type = $type; Loc = $loc; Seg = $seg; Before = $before; After = $after; Why = $why }
 }
+function IG-Vis([string]$s) {
+    if ($null -eq $s) { return '' }
+    $s = $s.Replace("`t", '[tab]').Replace("`n", '[line break]')
+    $s = [regex]::Replace($s, '^ +', { param($m) '[space]' * $m.Value.Length })
+    $s = [regex]::Replace($s, ' +$', { param($m) '[space]' * $m.Value.Length })
+    return $s
+}
+function IG-Describe([string]$old, [string]$new, [string]$del, [string]$ins, [int]$pos) {
+    $where = 'in the middle'
+    if ($pos -eq 0) { $where = 'at the start' } elseif (($pos + $del.Length) -ge $old.Length) { $where = 'at the end' }
+    if ($del.Length -eq 0 -and $ins.Length -gt 0) { return ('Added "' + (IG-Vis $ins) + '" ' + $where + ' of the text') }
+    if ($ins.Length -eq 0 -and $del.Length -gt 0) { return ('Removed "' + (IG-Vis $del) + '" ' + $where + ' of the text') }
+    # a replacement: show the whole word(s) that changed so it reads naturally
+    $ps = $pos; $er = $pos + $del.Length; $ea = $pos + $ins.Length
+    while ($ps -gt 0 -and $old[$ps - 1] -notmatch '\s') { $ps-- }
+    while ($er -lt $old.Length -and $old[$er] -notmatch '\s' -and $ea -lt $new.Length -and $new[$ea] -notmatch '\s') { $er++; $ea++ }
+    return ('Changed "' + (IG-Vis $old.Substring($ps, $er - $ps)) + '" to "' + (IG-Vis $new.Substring($ps, $ea - $ps)) + '"')
+}
 function IG-Classify([string]$tool, $r, $a, [string]$loc) {
     $segs = IG-Segments $r.Text $a.Text
     $del = [string]$segs[0]; $ins = [string]$segs[1]; $pos = [int]$segs[2]
-    $seg = 'removed: "' + (IG-Show $del) + '"   inserted: "' + (IG-Show $ins) + '"'
+    $seg = IG-Describe $r.Text $a.Text $del $ins $pos
     if ($tool -eq 'SLID Macro') {
         $rx = '\s?\(\d{1,2} of \d{1,2}\)$'
         if (([regex]::Replace($r.Text, $rx, '')) -ceq ([regex]::Replace($a.Text, $rx, ''))) { return (IG-Row 'Expected' 'Slide counter' $loc $seg $r.Text $a.Text 'SLID adds or updates the (n of m) counter on repeated titles.') }
     }
     $noLab = [regex]::Replace($r.Text, $script:IG_LabelStart, '')
     if ($tool -eq 'Word Fixer' -and $noLab.Length -lt $r.Text.Length -and ($noLab -ceq $a.Text -or $noLab -ceq $a.Text.TrimStart())) {
-        $seg = 'removed: "' + (IG-Show ($r.Text.Substring(0, $r.Text.Length - $noLab.Length))) + '"   inserted: "(nothing)"'
+        $seg = 'Removed the typed label "' + (IG-Show ($r.Text.Substring(0, $r.Text.Length - $noLab.Length))) + '" from the start'
         return (IG-Row 'Expected' 'Typed list label' $loc $seg $r.Text $a.Text 'A typed list label (I. / A. / 1. / bullet) was removed because the paragraph is now a real list.')
     }
     $kind = 'Text'
@@ -235,6 +253,7 @@ function IG-ComparePart([string]$tool, [string]$label, $origList, $fixList, $row
             if ($usedA[$j]) { continue }
             if ($addA.Count -gt 80 -and [Math]::Abs($addA[$j].Idx - $remA[$i].Idx) -gt 80) { continue }
             $s = IG-Sim $remA[$i].Text $addA[$j].Text
+            if ($s -lt 0.9 -and ($addA[$j].Text.StartsWith($remA[$i].Text) -or $remA[$i].Text.StartsWith($addA[$j].Text) -or $addA[$j].Text.EndsWith($remA[$i].Text) -or $remA[$i].Text.EndsWith($addA[$j].Text))) { $s = 0.9 }
             if ($s -gt $bs) { $bs = $s; $best = $j }
         }
         if ($best -ge 0 -and $bs -ge 0.4) {
@@ -242,15 +261,24 @@ function IG-ComparePart([string]$tool, [string]$label, $origList, $fixList, $row
             $rows.Add((IG-Classify $tool $remA[$i] $addA[$best] (Loc $label $remA[$i].Idx)))
         }
     }
+    # what is left on the same slide / part: if as many were removed as added, show them side by side as a replacement
+    $lr = @(); for ($i = 0; $i -lt $remA.Count; $i++) { if (-not $usedR[$i]) { $lr += $i } }
+    $la = @(); for ($j = 0; $j -lt $addA.Count; $j++) { if (-not $usedA[$j]) { $la += $j } }
+    if ($lr.Count -gt 0 -and $lr.Count -eq $la.Count -and $lr.Count -le 6) {
+        for ($q = 0; $q -lt $lr.Count; $q++) {
+            $usedR[$lr[$q]] = $true; $usedA[$la[$q]] = $true
+            $rows.Add((IG-Row 'FLAG' 'Text changed' (Loc $label $remA[$lr[$q]].Idx) ('Replaced the whole text: "' + (IG-Show $remA[$lr[$q]].Text) + '" became "' + (IG-Show $addA[$la[$q]].Text) + '"') $remA[$lr[$q]].Text $addA[$la[$q]].Text 'The words changed and no rule of this tool allows that. Please check.'))
+        }
+    }
     for ($i = 0; $i -lt $remA.Count; $i++) {
         if ($usedR[$i]) { continue }
-        $rows.Add((IG-Row 'FLAG' 'Text removed' (Loc $label $remA[$i].Idx) ('removed: "' + (IG-Show $remA[$i].Text) + '"') $remA[$i].Text '' 'This text is in the original but not in the fixed file. Please check.'))
+        $rows.Add((IG-Row 'FLAG' 'Text removed' (Loc $label $remA[$i].Idx) ('Removed a whole paragraph: "' + (IG-Show $remA[$i].Text) + '"') $remA[$i].Text '' 'This text is in the original but not in the fixed file. Please check.'))
     }
     for ($j = 0; $j -lt $addA.Count; $j++) {
         if ($usedA[$j]) { continue }
         $why = 'This text is in the fixed file but not in the original. Please check.'
         if ($tool -eq 'IMBK Macro') { $why = 'Text was added. IMBK Tool should only move figures and resize boxes, not add text. Please check.' }
-        $rows.Add((IG-Row 'FLAG' 'Text added' (Loc $label $addA[$j].Idx) ('inserted: "' + (IG-Show $addA[$j].Text) + '"') '' $addA[$j].Text $why))
+        $rows.Add((IG-Row 'FLAG' 'Text added' (Loc $label $addA[$j].Idx) ('Added a whole paragraph: "' + (IG-Show $addA[$j].Text) + '"') '' $addA[$j].Text $why))
     }
 }
 
@@ -355,10 +383,12 @@ function Test-Integrity([string]$tool, [string]$orig, [string]$fixed, [string]$r
     $sum.Add(@('Changes flagged for a person to check', [string]$flag))
     $sum.Add(@('Changes allowed by the tool rules', [string]$exp))
     $sum.Add(@('New slides / parts (not compared)', [string]$info))
+    $byType = @{}; foreach ($rw in $rows) { $k2 = $rw.Result + ' - ' + $rw.Type; if ($byType.ContainsKey($k2)) { $byType[$k2]++ } else { $byType[$k2] = 1 } }
+    foreach ($k2 in ($byType.Keys | Sort-Object)) { $sum.Add(@(('   ' + $k2), [string]$byType[$k2])) }
     $sum.Add(@('Rules for this tool', $(if ($script:IG_Rules.ContainsKey($tool)) { $script:IG_Rules[$tool] } else { '' })))
     $sum.Add(@('How it works', 'Every paragraph of the original and the fixed file is compared exactly, including spaces and punctuation. Paragraphs are matched by their text, so moving a shape or changing the reading order is not a text change. Nothing in either file was changed by this check.'))
     $order = @{ 'FLAG' = 0; 'Expected' = 1; 'Info' = 2 }
-    $sorted = @($rows | Sort-Object @{ Expression = { $order[$_.Result] } })
+    $sorted = @($rows | Sort-Object @{ Expression = { $order[$_.Result] } }, @{ Expression = { $mm = [regex]::Match($_.Loc, '\d+'); if ($mm.Success) { [int]$mm.Value } else { 0 } } })
     $ch = New-Object System.Collections.Generic.List[object]
     $ch.Add(@('#', 'Where', 'Result', 'Type', 'What changed', 'Before (original)', 'After (fixed)', 'Why'))
     $n = 0
