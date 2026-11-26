@@ -1,5 +1,5 @@
 # S4C HUB SCRIPT - the S4C Tools window. Runs a small page on this PC only (http://localhost) and opens it
-# S4C-FILE-VERSION: 3.9
+# S4C-FILE-VERSION: 3.10
 # in the browser. From the page you pick a tool, it checks GitHub for that one tool, then opens the tool
 # in its own window exactly as before. Close this window to close S4C Tools.
 $ErrorActionPreference = 'Stop'
@@ -96,7 +96,7 @@ function Step-Job($j) {
 
 
 function Get-JobProgress($j) {
-    $p = [ordered]@{ total = [int]$j.Total; done = 0; current = ''; lookDone = 0; lookTotal = 0; serving = $false; saved = 0; errors = @() }
+    $p = [ordered]@{ total = [int]$j.Total; done = 0; current = ''; lookDone = 0; lookTotal = 0; serving = $false; saved = 0; flagged = 0; errors = @() }
     if (-not $j.Log -or -not (Test-Path -LiteralPath $j.Log)) { return $p }
     $txt = ''
     try { $fs = New-Object IO.FileStream($j.Log, 'Open', 'Read', 'ReadWrite'); $sr = New-Object IO.StreamReader($fs); $txt = $sr.ReadToEnd(); $sr.Close() } catch { return $p }
@@ -107,6 +107,7 @@ function Get-JobProgress($j) {
         elseif ($t -match '^Looking up (\d+) of (\d+)') { $p.lookDone = [int]$Matches[1]; $p.lookTotal = [int]$Matches[2] }
         elseif ($t -match '^Saved:') { $p.saved++ }
         elseif ($t -match 'The review page is open at') { $p.serving = $true }
+        elseif ($t -match '^Integrity flagged:\s*(\d+)') { $p.flagged += [int]$Matches[1] }
         if ($t -match 'FAILED' -and $t.Length -lt 400) { $errs.Add($t) }
     }
     $p.done = [math]::Min([int]$j.Total, [math]::Max($p.saved, [math]::Max(0, $fixN - 1)))

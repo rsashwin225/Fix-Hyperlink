@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="3.6">
+<meta name="s4c-hub-version" content="3.7">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -726,6 +726,7 @@ async function dzWriteBack(x){
   try{const leaf=leafOf(x.outPath);const rs=await fetch('/api/getfile?path='+encodeURIComponent(x.outPath),{headers:{'X-S4C':TOKEN}});if(!rs.ok)throw new Error('not found');const b=await rs.blob();
     const fh=await x.dirHandle.getFileHandle(leaf,{create:true});const w=await fh.createWritable();await w.write(b);await w.close();
     if(/ Fixed\.pptx$/i.test(leaf)&&TOOLS[cur].file==='Issue_Fixer.ps1'){const rp=x.outPath.replace(/ Fixed\.pptx$/i,' Issue Report.xlsx');const r2=await fetch('/api/getfile?path='+encodeURIComponent(rp),{headers:{'X-S4C':TOKEN}});if(r2.ok){const b2=await r2.blob();const f2=await x.dirHandle.getFileHandle(leafOf(rp),{create:true});const w2=await f2.createWritable();await w2.write(b2);await w2.close()}}
+    try{const rp2=x.outPath.replace(/\.(pptx|docx)$/i,' Integrity Report.xlsx');const r3=await fetch('/api/getfile?path='+encodeURIComponent(rp2),{headers:{'X-S4C':TOKEN}});if(r3.ok){const b3=await r3.blob();const f3=await x.dirHandle.getFileHandle(leafOf(rp2),{create:true});const w3=await f3.createWritable();await w3.write(b3);await w3.close()}}catch(e3){}
     x.msg='Saved: '+leaf+' in the folder "'+x.dirHandle.name+'"';x.noOpen=true}
   catch(e){x.msg+='  (could not save into the chosen folder; the copy is in Documents\\S4C Output)'}
   dzRender()}
@@ -769,7 +770,9 @@ function rnFinish(was,r){const it=dz.items;const ok=it.length&&it.every(x=>x.sta
   const sub=ok?(was.tool==='IMBK_Macro.ps1'?'The decks were fixed in place and a backup of each was kept. Today\'s work is updated.':'The fixed copies are saved next to your originals. Today\'s work is updated.'):
     (errs.find(x=>/FAILED|Cannot|not found|denied|Exception/i.test(x))||errs[0]||'Some files were not saved. The list below says which one and why.');
   const first=it.findIndex(x=>x.outPath||x.path);
-  rn.mode=ok?'done':'bad';rn.html='<div class="rnk">'+(ok?'&#10003;':'!')+'</div><div class="rnt"><h4>'+esc(head)+'</h4><p>'+esc(sub)+'</p></div>';
+  const fl=Number(((r.progress||{}).flagged)||0);
+  const ig=fl>0?' Text check: '+fl+' change(s) need a look - open the "Integrity Report" Excel next to the fixed file.':(ok&&!inter&&n?' Text check: all text preserved (see the Integrity Report Excel).':'');
+  rn.mode=(ok&&fl===0)?'done':'bad';rn.html='<div class="rnk">'+((ok&&fl===0)?'&#10003;':'!')+'</div><div class="rnt"><h4>'+esc(head)+'</h4><p>'+esc(sub+ig)+'</p></div>';
   rnDraw()}
 function dzDone(was,r){const t=TOOLS.find(x=>x.file===was.tool);
   dz.items.filter(x=>x.state==='running').forEach(x=>{

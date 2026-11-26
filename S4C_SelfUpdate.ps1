@@ -1,5 +1,5 @@
 # S4C SELFUPDATE SCRIPT - keeps the S4C Tools page files up to date from the 'testing' branch on GitHub.
-# S4C-FILE-VERSION: 1.1
+# S4C-FILE-VERSION: 1.2
 # Started in the background by S4C_Hub.ps1. A file is replaced only when GitHub has a HIGHER version number
 # and the downloaded file is complete. The tool scripts are not touched here (each tool is checked when it is run).
 $ErrorActionPreference = 'Stop'
@@ -16,6 +16,7 @@ $files = @(
     @{ F = 'S4C_Hub.ps1';        M = 'S4C HUB SCRIPT';        R = $verPs; Ps = $true },
     @{ F = 'S4C_RunTool.ps1';    M = 'S4C RUNTOOL SCRIPT';    R = $verPs; Ps = $true },
     @{ F = 'S4C_Report.ps1';     M = 'S4C REPORT SCRIPT';     R = $verPs; Ps = $true },
+    @{ F = 'S4C_Integrity.ps1';  M = 'S4C INTEGRITY SCRIPT';  R = $verPs; Ps = $true },
     @{ F = 'S4C_Update.ps1';     M = 'S4C UPDATE SCRIPT';     R = $verPs; Ps = $true },
     @{ F = 'S4C_SelfUpdate.ps1'; M = 'S4C SELFUPDATE SCRIPT'; R = $verPs; Ps = $true }
 )

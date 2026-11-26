@@ -1,5 +1,5 @@
 # S4C RUNTOOL SCRIPT - opens one tool in its own window, the same way the menu did, and waits for Enter at the end.
-# S4C-FILE-VERSION: 1.6
+# S4C-FILE-VERSION: 1.7
 param([string]$Tool, [switch]$Test)
 $sta = @{ 'Word_Fixer.ps1' = $true; 'SLID_Macro.ps1' = $true; 'IMBK_Macro.ps1' = $false; 'AltText_Tool.ps1' = $true; 'Link_Fixer.ps1' = $true; 'Issue_Fixer.ps1' = $false }
 if (-not $sta.ContainsKey($Tool)) { Write-Host ('Unknown tool: ' + $Tool); exit 1 }
@@ -25,6 +25,13 @@ $a = @('-NoProfile', '-ExecutionPolicy', 'Bypass')
 if ($sta[$Tool] -and -not $Test) { $a += '-STA' }
 $a += @('-File', (Join-Path $PSScriptRoot $Tool))
 if ($Test) { Write-Host ('[test] would run: ' + ($a -join ' ')); exit 0 }
+$igSince = Get-Date
 & $exe @a
+Write-Host ''
+# text integrity check: the original and the fixed file are compared and an Excel report is saved next to the fixed file (never stops the tool)
+try {
+    $igFile = Join-Path $PSScriptRoot 'S4C_Integrity.ps1'
+    if (Test-Path -LiteralPath $igFile) { . $igFile; Invoke-IntegrityRun $Tool $igSince }
+} catch { Write-Host ('The text integrity check could not run: ' + $_.Exception.Message) -ForegroundColor Yellow }
 Write-Host ''
 if ($env:S4C_AUTO) { } else { [void](Read-Host 'Finished. Press Enter to close this window') }
