@@ -1,5 +1,5 @@
 # S4C HUB SCRIPT - the S4C Tools window. Runs a small page on this PC only (http://localhost) and opens it
-# S4C-FILE-VERSION: 3.7
+# S4C-FILE-VERSION: 3.8
 # in the browser. From the page you pick a tool, it checks GitHub for that one tool, then opens the tool
 # in its own window exactly as before. Close this window to close S4C Tools.
 $ErrorActionPreference = 'Stop'
@@ -160,24 +160,38 @@ function Start-SelfUpdate {
 Start-SelfUpdate
 
 # the "Check for updates" button at the top of the page: the page files and every tool are checked against GitHub
-$script:allProc = $null; $script:allOut = ''
+$script:allProc = $null; $script:allOut = ''; $script:allText = $null
 # small helper scripts are written to a .ps1 file in the temp folder and started with -File (some PCs stop a window that starts PowerShell with -EncodedCommand)
 function Save-TempScript([string]$name, [string]$content) {
     $p = Join-Path ([IO.Path]::GetTempPath()) ('s4c_' + $name + '_' + $token.Substring(0, 8) + '.ps1')
     [IO.File]::WriteAllText($p, $content, (New-Object Text.UTF8Encoding($false)))
     return $p
 }
+# The "Check for updates" button runs the update scripts INSIDE this program (a background runspace): no second PowerShell process is started,
+# so nothing can touch this window or its console. HasExited works like it does for a process, so the rest of the code is unchanged.
+function Start-InProc([string]$body) {
+    $rs = [runspacefactory]::CreateRunspace(); $rs.Open()
+    $ps = [powershell]::Create(); $ps.Runspace = $rs
+    [void]$ps.AddScript($body)
+    $h = $ps.BeginInvoke()
+    $o = [pscustomobject]@{ PS = $ps; RS = $rs; H = $h }
+    $o | Add-Member -MemberType ScriptProperty -Name HasExited -Value { $this.H.IsCompleted }
+    return $o
+}
 function Start-UpdateAll {
     if ($script:allProc -and -not $script:allProc.HasExited) { return }
-    Start-SelfUpdate
-    $script:allOut = Join-Path ([IO.Path]::GetTempPath()) ('s4c_all_' + [guid]::NewGuid().ToString('N').Substring(0, 8) + '.txt')
+    $script:allText = $null
+    try {
+        $sfile = Join-Path $here 'S4C_SelfUpdate.ps1'
+        if (Test-Path -LiteralPath $sfile) {
+            Remove-Item -LiteralPath $selfStatus -Force -ErrorAction SilentlyContinue
+            $script:selfProc = Start-InProc ("`$env:S4C_SELF_STATUS = '" + $selfStatus + "'; & '" + $sfile + "' *>&1 | Out-Null")
+        }
+    } catch { Write-HubLog ('update check: page update could not start: ' + $_.Exception.Message) }
     $upd = Join-Path $here 'S4C_Update.ps1'
     $names = ($TOOLS.Keys | ForEach-Object { "'" + $_ + "'" }) -join ','
-    $cmd = "foreach (`$t in @($names)) { Write-Host ('### ' + `$t); & '$upd' -Tool `$t }"
-    try { $cf = Save-TempScript 'updall' $cmd } catch { Write-HubLog ('update check: could not write the helper script: ' + $_.Exception.Message); return }
-    $sp = @{ FilePath = $exe; ArgumentList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $cf + '"')); PassThru = $true; RedirectStandardOutput = $script:allOut; RedirectStandardError = ($script:allOut + '.err') }
-    if (-not ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows)) { $sp['WindowStyle'] = 'Hidden' }
-    try { $script:allProc = Start-Process @sp } catch { $script:allProc = $null; Write-HubLog ('update check: could not start: ' + $_.Exception.Message) }
+    $body = "foreach (`$t in @($names)) { '### ' + `$t; & '$upd' -Tool `$t *>&1 | ForEach-Object { [string]`$_ } }"
+    try { $script:allProc = Start-InProc $body } catch { $script:allProc = $null; Write-HubLog ('update check: could not start: ' + $_.Exception.Message) }
 }
 
 
@@ -537,8 +551,12 @@ while ($listener.IsListening -and -not $quit) {
             '/api/updateallstatus' {
                 $done = (-not $script:allProc) -or $script:allProc.HasExited
                 $list = @()
-                if ($done -and $script:allOut -and (Test-Path -LiteralPath $script:allOut)) {
-                    $txt = [IO.File]::ReadAllText($script:allOut)
+                if ($done -and $script:allProc -and $null -eq $script:allText) {
+                    try { $script:allText = (@($script:allProc.PS.EndInvoke($script:allProc.H)) | ForEach-Object { [string]$_ }) -join "`n" } catch { $script:allText = ''; Write-HubLog ('update check: ' + $_.Exception.Message) }
+                    try { $script:allProc.PS.Dispose(); $script:allProc.RS.Close() } catch {}
+                }
+                if ($done -and $script:allText) {
+                    $txt = $script:allText
                     foreach ($blk in ($txt -split '(?m)^### ')) {
                         if (-not $blk.Trim()) { continue }
                         $nl = $blk.IndexOf("`n"); if ($nl -lt 0) { continue }
