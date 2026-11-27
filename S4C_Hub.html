@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="3.16">
+<meta name="s4c-hub-version" content="3.17">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -313,6 +313,12 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
 .acard{border:1px solid var(--stroke);border-radius:12px;padding:14px 16px;background:var(--card);margin-bottom:12px}.acard h4{margin:0 0 10px;font-size:14px}
 .arow{display:flex;align-items:center;gap:12px;padding:6px 0}.arow .nm{flex:1}.arow small{color:var(--fg3)}.alog{white-space:pre-wrap;font:12px Consolas,monospace;background:var(--card2);border:1px solid var(--stroke);border-radius:10px;padding:10px;max-height:300px;overflow:auto;margin-top:10px}
 .hidtag{font-style:normal;font-size:10px;border:1px solid var(--stroke2);border-radius:999px;padding:0 6px;margin-left:6px;color:var(--fg3)}
+.tmsgwrap{max-width:1200px;margin:0 auto;padding:16px 34px 0}.tmsg{display:flex;gap:12px;align-items:flex-start;border-radius:12px;padding:12px 16px}
+.tmsg.info{background:rgba(70,110,170,.12);border:1px solid rgba(70,110,170,.35);color:var(--fg)}.tmsg.important{background:rgba(200,146,42,.16);border:1px solid rgba(200,146,42,.5);color:var(--fg)}
+.tmsg .ti{width:22px;height:22px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:13px;margin-top:1px}.tmsg.info .ti{background:#466eaa}.tmsg.important .ti{background:#c8922a}
+.tmsg b{display:block;font-size:13.5px;margin-bottom:2px}.tmsg span.tx{font-size:13.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word}.tmsg .tx2{margin-left:auto;border:0;background:none;font-size:22px;line-height:1;color:var(--fg3);cursor:pointer;padding:0 2px}
+.mta{width:100%;box-sizing:border-box;min-height:70px;border:1px solid var(--stroke2);border-radius:9px;padding:10px 12px;font-size:13.5px;line-height:1.5;font-family:inherit;background:var(--card);color:var(--fg);resize:vertical}
+.mpill{border:1px solid var(--stroke2);border-radius:999px;padding:4px 12px;background:var(--card);cursor:pointer;font:inherit;font-size:13px;color:var(--fg2)}.mpill.on{background:#2f5d4e;color:#fff;border-color:#2f5d4e}
 .dg .tag{white-space:nowrap}.rm.cp{color:var(--fg2)}.rm.cp:hover{background:var(--card2)}.rm{height:28px;padding:0 10px;border-radius:8px;border:1px solid var(--stroke2);background:var(--card);cursor:pointer;font-size:12px;color:#a23a1f}.rm:hover{background:#f7e3dc}
 .rowact{position:absolute;right:12px;top:50%;transform:translateY(-50%);display:flex;gap:6px;opacity:0;transition:opacity .12s}
 .dg tbody tr:hover .rowact{opacity:1}
@@ -422,6 +428,7 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
   </nav>
 
   <main class="content">
+    <div id="teamMsg"></div>
     <!-- ============ TOOLS ============ -->
     <div class="view on" id="v-tools"><div class="page">
       <div class="greet" id="greet"></div>
@@ -842,7 +849,7 @@ async function poll(){
 async function load(keep){const day=$('day').value||'';const r=await (await api('/api/state'+(day?'?day='+day:''))).json();
   const tv={};r.tools.forEach(x=>tv[x.file]=x.version);
   let tr=r.rows||[];if(r.day!==r.today){try{tr=(await (await api('/api/state')).json()).rows||[]}catch(e){}}
-  state={tools:tv,rows:r.rows||[],day:r.day,today:r.today,todayRows:tr,user:r.user,pc:r.pc,dir:r.dir,hidden:r.hidden||[],admin:!!r.admin};
+  state={tools:tv,rows:r.rows||[],day:r.day,today:r.today,todayRows:tr,user:r.user,pc:r.pc,dir:r.dir,hidden:r.hidden||[],message:r.message||null,admin:!!r.admin};drawMessage();
   const hsig=state.hidden.join(',')+'|'+state.admin;const hchanged=hsig!==window._hsig;if(hchanged){window._hsig=hsig;applyHidden()}
   if(!$('day').value)$('day').value=r.today;
   drawPersona();$('upc').textContent=r.pc||'This PC';
@@ -859,6 +866,11 @@ function chkBadge(g){if(g.exists===false)return '<span class="chk miss" title="T
   return '<span class="chk flag" title="'+esc(c.note||'')+'">&#9873; '+(c.flagged||'')+' to check</span>'}
 async function wkOpen(b,what){const g=(window.WG||[])[+b.dataset.i];if(!g)return;const p=what==='report'?(g.check&&g.check.report):g.path;if(!p)return;
   try{await api((what==='file'||what==='report'?'/api/openfile?path=':'/api/openfolder?path=')+encodeURIComponent(p))}catch(e){toast('err','Could not open it',e.message)}}
+/* ---------- message from the admin ---------- */
+function drawMessage(prev){const m=prev||state.message;const el=$('teamMsg');
+  if(!m||!m.text||(!prev&&LS.get('msgGone','')===m.id)){el.innerHTML='';return}
+  el.innerHTML='<div class="tmsgwrap"><div class="tmsg '+(m.style==='important'?'important':'info')+'"><span class="ti">'+(m.style==='important'?'!':'i')+'</span><div><b>'+(prev?'Preview of the message':'Message from your admin')+'</b><span class="tx">'+esc(m.text)+'</span></div><button class="tx2" aria-label="Close this message" onclick="msgClose(\''+(m.id||'')+'\','+(prev?'true':'false')+')">&times;</button></div></div>'}
+function msgClose(id,prev){if(!prev&&id)LS.set('msgGone',id);drawMessage()}
 /* ---------- team settings: hidden tools ---------- */
 function applyHidden(){const h=new Set(state.hidden||[]);ALLT.forEach(t=>t.hiddenTeam=h.has(t.file));const cf=TOOLS[cur]&&TOOLS[cur].file;
   const keep=state.admin?ALLT.slice():ALLT.filter(t=>!h.has(t.file));TOOLS.length=0;keep.forEach(t=>TOOLS.push(t));const ni=TOOLS.findIndex(t=>t.file===cf);cur=ni>=0?ni:0}
@@ -873,7 +885,7 @@ async function runHealth(){SET.busy=true;SET.health=null;setDraw();
 function hcText(){const L=['S4C Tools health check - '+(state.pc||'')+' - '+new Date().toLocaleString()];(SET.health||[]).forEach(c=>L.push('['+(c.status==='ok'?'OK':c.status==='warn'?'WARNING':'PROBLEM')+'] '+c.title+' - '+c.detail));return L.join('\n')}
 function hcFix(i){const c=(SET.health||[])[i];if(!c||!c.fix)return;if(c.fix.path==='retry'){runHealth();return}api('/api/openfolder?path='+encodeURIComponent(c.fix.path))}
 function setDraw(){$('setSub').textContent=state.pc?('This PC: '+state.pc):'';
-  $('setTabs').innerHTML='<button class="rtab'+(SET.tab==='health'?' on':'')+'" onclick="SET.tab=\'health\';setDraw()">Health check</button>'+(state.admin?'<button class="rtab'+(SET.tab==='admin'?' on':'')+'" onclick="SET.tab=\'admin\';SET.log=null;SET.hid=null;setDraw()">Admin</button>':'');
+  $('setTabs').innerHTML='<button class="rtab'+(SET.tab==='health'?' on':'')+'" onclick="SET.tab=\'health\';setDraw()">Health check</button>'+(state.admin?'<button class="rtab'+(SET.tab==='admin'?' on':'')+'" onclick="SET.tab=\'admin\';SET.log=null;SET.hid=null;SET.msg=null;setDraw()">Admin</button>':'');
   if(SET.tab==='admin'&&state.admin){adminDraw();return}
   const H=SET.health;let h='<div class="hbar"><button class="btn pri" onclick="runHealth()"'+(SET.busy?' disabled':'')+'>'+(SET.busy?'Checking...':'Run health check')+'</button><button class="btn" onclick="navigator.clipboard&&navigator.clipboard.writeText(hcText()).then(()=>toast(\'ok\',\'Copied\',\'Paste it in a message to whoever looks after S4C Tools\'))"'+(H?'':' disabled')+'>Copy result</button>';
   if(H){const n=k=>H.filter(c=>c.status===k).length;h+='<span class="pl"><span class="chk pass">'+n('ok')+' OK</span>'+(n('warn')?'<span class="chk flag">'+n('warn')+' warning'+(n('warn')>1?'s':'')+'</span>':'')+(n('err')?'<span class="chk miss">'+n('err')+' problem'+(n('err')>1?'s':'')+'</span>':'')+'</span>'}
@@ -886,15 +898,19 @@ async function adminOpen(){SET.hid=new Set(state.hidden||[]);SET.log=null;adminD
 function adminDraw(){if(!SET.hid)SET.hid=new Set(state.hidden||[]);
   let h='<div class="acard"><h4>Updates</h4><div class="arow"><span class="nm">Check GitHub for a newer S4C Tools and newer versions of every tool</span><button class="btn" onclick="setClose();updateAll()">Check all now</button></div>'+
     '<div class="arow"><small>'+ALLT.map(t=>esc(t.name)+' '+esc(state.tools[t.file]||'')).join(' &middot; ')+'</small></div></div>';
+  if(!SET.msg)SET.msg=Object.assign({text:'',style:'info',until:''},state.message?{text:state.message.text,style:state.message.style,until:state.message.until||''}:{});
+  h+='<div class="acard"><h4>Message to the team</h4><textarea class="mta" id="mText" maxlength="300" placeholder="For example: Use SLID Tool 1.9 for SDRS decks from today. Press Check for updates before you start." oninput="SET.msg.text=this.value;document.getElementById(\'mCnt\').textContent=this.value.length+\' / 300 characters\'">'+esc(SET.msg.text)+'</textarea>'+
+    '<div class="arow"><span>Style</span><button class="mpill'+(SET.msg.style==='info'?' on':'')+'" onclick="SET.msg.style=\'info\';adminDraw()">Information</button><button class="mpill'+(SET.msg.style==='important'?' on':'')+'" onclick="SET.msg.style=\'important\';adminDraw()">Important</button><span style="margin-left:12px">Show until</span><input type="date" class="mpill" id="mUntil" value="'+esc(SET.msg.until||'')+'" onchange="SET.msg.until=this.value"><small id="mCnt" style="margin-left:auto">'+SET.msg.text.length+' / 300 characters</small></div>'+
+    '<div class="arow"><button class="btn" onclick="drawMessage(SET.msg.text.trim()?{text:SET.msg.text.trim(),style:SET.msg.style}:null)">Preview</button><button class="btn" onclick="SET.msg.text=\'\';SET.msg.until=\'\';drawMessage();adminDraw()">Clear message</button></div></div>';
   h+='<div class="acard"><h4>Tools shown to the team</h4>'+ALLT.map(t=>'<div class="arow"><button class="sw2'+(SET.hid.has(t.file)?'':' on')+'" onclick="adminTog(\''+t.file+'\')" aria-label="Show '+esc(t.name)+'"></button><span class="nm">'+esc(t.name)+'</span><small>'+(SET.hid.has(t.file)?'hidden for the team (you still see it here)':'shown')+'</small></div>').join('')+
-    '<div class="arow" style="margin-top:6px"><button class="btn pri" onclick="adminSave()">Save and download S4C_Config.json</button></div>'+
-    '<p style="color:var(--fg3);font-size:12.5px;margin:6px 0 0;line-height:1.6">Saving applies the change on this PC straight away. To change it for the whole team, upload the downloaded <b>S4C_Config.json</b> to the testing branch on GitHub, next to the tool files. Every PC picks it up the next time S4C Tools starts or checks for updates. Only people who can upload to the repository can change it for the team.</p></div>';
+'</div>';
+  h+='<div class="acard"><div class="arow"><button class="btn pri" onclick="adminSave()">Save and download S4C_Config.json</button></div><p style="color:var(--fg3);font-size:12.5px;margin:6px 0 0;line-height:1.6">Saving applies the tool list and the message on this PC straight away. To change it for the whole team, upload the downloaded <b>S4C_Config.json</b> to the testing branch on GitHub, next to the tool files. Every PC picks it up the next time S4C Tools starts or checks for updates. To remove the message later, clear it, save, and upload the file again; it also hides itself after the &quot;Show until&quot; date. Only people who can upload to the repository can change it for the team.</p></div>';
   h+='<div class="acard"><h4>Support</h4><div class="arow"><button class="btn" onclick="adminLog()">View hub log</button><button class="btn" onclick="adminCopyLog()">Copy log</button><button class="btn" onclick="adminFolder(\'hubLog\')">Open log folder</button><button class="btn" onclick="adminFolder(\'workLogDir\')">Open work log folder</button></div>'+(SET.log!==null?'<div class="alog">'+esc(SET.log||'The log is empty.')+'</div>':'')+'</div>';
   $('setBody').innerHTML=h}
 function adminTog(f){if(SET.hid.has(f))SET.hid.delete(f);else SET.hid.add(f);adminDraw()}
-async function adminSave(){try{await POSTJ('/api/admin?what=save',{hiddenTools:[...SET.hid]});
-    const out={hiddenTools:[...SET.hid],updated:new Date().toISOString().slice(0,16).replace('T',' ')};const b=new Blob([JSON.stringify(out,null,2)+'\r\n'],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='S4C_Config.json';document.body.appendChild(a);a.click();a.remove();
-    await load(true);toast('ok','Saved on this PC','Upload S4C_Config.json to the testing branch to change it for the team.',null,9000);SET.hid=new Set(state.hidden||[]);adminDraw()}
+async function adminSave(){try{const sv=await POSTJ('/api/admin?what=save',{hiddenTools:[...SET.hid],message:{text:(SET.msg&&SET.msg.text||'').trim(),style:SET.msg&&SET.msg.style||'info',until:SET.msg&&SET.msg.until||''}});
+    const b=new Blob([sv.file],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='S4C_Config.json';document.body.appendChild(a);a.click();a.remove();
+    await load(true);toast('ok','Saved on this PC','Upload S4C_Config.json to the testing branch to change it for the team.',null,9000);SET.hid=new Set(state.hidden||[]);SET.msg=null;adminDraw()}
   catch(e){toast('err','Could not save',e.message)}}
 async function adminLog(){try{const r=await api('/api/admin?what=log');SET.log=await r.text();adminDraw()}catch(e){toast('err','Could not read the log',e.message)}}
 async function adminCopyLog(){try{const r=await api('/api/admin?what=log');const t=await r.text();await navigator.clipboard.writeText(t);toast('ok','Log copied','')}catch(e){toast('err','Could not copy the log',e.message)}}

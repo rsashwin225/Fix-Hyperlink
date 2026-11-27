@@ -1,5 +1,5 @@
 # S4C HUB SCRIPT - the S4C Tools window. Runs a small page on this PC only (http://localhost) and opens it
-# S4C-FILE-VERSION: 3.18
+# S4C-FILE-VERSION: 3.19
 # in the browser. From the page you pick a tool, it checks GitHub for that one tool, then opens the tool
 # in its own window exactly as before. Close this window to close S4C Tools.
 $ErrorActionPreference = 'Stop'
@@ -125,6 +125,21 @@ function Get-HiddenTools {
         }
     } catch {}
     return @($h | Select-Object -Unique)
+}
+# the message the admin wants every PC to show (plain text only; hidden after its "until" date)
+function Get-TeamMessage {
+    try {
+        if (-not (Test-Path -LiteralPath $cfgFile)) { return $null }
+        $o = [IO.File]::ReadAllText($cfgFile, [Text.Encoding]::UTF8) | ConvertFrom-Json
+        $m = $o.message; if (-not $m) { return $null }
+        $t = ([string]$m.text -replace '[\x00-\x08\x0B\x0C\x0E-\x1F]', '').Trim(); if (-not $t) { return $null }
+        if ($t.Length -gt 300) { $t = $t.Substring(0, 300) }
+        $u = [string]$m.until; if ($u -and $u -notmatch '^\d{4}-\d{2}-\d{2}$') { $u = '' }
+        if ($u -and [string]::CompareOrdinal((Get-Date).ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture), $u) -gt 0) { return $null }
+        $st = if ([string]$m.style -eq 'important') { 'important' } else { 'info' }
+        $sha = [Security.Cryptography.SHA1]::Create(); $id = ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($st + '|' + $t))) -replace '-', '').Substring(0, 10).ToLowerInvariant()
+        return [ordered]@{ text = $t; style = $st; until = $u; id = $id }
+    } catch { return $null }
 }
 function Get-StateDir { $b = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }; return (Join-Path $b 'S4C_Tools') }
 # the admin tab is shown only on a PC that has this small private file (it is not part of the zip or GitHub)
@@ -585,7 +600,7 @@ while ($listener.IsListening -and -not $quit) {
             '/api/state' {
                 $day = if ($q['day']) { $q['day'] } else { (Get-Date).ToString('yyyy-MM-dd', $ci) }
                 $tl = @(); foreach ($k in $TOOLS.Keys) { $tl += [ordered]@{ file = $k; version = (Get-ToolVersion $k) } }
-                $body = [ordered]@{ day = $day; today = (Get-Date).ToString('yyyy-MM-dd', $ci); user = $env:USERNAME; pc = $env:COMPUTERNAME; dir = $here; tools = $tl; hidden = @(Get-HiddenTools); admin = (Test-Admin); rows = (Get-LogRows $day) }
+                $body = [ordered]@{ day = $day; today = (Get-Date).ToString('yyyy-MM-dd', $ci); user = $env:USERNAME; pc = $env:COMPUTERNAME; dir = $here; tools = $tl; hidden = @(Get-HiddenTools); message = (Get-TeamMessage); admin = (Test-Admin); rows = (Get-LogRows $day) }
                 Send $res 200 'application/json; charset=utf-8' (ToJson $body) $null
             }
             '/api/days' {
@@ -706,9 +721,13 @@ while ($listener.IsListening -and -not $quit) {
                     'save' {
                         $b = (Read-Body $req) | ConvertFrom-Json
                         $names = @(@($b.hiddenTools) | ForEach-Object { [string]$_ } | Where-Object { $_ -match '^[A-Za-z0-9_]+\.ps1$' -and $TOOLS.Contains($_) } | Select-Object -Unique)
-                        $o = [ordered]@{ hiddenTools = $names; updated = (Get-Date).ToString('yyyy-MM-dd HH:mm', $ci) }
-                        [IO.File]::WriteAllText($cfgFile, (ConvertTo-Json $o), (New-Object Text.UTF8Encoding($false)))
-                        Send $res 200 'application/json; charset=utf-8' (ToJson ([ordered]@{ hidden = $names })) $null
+                        $mt = ([string]$b.message.text -replace '[\x00-\x08\x0B\x0C\x0E-\x1F]', '').Trim(); if ($mt.Length -gt 300) { $mt = $mt.Substring(0, 300) }
+                        $mu = [string]$b.message.until; if ($mu -notmatch '^\d{4}-\d{2}-\d{2}$') { $mu = '' }
+                        $ms = if ([string]$b.message.style -eq 'important') { 'important' } else { 'info' }
+                        $o = [ordered]@{ hiddenTools = $names; message = [ordered]@{ text = $mt; style = $ms; until = $mu }; updated = (Get-Date).ToString('yyyy-MM-dd HH:mm', $ci) }
+                        $json = ConvertTo-Json $o -Depth 4
+                        [IO.File]::WriteAllText($cfgFile, $json, (New-Object Text.UTF8Encoding($false)))
+                        Send $res 200 'application/json; charset=utf-8' (ToJson ([ordered]@{ hidden = $names; file = ($json + "`r`n") })) $null
                     }
                     default { Send $res 400 'text/plain' 'unknown' $null }
                 }

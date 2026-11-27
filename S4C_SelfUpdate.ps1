@@ -1,5 +1,5 @@
 # S4C SELFUPDATE SCRIPT - keeps the S4C Tools page files up to date from the 'testing' branch on GitHub.
-# S4C-FILE-VERSION: 1.3
+# S4C-FILE-VERSION: 1.4
 # Started in the background by S4C_Hub.ps1. A file is replaced only when GitHub has a HIGHER version number
 # and the downloaded file is complete. The tool scripts are not touched here (each tool is checked when it is run).
 $ErrorActionPreference = 'Stop'
@@ -56,6 +56,7 @@ try {
         $o = $cnew | ConvertFrom-Json
         $okNames = $true; foreach ($n in @($o.hiddenTools)) { if (([string]$n) -notmatch '^[A-Za-z0-9_]+\.ps1$') { $okNames = $false } }
         $cold = if (Test-Path -LiteralPath $cl) { [IO.File]::ReadAllText($cl) } else { '' }
+        if ($o.message -and ([string]$o.message.text).Length -gt 400) { $okNames = $false }
         if ($okNames -and (($cnew -replace '\s', '') -ne ($cold -replace '\s', ''))) { [IO.File]::WriteAllText($cl, $cnew, (New-Object Text.UTF8Encoding($false))); $updated += 'S4C_Config.json updated' }
     }
 } catch {}
