@@ -15,7 +15,7 @@
 #      text combined with its Subtitle text, after step 1 has run.
 #
 # A backup copy is saved first, next to the original (name_BEFORE_SLIDfix.pptx).
-$IMBK_VERSION = '4.4'   # shown at the start of the window; the updater compares this number with GitHub
+$IMBK_VERSION = '4.5'   # shown at the start of the window; the updater compares this number with GitHub
 # ---- work log: notes each saved file (name, slides or pages) for the daily report in S4C Tools ----
 # Only reads the saved file; never changes it and never stops the tool if something goes wrong.
 function Add-WorkLog([string]$tool, [string]$inPath, [string]$outPath) {
@@ -944,8 +944,10 @@ function Fix-One([string]$path) {
     $path = (Resolve-Path -LiteralPath $path).Path
     $name = Split-Path $path -Leaf
     $script:BoxesResized = 0
-    $bak = Backup-Name $path "_BEFORE_IMBKfix"
-    Copy-Item $path $bak
+    # the original is never touched: the fixed copy is a new file named <original name> Remediated
+    $src = $path
+    $path = Join-Path (Split-Path $src) ([IO.Path]::GetFileNameWithoutExtension($src) + ' Remediated' + [IO.Path]::GetExtension($src))
+    Copy-Item -LiteralPath $src -Destination $path -Force
     try {
         $zip = [IO.Compression.ZipFile]::Open($path, 'Update')
         try {
@@ -982,17 +984,17 @@ function Fix-One([string]$path) {
             $titleSet = Set-DocTitle $zip $docTitleText
         }
         [void]$zip.Dispose()
-        Add-WorkLog 'IMBK Macro' $path $path
+        Add-WorkLog 'IMBK Macro' $src $path
 
         $check = [IO.Compression.ZipFile]::OpenRead($path); [void]$check.Dispose()
         $titleMsg = if ($titleSet) { "set to '$docTitleText'" } else { "not changed (no title found on slide 1)" }
         $reviewMsg = if ($imbkResult.review.Count -gt 0) { ", slides to check by hand: " + ($imbkResult.review -join ',') } else { "" }
-        return "$name : figures laid out $($imbkResult.done), caption boxes resized $($script:BoxesResized), already done $($imbkResult.already), accessibility marking added $($imbkResult.markedOnly)$reviewMsg, titles numbered $($dedupResult.changed), caption boxes made placeholders $phCount, language tags changed $langCount, document title $titleMsg. Backup: $(Split-Path $bak -Leaf)"
+        return "$name : figures laid out $($imbkResult.done), caption boxes resized $($script:BoxesResized), already done $($imbkResult.already), accessibility marking added $($imbkResult.markedOnly)$reviewMsg, titles numbered $($dedupResult.changed), caption boxes made placeholders $phCount, language tags changed $langCount, document title $titleMsg. Saved as: $(Split-Path $path -Leaf)"
     }
     catch {
         try { [void]$zip.Dispose() } catch {}
-        Copy-Item $bak $path -Force
-        return "$name : FAILED, file put back from the backup. $($_.Exception.Message)"
+        Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+        return "$name : FAILED, no fixed copy was made and your original is untouched. $($_.Exception.Message)"
     }
 }
 

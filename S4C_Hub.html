@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="3.10">
+<meta name="s4c-hub-version" content="3.13">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -513,13 +513,13 @@ const TOOLS=[
   idea:'For SDRS files (the file name contains SDRS) it also turns sideways photo credits upright and places them under their picture, so the reading order is title, picture, credit, caption. Other files are not touched this way.',
   steps:[['Pick files','PowerPoint decks'],['Check GitHub','Newest version of this tool'],['Number titles','(1 of N) on repeated titles'],['Name shapes','Title, TextBox, Picture'],['Reading order','Title, picture, credit, caption'],['Save','Remediated.pptx']],
   checks:['Repeated titles end in (1 of N)','Shapes are named in reading order','SDRS files: credit sits under its picture','Language is English (US) and the document title is set']},
- {file:'IMBK_Macro.ps1',drop:'.pptx',art:'layout',name:'IMBK Tool',key:'IMBK Macro',group:1,letter:'P',tile:'var(--ppt)',out:'<name> (same file, backup kept)',unit:'slides',
+ {file:'IMBK_Macro.ps1',drop:'.pptx',art:'layout',name:'IMBK Tool',key:'IMBK Macro',group:1,letter:'P',tile:'var(--ppt)',out:'<name> Remediated.pptx',unit:'slides',
   tagline:'IMBK chapter decks: figures, captions and credits laid out.',
   intro:['IMBK decks have figures, captions and credits that must sit in a fixed layout and be real placeholders.',
          'IMBK Tool lays them out, numbers repeated titles, names shapes, sets the language and the document title.'],
-  idea:'It works on the file itself and keeps a backup named <code>_BEFORE_IMBKfix</code> next to it.',
-  steps:[['Pick files','IMBK decks'],['Check GitHub','Newest version of this tool'],['Lay out figures','Captions and credits'],['Name shapes','Title, TextBox, Picture'],['Save','Same file + backup']],
-  checks:['Figures, captions and credits are in place','Repeated titles end in (1 of N)','A _BEFORE_IMBKfix backup exists']},
+  idea:'Your original file is never changed. The fixed copy is saved next to it with <code>Remediated</code> at the end of the name.',
+  steps:[['Pick files','IMBK decks'],['Check GitHub','Newest version of this tool'],['Lay out figures','Captions and credits'],['Name shapes','Title, TextBox, Picture'],['Save a copy','Remediated.pptx + report']],
+  checks:['Figures, captions and credits are in place','Repeated titles end in (1 of N)','Your original file is unchanged']},
  {file:'AltText_Tool.ps1',drop:['.pptx','.docx','.xlsx','.csv'],art:'alt',name:'Alt Text Tool',group:1,letter:'P',tile:'var(--ppt)',out:'<name> AltText.pptx / .docx',unit:'slides',
   tagline:'Fills picture alt text from the client\'s Excel log, matched by figure number.',
   intro:['The client sends alt text in an Excel file, one row per figure. Copying it into every picture by hand is slow and easy to get wrong.',
@@ -660,7 +660,7 @@ function dzRender(){const t=TOOLS[cur];const list=$('dzList');
   $('dzIn').accept=dropOf(t).join(',');
   const it=dzOn();list.style.display=it.length?'':'none';
   list.innerHTML=it.map((x,i)=>'<div class="r"><span class="nm" title="'+esc(x.path||x.file.name)+'">'+esc(x.file.name)+'</span><span class="st'+(x.state==='done'?' ok':x.state==='failed'?' bad':'')+'">'+esc(x.msg)+'</span>'+
-    (x.state==='needfolder'&&!job?'<button class="btn pri" onclick="dzPickWin('+i+')">Pick it again</button><button class="btn" onclick="dzPickDir('+i+')">Choose folder</button><button class="btn" onclick="dzUseDefault('+i+')">Save in Documents</button>':'')+(!x.noOpen&&(x.path||x.outPath)?'<button class="btn" onclick="dzOpen('+i+')">Open folder</button>':'')+(x.state==='failed'&&!job?'<button class="x" title="Remove" onclick="dzDel('+i+')">&times;</button>':'')+'</div>').join('');
+    (!x.noOpen&&(x.path||x.outPath)?'<button class="btn" onclick="dzOpen('+i+')">Open folder</button>':'')+(!job?'<button class="x" title="Remove" onclick="dzDel('+i+')">&times;</button>':'')+'</div>').join('');
   if(!job)$('runTxt').textContent='Choose files';
   rnDraw()}
 function dzDel(i){dz.items.splice(i,1);dzRender()}
@@ -674,11 +674,11 @@ async function dzAdd(files){const t=TOOLS[cur];if(!t.drop)return;
   const mine=[];
   for(const f of add){if(dz.items.some(x=>x.file.name===f.name&&x.file.size===f.size))continue;const x={file:f,path:'',state:'looking',msg:'Looking for the original...'};dz.items.push(x);mine.push(x)}
   dzRender();if(!mine.length)return;
-  const miss='Could not tell which folder this file is in. Press Pick it again and choose the same file, so the fixed copy is saved beside it.';
+  const miss='Fixed copy will be saved in Documents\\S4C Output';
   try{const r=await POSTJ('/api/locate',mine.map(x=>({name:x.file.name,size:x.file.size,mtime:x.file.lastModified})));
     const fl=[].concat(r.files||[]);
-    mine.forEach(x=>{const m=fl.find(y=>y.name===x.file.name);if(m&&m.path){x.state='ready';x.path=m.path;x.msg='Found in '+folderOf(m.path)}else{x.state='needfolder';x.msg=miss}})
-  }catch(e){mine.forEach(x=>{x.state='needfolder';x.msg=miss})}
+    mine.forEach(x=>{const m=fl.find(y=>y.name===x.file.name);if(m&&m.path){x.state='ready';x.path=m.path;x.msg='Found in '+folderOf(m.path)}else{x.state='ready';x.msg=miss}})
+  }catch(e){mine.forEach(x=>{x.state='ready';x.msg=miss})}
   dzRender();startDrop()}
 async function startDrop(){
   if(job){toast('warn','A tool is already running','Wait until it has finished.');return}
@@ -700,7 +700,8 @@ async function startDrop(){
   for(const x of items){
     if(!x.path){x.msg='Preparing...';dzRender();
       try{const r=await (await fetch('/api/upload?name='+encodeURIComponent(x.file.name)+'&dir='+encodeURIComponent(x.dir||''),{method:'POST',headers:{'X-S4C':TOKEN},body:x.file})).json();x.path=r.path}
-      catch(e){x.state='failed';x.msg='Could not copy: '+e.message;continue}}
+      catch(e){x.state='failed';let up=true;try{const pr=await fetch('/api/hub',{headers:{'X-S4C':TOKEN},cache:'no-store'});up=pr.ok}catch(e2){up=false}
+        x.msg=up?('Could not copy: '+e.message):'The black S4C Tools window is not running any more. Close this tab and open S4C Tools again, then choose the file again.';continue}}
     paths.push(x.path);x.state='running';x.msg='Waiting...'}
   if(!paths.length){$('btnRun').disabled=$('btnCheck').disabled=false;dzRender();return}
   try{const r=await POSTJ('/api/runfiles',{tool:t.file,files:paths,chapter});
@@ -710,25 +711,11 @@ async function startDrop(){
     dzRender();drawSteps();poll();
   }catch(e){$('btnRun').disabled=$('btnCheck').disabled=false;items.forEach(x=>{if(x.state==='running'){x.state='failed';x.msg='Could not start: '+e.message}});rn=null;dzRender();toast('err','Could not start',e.message)}}
 /* the Windows file window: the real folder is known, so the fixed copy is saved right there */
-let pickBusy=false;
-async function pickWait(id,hintMs){const t0=Date.now();let hinted=false;
-  while(true){await new Promise(r=>setTimeout(r,500));
-    if(!hinted&&Date.now()-t0>hintMs){hinted=true;toast('inf','Do not see the file window?','Look in the taskbar. It opens in front of this page.',null,12000)}
-    const r=await (await api('/api/pickresult?id='+id)).json();if(r.done)return r}}
 function pickFiles(){if(job)return;$('dzIn').click()}
 async function dzPickDir(i){const x=dzOn()[i];if(!x)return;
   if(!window.showDirectoryPicker){dzUseDefault(i);toast('inf','Saved in Documents','This browser cannot pick a folder, so the fixed copy goes to Documents\\S4C Output.');return}
   try{const hd=await window.showDirectoryPicker({mode:'readwrite'});x.dirHandle=hd;x.state='ready';x.msg='Fixed copy will be saved in the folder "'+hd.name+'"';dzRender();startDrop()}
   catch(e){if(e&&e.name!=='AbortError')toast('warn','That folder cannot be used','Pick another folder, or use Save in Documents.')}}
-/* the Windows file window gives the real folder, so the fixed copy is saved right beside the original */
-async function dzPickWin(i){const x=dzOn()[i];if(!x||pickBusy)return;pickBusy=true;
-  try{const t=TOOLS[cur];x.msg='Waiting for the file window...';dzRender();
-    const id=(await (await api('/api/pick?mode=file&tool='+encodeURIComponent(t.file))).json()).id;
-    const r=await pickWait(id,5000);const f=(r.files||[]).find(p=>leafOf(p).toLowerCase()===x.file.name.toLowerCase());
-    if(f){x.path=f;x.state='ready';x.msg='Found in '+folderOf(f);dzRender();startDrop()}
-    else{x.state='needfolder';x.msg=r.files&&r.files.length?'That is a different file. Pick '+x.file.name+'.':'No file chosen.';dzRender()}}
-  catch(e){x.state='needfolder';x.msg='The file window could not open. Use Choose folder or Save in Documents.';dzRender()}
-  finally{pickBusy=false}}
 function dzUseDefault(i){const x=dzOn()[i];if(!x)return;x.dirHandle=null;x.state='ready';x.msg='Fixed copy will be saved in Documents\\S4C Output';dzRender();startDrop()}
 /* after a run for a file whose folder was chosen in the browser: the finished copy is written into that folder */
 async function dzWriteBack(x){
