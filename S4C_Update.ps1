@@ -1,6 +1,6 @@
 # S4C UPDATE SCRIPT - checks the 'testing' branch on GitHub for ONE tool and replaces the local copy
-# S4C-FILE-VERSION: 1.6
-# only when GitHub has a HIGHER version number. An older or same-numbered file on GitHub never replaces the copy here.
+# S4C-FILE-VERSION: 1.7
+# The copy here always matches the 'testing' branch: when the GitHub file is different (newer, same number or older), it replaces the copy here.
 # Used by "S4C Tools.cmd" for the tool you pick. Never stops the tool from running.
 param([string]$Tool)
 $info = @{
@@ -87,16 +87,17 @@ if ($errs -and $errs.Count -gt 0) {
 $newVer = Get-Ver $new
 $norm = { param($t) ($t -replace "`r`n", "`n").TrimEnd() }
 function ConvertTo-Ver([string]$v) { try { if ($v -match '^\d+$') { $v += '.0' }; return [version]$v } catch { return $null } }
-$vo = ConvertTo-Ver $oldVer; $vn = ConvertTo-Ver $newVer
-if (-not $old -or ($vn -and $vo -and $vn -gt $vo) -or ($vn -and -not $vo)) {
+if ((& $norm $new) -ne (& $norm $old)) {
     [IO.File]::WriteAllText($local, $new, (New-Object Text.UTF8Encoding($false)))
-    Write-Host ('  Connected to GitHub. UPDATED: version ' + $oldVer + ' -> ' + $newVer) -ForegroundColor Green
-    Set-Result 'updated' ('Updated ' + $oldVer + ' -> ' + $newVer) ''
-} elseif ($vn -and $vo -and $vn -lt $vo) {
-    Write-Host ('  Connected to GitHub. GitHub has an older version (' + $newVer + ') - kept your version ' + $oldVer + '.') -ForegroundColor Green
-    Set-Result 'newer' ('GitHub has ' + $newVer + ' - kept your newer ' + $oldVer) ''
+    if ($oldVer -eq $newVer) {
+        Write-Host ('  Connected to GitHub. UPDATED: the newest file from GitHub replaced the copy here (version ' + $newVer + ').') -ForegroundColor Green
+        Set-Result 'updated' ('Updated to the newest file (' + $newVer + ')') ''
+    } else {
+        Write-Host ('  Connected to GitHub. UPDATED: version ' + $oldVer + ' -> ' + $newVer) -ForegroundColor Green
+        Set-Result 'updated' ('Updated ' + $oldVer + ' -> ' + $newVer) ''
+    }
 } else {
-    Write-Host ('  Connected to GitHub. You already have the latest version (' + $oldVer + ').') -ForegroundColor Green
-    Set-Result 'latest' ('Newest version (' + $oldVer + ')') ''
+    Write-Host ('  Connected to GitHub. You already have the latest version (' + $newVer + ').') -ForegroundColor Green
+    Set-Result 'latest' ('Newest version (' + $newVer + ')') ''
 }
 Write-Host ''
