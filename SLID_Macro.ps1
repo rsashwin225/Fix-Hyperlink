@@ -1,7 +1,7 @@
 # SLID Macro - numbers repeated slide titles (1 of 4), renames shapes, puts sideways photo credits under their picture (SDRS files only), fixes language tags.
 # Saves a remediated copy next to the original. (Self-updates from GitHub via SLID_Update.ps1.)
 # SLID MACRO SCRIPT
-$SLID_VERSION = '1.7'   # shown at the start of the window; the updater compares this number with GitHub
+$SLID_VERSION = '1.8'   # shown at the start of the window; the updater compares this number with GitHub
 # ---- work log: notes each saved file (name, slides or pages) for the daily report in S4C Tools ----
 # Only reads the saved file; never changes it and never stops the tool if something goes wrong.
 function Add-WorkLog([string]$tool, [string]$inPath, [string]$outPath) {
@@ -315,6 +315,23 @@ try {
             if ($c.NodeType -ne 'Element') { continue }
             $order++
             $kind = ''; $nv = $null; $isCredit = $false
+            # a shape PowerPoint keeps inside a compatibility wrapper (mc:AlternateContent): it is renamed too, in the wrapper's two copies
+            $top = $c; $nv2 = $null
+            if ($c.LocalName -eq 'AlternateContent') {
+                $inner = $null; $innerFb = $null
+                foreach ($ch in $c.ChildNodes) {
+                    if ($ch.NodeType -ne 'Element') { continue }
+                    foreach ($g in $ch.ChildNodes) {
+                        if ($g.NodeType -eq 'Element' -and @('sp', 'pic', 'grpSp', 'graphicFrame', 'cxnSp') -contains $g.LocalName) {
+                            if ($ch.LocalName -eq 'Choice' -and -not $inner) { $inner = $g } elseif ($ch.LocalName -eq 'Fallback' -and -not $innerFb) { $innerFb = $g }
+                            break
+                        }
+                    }
+                }
+                if (-not $inner) { continue }
+                if ($innerFb) { $nv2 = $innerFb.SelectSingleNode('*[1]/p:cNvPr', $m) }
+                $c = $inner
+            }
             if (@('sp', 'pic', 'grpSp', 'graphicFrame', 'cxnSp') -notcontains $c.LocalName) { continue }
             switch ($c.LocalName) {
                 'sp' {
@@ -351,7 +368,7 @@ try {
                 $lo = Get-LayoutOff $sp $c
                 if ($lo) { $y = $lo[0]; $x = $lo[1]; $w = $lo[2] } else { $y = 1e12; $x = 0 }
             }
-            $items.Add([pscustomobject]@{ Kind = $kind; Nv = $nv; Node = $c; RK = $rk; Y = [Math]::Round($y / 12700); X = $x; CX = (($x + $w / 2) / 12700); Order = $order; L = $x; T = $y; W = $w; H = $h })
+            $items.Add([pscustomobject]@{ Kind = $kind; Nv = $nv; Nv2 = $nv2; Top = $top; Node = $c; RK = $rk; Y = [Math]::Round($y / 12700); X = $x; CX = (($x + $w / 2) / 12700); Order = $order; L = $x; T = $y; W = $w; H = $h })
         }
         # first slide: its one text object is the subtitle, even when it is not a subtitle placeholder
         if ($slideParts.IndexOf($sp) -eq 0 -and -not @($items | Where-Object { $_.Kind -eq 'Subtitle' }).Count) {
@@ -432,6 +449,7 @@ try {
             if ($running.ContainsKey($it.Kind)) { $running[$it.Kind]++ } else { $running[$it.Kind] = 1 }
             $nm = if ($totals[$it.Kind] -eq 1) { $it.Kind } else { $it.Kind + ' ' + $running[$it.Kind] }
             $it.Nv.SetAttribute('name', $nm)
+            if ($it.Nv2) { $it.Nv2.SetAttribute('name', $nm) }
             $renamed++
         }
         $same = $true
@@ -439,8 +457,8 @@ try {
         if (-not $same) {
             $anchor = $tree.SelectSingleNode('p:extLst', $m)
             foreach ($it in $sorted) {
-                $null = $tree.RemoveChild($it.Node)
-                if ($anchor) { $null = $tree.InsertBefore($it.Node, $anchor) } else { $null = $tree.AppendChild($it.Node) }
+                $null = $tree.RemoveChild($it.Top)
+                if ($anchor) { $null = $tree.InsertBefore($it.Top, $anchor) } else { $null = $tree.AppendChild($it.Top) }
             }
             $reordered++
         }
