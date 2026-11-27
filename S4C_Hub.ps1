@@ -1,5 +1,5 @@
 # S4C HUB SCRIPT - the S4C Tools window. Runs a small page on this PC only (http://localhost) and opens it
-# S4C-FILE-VERSION: 3.15
+# S4C-FILE-VERSION: 3.17
 # in the browser. From the page you pick a tool, it checks GitHub for that one tool, then opens the tool
 # in its own window exactly as before. Close this window to close S4C Tools.
 $ErrorActionPreference = 'Stop'
@@ -24,15 +24,108 @@ function Get-ToolVersion([string]$file) {
     $m = [regex]::Match([IO.File]::ReadAllText($p), $TOOLS[$file].Rx)
     if ($m.Success) { return $m.Groups[1].Value } else { return '' }
 }
+$script:titleCache = @{}
+# the title of a finished file: the document title the tools set, else the title shown on slide 1 (decks) or the first Title / Heading 1 paragraph (Word). Only read for display.
+function Get-DocTitle([string]$p) {
+    try {
+        if (-not $p -or -not (Test-Path -LiteralPath $p -PathType Leaf)) { return '' }
+        $ext = [IO.Path]::GetExtension($p).ToLowerInvariant(); if ($ext -ne '.pptx' -and $ext -ne '.docx') { return '' }
+        $fi = Get-Item -LiteralPath $p; $key = $p + '|' + $fi.LastWriteTimeUtc.Ticks
+        if ($script:titleCache.ContainsKey($key)) { return $script:titleCache[$key] }
+        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+        $title = ''
+        $zip = [IO.Compression.ZipFile]::OpenRead($p)
+        try {
+            $rd = { param($n) $e = $zip.GetEntry($n); if (-not $e) { return '' }; $sr = New-Object IO.StreamReader($e.Open(), [Text.Encoding]::UTF8); try { return $sr.ReadToEnd() } finally { $sr.Close() } }
+            $core = [string](& $rd 'docProps/core.xml')
+            $m = [regex]::Match($core, '<dc:title>([^<]*)</dc:title>'); if ($m.Success) { $title = $m.Groups[1].Value }
+            if (-not $title.Trim()) {
+                if ($ext -eq '.pptx') {
+                    $s1 = [string](& $rd 'ppt/slides/slide1.xml')
+                    foreach ($part in ($s1 -split '<p:sp>')) {
+                        if ($part -match 'type="(ctrTitle|title)"') { $title = ([regex]::Matches($part, '<a:t>([^<]*)</a:t>') | ForEach-Object { $_.Groups[1].Value }) -join ' '; if ($title.Trim()) { break } }
+                    }
+                } else {
+                    $d = [string](& $rd 'word/document.xml')
+                    $mm = [regex]::Match($d, '<w:p[ >].*?</w:p>', 'Singleline'); $n = 0
+                    while ($mm.Success -and $n -lt 400) {
+                        $n++
+                        if ($mm.Value -match '<w:pStyle w:val="(Title|Heading1|Heading 1)"') { $title = ([regex]::Matches($mm.Value, '<w:t[^>]*>([^<]*)</w:t>') | ForEach-Object { $_.Groups[1].Value }) -join ''; if ($title.Trim()) { break } }
+                        $mm = $mm.NextMatch()
+                    }
+                }
+            }
+        } finally { $zip.Dispose() }
+        $title = ([Net.WebUtility]::HtmlDecode($title) -replace '\s+', ' ').Trim(); if ($title.Length -gt 140) { $title = $title.Substring(0, 137) + '...' }
+        $script:titleCache[$key] = $title
+        return $title
+    } catch { return '' }
+}
+# the integrity result written after each run (one line per checked file; the newest line wins)
+function Get-IntegrityMap {
+    $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }
+    $f = Join-Path (Join-Path (Join-Path $base 'S4C_Tools') 'WorkLog') 'integrity.tsv'
+    $map = @{}
+    if (Test-Path -LiteralPath $f) {
+        foreach ($l in [IO.File]::ReadAllLines($f, [Text.Encoding]::UTF8)) {
+            $c = $l.Split("`t"); if ($c.Count -lt 5) { continue }
+            $n = 0; [void][int]::TryParse($c[2], [ref]$n)
+            $map[$c[0].ToLowerInvariant()] = [ordered]@{ verdict = $c[1]; flagged = $n; note = $c[3]; report = $c[4] }
+        }
+    }
+    return $map
+}
+function Test-LoggedPath([string]$p) {
+    try { $full = [IO.Path]::GetFullPath($p) } catch { return $false }
+    if (-not (Test-Path -LiteralPath $full -PathType Leaf)) { return $false }
+    if ($full -notmatch '(?i)\.(docx|pptx|xlsx)$') { return $false }
+    $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }
+    $dir = Join-Path (Join-Path $base 'S4C_Tools') 'WorkLog'
+    $log = Join-Path $dir 'worklog.tsv'
+    if (Test-Path -LiteralPath $log) {
+        foreach ($l in [IO.File]::ReadAllLines($log, [Text.Encoding]::UTF8)) { $c = $l.Split("`t"); if ($c.Count -ge 6 -and ([string]::Equals($c[5], $full, 'OrdinalIgnoreCase') -or [string]::Equals($c[4], $full, 'OrdinalIgnoreCase'))) { return $true } }
+    }
+    foreach ($v in (Get-IntegrityMap).Values) { if ([string]::Equals([string]$v.report, $full, 'OrdinalIgnoreCase')) { return $true } }
+    return $false
+}
+# reads an Integrity Report (made by S4C_Integrity.ps1) so the page can show it; read only
+function Read-ReportSheets([string]$path) {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+    $out = New-Object System.Collections.Generic.List[object]
+    $zip = [IO.Compression.ZipFile]::OpenRead($path)
+    try {
+        $rd = { param($n) $e = $zip.GetEntry($n); if (-not $e) { return '' }; $sr = New-Object IO.StreamReader($e.Open(), [Text.Encoding]::UTF8); try { return $sr.ReadToEnd() } finally { $sr.Close() } }
+        $wb = [string](& $rd 'xl/workbook.xml')
+        $names = @([regex]::Matches($wb, '<sheet name="([^"]*)"') | ForEach-Object { [Net.WebUtility]::HtmlDecode($_.Groups[1].Value) })
+        for ($i = 0; $i -lt $names.Count; $i++) {
+            $x = [string](& $rd ('xl/worksheets/sheet' + ($i + 1) + '.xml'))
+            $rows = New-Object System.Collections.Generic.List[object]
+            foreach ($rm in [regex]::Matches($x, '<row r="\d+">(.*?)</row>', 'Singleline')) {
+                if ($rows.Count -ge 5000) { break }
+                $cells = New-Object System.Collections.Generic.List[string]
+                foreach ($cm in [regex]::Matches($rm.Groups[1].Value, '<c [^>]*>(.*?)</c>', 'Singleline')) {
+                    $t = [regex]::Match($cm.Groups[1].Value, '<t[^>]*>(.*)</t>', 'Singleline')
+                    $cells.Add($(if ($t.Success) { [Net.WebUtility]::HtmlDecode($t.Groups[1].Value) } else { '' }))
+                }
+                $rows.Add($cells.ToArray())
+            }
+            $out.Add([ordered]@{ name = $names[$i]; rows = $rows.ToArray() })
+        }
+    } finally { $zip.Dispose() }
+    return $out.ToArray()
+}
 function Get-LogRows([string]$day) {
     $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }
     $log = Join-Path (Join-Path (Join-Path $base 'S4C_Tools') 'WorkLog') 'worklog.tsv'
     $rows = New-Object System.Collections.Generic.List[object]
+    $im = Get-IntegrityMap
     if (Test-Path -LiteralPath $log) {
         foreach ($l in [IO.File]::ReadAllLines($log, [Text.Encoding]::UTF8)) {
             $c = $l.Split("`t")
             if ($c.Count -lt 8 -or $c[0] -ne $day) { continue }
-            $rows.Add([ordered]@{ time = $c[1]; user = $c[2]; tool = $c[3]; file = [IO.Path]::GetFileName($c[4]); out = [IO.Path]::GetFileName($c[5]); count = $c[6]; unit = $c[7] })
+            $exists = Test-Path -LiteralPath $c[5] -PathType Leaf
+            $chk = $null; $k = $c[5].ToLowerInvariant(); if ($im.ContainsKey($k)) { $chk = $im[$k] }
+            $rows.Add([ordered]@{ time = $c[1]; user = $c[2]; tool = $c[3]; file = [IO.Path]::GetFileName($c[4]); out = [IO.Path]::GetFileName($c[5]); count = $c[6]; unit = $c[7]; path = $c[5]; exists = $exists; title = $(if ($exists) { Get-DocTitle $c[5] } else { '' }); check = $chk })
         }
     }
     return , $rows.ToArray()
@@ -531,6 +624,18 @@ while ($listener.IsListening -and -not $quit) {
                     if ($full.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) -and $full -match '(?i)\.(pptx|docx|xlsx|csv)$' -and (Test-Path -LiteralPath $full -PathType Leaf)) { Send $res 200 'application/octet-stream' ([IO.File]::ReadAllBytes($full)) $null; $ok = $true }
                 } catch {}
                 if (-not $ok) { Send $res 404 'text/plain' 'not found' $null }
+            }
+            '/api/reportview' {
+                $p = [string]$q['path']
+                if ($p -and (Test-LoggedPath $p) -and $p -match '(?i)\.xlsx$') {
+                    try { Send $res 200 'application/json; charset=utf-8' (ToJson ([ordered]@{ sheets = @(Read-ReportSheets ([IO.Path]::GetFullPath($p))) })) $null }
+                    catch { Write-HubLog ('report view failed: ' + $_.Exception.Message); Send $res 500 'text/plain' 'The report could not be read.' $null }
+                } else { Send $res 404 'text/plain' 'not found' $null }
+            }
+            '/api/openfile' {
+                $p = [string]$q['path']
+                if ($p -and (Test-LoggedPath $p)) { try { Start-Process -FilePath ([IO.Path]::GetFullPath($p)) } catch { Write-HubLog ('open file failed: ' + $_.Exception.Message) } }
+                Send $res 200 'application/json' '{}' $null
             }
             '/api/openfolder' {
                 $p = [string]$q['path']

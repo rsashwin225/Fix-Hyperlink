@@ -1,8 +1,9 @@
 # S4C REPORT SCRIPT - makes the daily work report from the work log the tools keep on this PC.
-# S4C-FILE-VERSION: 1.4
+# S4C-FILE-VERSION: 1.5
 # The log is %LOCALAPPDATA%\S4C_Tools\WorkLog\worklog.tsv (one line per file a tool saved).
 $ErrorActionPreference = 'Stop'
 $ci = [Globalization.CultureInfo]::InvariantCulture
+function To12([string]$t) { $d = [datetime]::MinValue; if ([datetime]::TryParseExact($t, 'HH:mm', $ci, [Globalization.DateTimeStyles]::None, [ref]$d)) { return $d.ToString('h:mm tt', $ci) } return $t }
 $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }
 $logPath = Join-Path (Join-Path (Join-Path $base 'S4C_Tools') 'WorkLog') 'worklog.tsv'
 
@@ -80,7 +81,7 @@ $L.Add('  S4CARLISLE - DAILY WORK REPORT')
 $L.Add($eq)
 $L.Add('  Name      : ' + $user + '   (Windows user: ' + $env:USERNAME + ', PC: ' + $env:COMPUTERNAME + ')')
 $L.Add('  Date      : ' + $day.ToString('dddd, dd MMMM yyyy', $ci))
-$L.Add('  Generated : ' + (Get-Date).ToString('dd-MM-yyyy HH:mm', $ci))
+$L.Add('  Generated : ' + (Get-Date).ToString('dd-MM-yyyy h:mm tt', $ci))
 $L.Add($dash)
 if ($items.Count -eq 0) {
     $L.Add('  No files were saved by the tools on this day.')
@@ -100,7 +101,7 @@ if ($items.Count -eq 0) {
             $i++
             $cnt = if ($g.Count -ne '') { $g.Count } else { '-' }
             if ($g.Unit -eq 'pages' -and $cnt -ne '-') { $cnt = $cnt + ' p' }
-            $time = if ($g.First -eq $g.Last) { $g.First } else { $g.First + '-' + $g.Last }
+            $time = if ($g.First -eq $g.Last) { To12 $g.First } else { (To12 $g.First) + ' - ' + (To12 $g.Last) }
             $L.Add('  ' + ([string]$i).PadRight(3) + $g.Name.PadRight($nameW + 3) + $cnt.PadLeft($cw) + '   ' + ($g.Tools -join ', ').PadRight($toolW + 3) + $time)
         }
         $L.Add('')

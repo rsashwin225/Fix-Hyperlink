@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="3.13">
+<meta name="s4c-hub-version" content="3.15">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -295,6 +295,17 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
 
 .dg tbody tr td:last-child{position:relative}
 .ttlc{display:inline-block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;font-weight:600;color:var(--brand);cursor:pointer;border-radius:6px;padding:1px 6px;margin-left:-6px}.ttlc:hover{background:var(--card2)}.ttlc.none{font-weight:500;color:var(--fg3);border:1px dashed var(--stroke2)}
+.fnt{display:flex;flex-direction:column;min-width:0}.fnt b{font-weight:600;white-space:normal}.fnt small{color:var(--fg3);font-size:12px;font-weight:400;word-break:break-all}
+.chk{display:inline-block;font-size:12px;font-weight:600;border-radius:999px;padding:3px 10px;white-space:nowrap}.chk.pass{background:rgba(63,125,58,.14);color:#3f7d3a}.chk.flag{background:rgba(200,146,42,.18);color:#9a6a00}.chk.miss{background:rgba(179,64,42,.14);color:#b3402a}.chk.none{color:var(--fg3);font-weight:400}
+.fl2{display:none}#tbody td,.dg th{padding-left:12px;padding-right:12px}.wkb{white-space:normal!important;min-width:240px}.wkb .rm{margin:2px 2px 2px 0}.rm:disabled{opacity:.4;cursor:default}
+.dlg.rpt{width:min(1060px,94vw);max-width:none;height:min(700px,90vh);padding:0;display:flex;flex-direction:column;overflow:hidden}
+.rh{display:flex;align-items:flex-start;gap:12px;padding:18px 24px 12px;border-bottom:1px solid var(--stroke)}.rh h3{margin:0;font-size:21px}.rh small{color:var(--fg3);font-size:12.5px}.rh .sp{flex:1}.rx{border:0;background:none;font-size:26px;color:var(--fg3);cursor:pointer;line-height:1;padding:0 4px}
+.rtabs{display:flex;gap:6px;padding:10px 24px 0;border-bottom:1px solid var(--stroke)}.rtab{padding:8px 16px;border:1px solid transparent;border-bottom:0;border-radius:10px 10px 0 0;font-size:13px;color:var(--fg3);cursor:pointer;background:none;font-family:inherit;margin-bottom:-1px}.rtab.on{background:var(--card);border-color:var(--stroke);color:var(--fg);font-weight:600}.rtab .cn{display:inline-block;background:rgba(179,64,42,.16);color:#b3402a;border-radius:999px;font-size:11px;padding:1px 7px;margin-left:6px}
+.rbody{padding:16px 24px;overflow:auto;flex:1;font-size:13px}.rbody table{width:100%;border-collapse:collapse}.rbody th{text-align:left;font-size:11px;letter-spacing:.07em;color:var(--fg3);text-transform:uppercase;padding:8px 10px;border-bottom:1px solid var(--stroke);position:sticky;top:-16px;background:var(--card)}.rbody td{padding:9px 10px;border-bottom:1px solid var(--stroke);vertical-align:top;word-break:break-word}
+.rbody tr.rf td{background:rgba(179,64,42,.09)}.rbody tr.re td{background:rgba(63,125,58,.09)}.rbody .rs{font-weight:600}.rbody .rs.f{color:#b3402a}.rbody .rs.g{color:#3f7d3a}
+.rbody del{background:rgba(179,64,42,.25);text-decoration:none;padding:0 2px;border-radius:3px}.rbody ins{background:rgba(63,125,58,.28);text-decoration:none;padding:0 2px;border-radius:3px}
+.rbody .kv{display:grid;grid-template-columns:260px 1fr;gap:8px 16px}.rbody .kv>span:nth-child(odd){color:var(--fg3)}.rbody .rt{display:flex;align-items:center;gap:12px;margin-bottom:12px;color:var(--fg2)}.rbody .rt .tg{margin-left:auto;color:var(--fg3)}.rbody .note{margin-top:14px;color:var(--fg3);font-size:12.5px}
+.sw2{width:34px;height:19px;border-radius:999px;background:var(--stroke2);position:relative;display:inline-block;cursor:pointer;border:0;padding:0}.sw2:after{content:"";position:absolute;left:2px;top:2px;width:15px;height:15px;border-radius:50%;background:#fff;transition:left .15s}.sw2.on{background:#2f5d4e}.sw2.on:after{left:17px}
 .dg .tag{white-space:nowrap}.rm.cp{color:var(--fg2)}.rm.cp:hover{background:var(--card2)}.rm{height:28px;padding:0 10px;border-radius:8px;border:1px solid var(--stroke2);background:var(--card);cursor:pointer;font-size:12px;color:#a23a1f}.rm:hover{background:#f7e3dc}
 .rowact{position:absolute;right:12px;top:50%;transform:translateY(-50%);display:flex;gap:6px;opacity:0;transition:opacity .12s}
 .dg tbody tr:hover .rowact{opacity:1}
@@ -450,7 +461,7 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
         <div class="card stat"><small><svg><use href="#i-file"/></svg>Word pages</small><b id="cPages">0</b><span>as saved by Word</span></div>
         <div class="card stat"><small><svg><use href="#i-sync"/></svg>Tool runs</small><b id="cRuns">0</b><span>files saved by tools</span></div>
       </div>
-      <section class="card"><table class="dg"><thead><tr><th style="width:44px">#</th><th style="width:170px">Title</th><th>File name</th><th class="n" style="width:104px">Slides / pages</th><th style="width:150px">Tools used</th><th style="width:118px">Time</th><th style="width:136px"></th></tr></thead><tbody id="tbody"></tbody></table></section>
+      <section class="card"><table class="dg"><thead><tr><th style="width:36px">#</th><th style="width:120px">Title</th><th style="min-width:300px">File name</th><th class="n" style="width:92px">Slides / pages</th><th style="width:100px">Time</th><th style="width:130px">Check</th><th style="width:250px"></th></tr></thead><tbody id="tbody"></tbody></table></section>
     </div></div>
 
     <!-- ============ HELP ============ -->
@@ -481,6 +492,9 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
   <div class="pal-l" id="palL"></div>
   <div class="pal-f"><span><kbd>&uarr;</kbd> <kbd>&darr;</kbd> move</span><span><kbd>Enter</kbd> do it</span><span><kbd>Esc</kbd> close</span><span style="margin-left:auto"><kbd>?</kbd> all shortcuts</span></div>
 </div></div>
+<div class="off" id="rptDlg" onclick="if(event.target===this)rptClose()"><div class="dlg rpt">
+  <div class="rh"><div><h3 id="rptTitle">Integrity report</h3><small id="rptSub"></small></div><span id="rptBadge" class="chk"></span><span class="sp"></span><button class="btn" id="rptXl">Open in Excel</button><button class="rx" onclick="rptClose()" aria-label="Close">&times;</button></div>
+  <div class="rtabs" id="rptTabs"></div><div class="rbody" id="rptBody"></div></div></div>
 <div class="off" id="keysDlg"><div class="dlg" style="max-width:480px"><h3>Keyboard shortcuts</h3>
   <div class="keys">
     <span><kbd>Ctrl</kbd> <kbd>K</kbd></span><span>Quick search: run any tool or action</span>
@@ -552,7 +566,8 @@ async function api(p){const r=await fetch(p,{headers:{'X-S4C':TOKEN}});if(!r.ok)
 const SUF=/(\s+(Remediated|AltText|Links|Fixed)|_BEFORE_IMBKfix\d*)+$/i;
 function groupRows(rows){const m=new Map();rows.forEach(r=>{const dot=r.file.lastIndexOf('.');const stem=(dot>0?r.file.slice(0,dot):r.file).replace(SUF,'');const ext=dot>0?r.file.slice(dot):'';const k=(stem+ext).toLowerCase();
   if(!m.has(k))m.set(k,{key:k,name:r.file,count:'',unit:r.unit,tools:[],first:r.time,last:r.time});const g=m.get(k);
-  if(r.file.length<g.name.length)g.name=r.file;if(r.count!==''){g.count=r.count;g.unit=r.unit}if(!g.tools.includes(r.tool))g.tools.push(r.tool);if(r.time<g.first)g.first=r.time;if(r.time>g.last)g.last=r.time});return [...m.values()]}
+  if(r.file.length<g.name.length)g.name=r.file;if(r.count!==''){g.count=r.count;g.unit=r.unit}if(!g.tools.includes(r.tool))g.tools.push(r.tool);if(r.time<g.first)g.first=r.time;if(r.time>g.last)g.last=r.time;
+  if(!g.t||r.time>=g.t){g.t=r.time;if(r.path){g.path=r.path;g.exists=r.exists!==false}if(r.check)g.check=r.check}if(r.title&&(!g.title||r.time>=g.t))g.title=r.title});return [...m.values()]}
 function totals(rows){const g=groupRows(rows);let s=0,p=0;g.forEach(x=>{const n=parseInt(x.count)||0;if(x.unit==='slides')s+=n;else if(x.unit==='pages')p+=n});return {files:g.length,slides:s,pages:p,groups:g}}
 /* title from the file-name pattern: the part before the chapter / part / appendix marker (or a leading ISBN) */
 const CHAP=/[\s_.\-]*\b(?:ch(?:apter)?|chap|app(?:endix)?|part|unit|sec(?:tion)?|front|back|preface|index|glossary|intro(?:duction)?|ex(?:ercise)?)s?[\s_.\-]*(?:\d+|[a-z]\b)?.*$/i;
@@ -561,6 +576,7 @@ function titleKey(name){let st=name.replace(/\.[^.]+$/,'').replace(SUF,'').trim(
   if(!k&&m)k=m[1];return k.trim()}
 const getTitles=()=>LS.get('titles',{});
 function titleOf(name){const k=titleKey(name);const T=getTitles();const kk=k.toLowerCase();return {key:kk,auto:k.replace(/_/g,' '),shown:T[kk]!==undefined?T[kk]:k.replace(/_/g,' ')}}
+const t12=t=>{const m=/^(\d{1,2}):(\d{2})$/.exec(t||'');if(!m)return t||'';let h=+m[1];const ap=h>=12?'PM':'AM';h=h%12||12;return h+':'+m[2]+' '+ap};
 const unitTxt=x=>{const n=parseInt(x.count);if(isNaN(n))return '—';return n+' '+(x.unit==='pages'?(n===1?'page':'pages'):(n===1?'slide':'slides'))};
 const todayRows=()=>state.today===state.day?state.rows:(state.todayRows||[]);
 
@@ -614,9 +630,9 @@ function drawStats(){const t=TOOLS[cur];const mine=todayRows().filter(r=>r.tool=
   $('stats').innerHTML=
     '<div class="card stat"><small><svg><use href="#i-tag"/></svg>Version on this PC</small><b>'+esc(state.tools[t.file]||'—')+'</b><span style="word-break:break-all">'+esc(t.file)+'<br><small style="opacity:.7;text-transform:none;letter-spacing:0">'+esc(state.dir||'')+'</small></span></div>'+
     '<div class="card stat" title="'+esc(gh[t.file]&&gh[t.file].reason||'')+'"><small><svg><use href="#i-cloud"/></svg>GitHub</small><b class="'+g.c+'"><span class="dot '+g.c+'" style="display:inline-block"></span>'+esc(g.t)+'</b><span>'+esc(g.sub)+'</span></div>'+
-    '<div class="card stat"><small><svg><use href="#i-file"/></svg>Files today</small><b>'+(tt.files||0)+'</b><span>'+(last?'Last saved at '+esc(last):'None yet today')+'</span></div>'+
+    '<div class="card stat"><small><svg><use href="#i-file"/></svg>Files today</small><b>'+(tt.files||0)+'</b><span>'+(last?'Last saved at '+esc(t12(last)):'None yet today')+'</span></div>'+
     '<div class="card stat"><small><svg><use href="#i-slides"/></svg>'+(t.unit==='pages'?'Pages today':'Slides today')+'</small><b>'+(n||0)+'</b><span>'+(t.unit==='pages'?'As saved by Word':'Across today\'s decks')+'</span></div>';
-  $('mine').innerHTML=tt.groups.length?'<table class="mini">'+tt.groups.map(x=>'<tr><td title="'+esc(x.name)+'">'+esc(x.name)+'</td><td>'+unitTxt(x)+' · '+esc(x.last)+'</td></tr>').join('')+'</table>':'<div class="empty">No files saved with '+esc(t.name)+' today.</div>';
+  $('mine').innerHTML=tt.groups.length?'<table class="mini">'+tt.groups.map(x=>'<tr><td title="'+esc(x.name)+'">'+esc(x.name)+'</td><td>'+unitTxt(x)+' · '+esc(t12(x.last))+'</td></tr>').join('')+'</table>':'<div class="empty">No files saved with '+esc(t.name)+' today.</div>';
   $('mineCount').textContent=tt.groups.length?tt.groups.length+' file'+(tt.groups.length===1?'':'s'):'';
 }
 function drawSteps(){if(!$('steps'))return;const t=TOOLS[cur];const n=t.steps.length;
@@ -824,8 +840,45 @@ async function removeRow(b){const n=b.dataset.n,k=b.dataset.k,dy=($('day').value
     if(r.removed)toast('ok','Removed from the log',n,['Undo',undoRemove],12000);else toast('err','Nothing was removed','That file was not found in the log.')}catch(e){toast('err','Could not remove it',e.message==='not found'?'S4C Tools needs to be closed and opened again once to finish its update.':e.message)}}
 async function undoRemove(){try{const r=await (await api('/api/undelete')).json();await load(true);toast('ok','Put back',r.restored+' run'+(r.restored===1?'':'s')+' restored to the log')}catch(e){toast('err','Could not undo',e.message)}}
 function copyName(b){const n=b.dataset.n;if(navigator.clipboard)navigator.clipboard.writeText(n).then(()=>toast('ok','Copied',n))}
-function drawWork(){const tt=totals(state.rows);$('cFiles').textContent=tt.files;$('cSlides').textContent=tt.slides;$('cPages').textContent=tt.pages;$('cRuns').textContent=state.rows.length;
-  $('tbody').innerHTML=tt.groups.length?tt.groups.map((g,i)=>{const isW=/\.docx$/i.test(g.name);const ti=titleOf(g.name);return '<tr><td>'+(i+1)+'</td><td>'+(ti.shown?'<span class="ttlc" onclick="editTitle(\''+esc(ti.key).replace(/'/g,"\\'")+'\')" title="Click to rename this title">'+esc(ti.shown)+'</span>':'<span class="ttlc none" onclick="editTitle(\''+esc(ti.key).replace(/'/g,"\\'")+'\')">+ Add title</span>')+'</td><td><div class="fn"><span class="tile" style="background:'+(isW?'var(--word)':'var(--ppt)')+'">'+(isW?'W':'P')+'</span>'+esc(g.name)+'</div></td><td class="n">'+unitTxt(g)+'</td><td>'+g.tools.map(x=>'<span class="tag">'+esc(disp(x))+'</span>').join('')+'</td><td>'+esc(g.first===g.last?g.first:g.first+' – '+g.last)+'</td><td class="n" style="white-space:nowrap"><button class="rm cp" onclick="copyName(this)" data-n="'+esc(g.name)+'" title="Copy the file name">Copy</button> <button class="rm" data-k="'+esc(g.key)+'" data-n="'+esc(g.name)+'" onclick="removeRow(this)" title="Remove this file from the log (use it when a file was run by mistake)">Remove</button></td></tr>'}).join(''):
+function chkBadge(g){if(g.exists===false)return '<span class="chk miss" title="The saved file is no longer where it was saved (moved, renamed or deleted)">&#10005; File not found</span>';
+  const c=g.check;if(!c)return '<span class="chk none" title="No integrity result was saved for this file">&mdash;</span>';
+  if(c.verdict==='PASS')return '<span class="chk pass" title="'+esc(c.note||'')+'">&#10003; Preserved</span>';
+  return '<span class="chk flag" title="'+esc(c.note||'')+'">&#9873; '+(c.flagged||'')+' to check</span>'}
+async function wkOpen(b,what){const g=(window.WG||[])[+b.dataset.i];if(!g)return;const p=what==='report'?(g.check&&g.check.report):g.path;if(!p)return;
+  try{await api((what==='file'||what==='report'?'/api/openfile?path=':'/api/openfolder?path=')+encodeURIComponent(p))}catch(e){toast('err','Could not open it',e.message)}}
+/* ---------- the Integrity Report, shown in the page ---------- */
+let RPT=null;
+function dfy(a,b){a=a||'';b=a===undefined?'':(b||'');if(a===b)return [esc(a),esc(b)];let i=0;while(i<a.length&&i<b.length&&a[i]===b[i])i++;let j=0;while(j<a.length-i&&j<b.length-i&&a[a.length-1-j]===b[b.length-1-j])j++;
+  const w=(t,m)=>esc(t.slice(0,i))+(m?'<'+(t===a?'del':'ins')+'>'+esc(m)+'</'+(t===a?'del':'ins')+'>':'')+esc(t.slice(t.length-j));
+  return [w(a,a.slice(i,a.length-j)),w(b,b.slice(i,b.length-j))]}
+function rptClose(){$('rptDlg').classList.remove('on')}
+async function rptOpen(btn){const g=(window.WG||[])[+btn.dataset.i];if(!g||!g.check||!g.check.report)return;
+  const rp=g.check.report;btn.disabled=true;
+  try{const r=await api('/api/reportview?path='+encodeURIComponent(rp));if(!r.ok)throw new Error('The report could not be read. Use Open in Excel.');
+    const d=await r.json();RPT={g:g,rp:rp,sheets:d.sheets||[],tab:0,all:false};
+    $('rptTitle').textContent='Integrity report';$('rptXl').onclick=()=>api('/api/openfile?path='+encodeURIComponent(rp));
+    const sm=(RPT.sheets.find(x=>x.name==='Summary')||{rows:[]}).rows;const kv=k=>{const r=sm.find(x=>x[0]===k);return r?r[1]:''};
+    const ck=kv('Checked on');const m=/(\d{4}-\d{2}-\d{2}) (\d{1,2}:\d{2})/.exec(ck||'');
+    $('rptSub').textContent=g.name+' · '+(kv('Tool')||'')+(m?' · checked '+t12(m[2]):'');
+    const b=$('rptBadge');const rev=g.check.verdict==='REVIEW';b.className='chk '+(rev?'flag':'pass');b.innerHTML=rev?'&#9873; '+(g.check.flagged||'')+' to check':'&#10003; Preserved';
+    rptDraw();$('rptDlg').classList.add('on')}
+  catch(e){toast('err','Could not show the report',e.message||'')}
+  finally{btn.disabled=false}}
+function rptDraw(){const R=RPT;if(!R)return;
+  $('rptTabs').innerHTML=R.sheets.map((sh,i)=>{let n=0;const ri=sh.name==='Changes'?2:sh.name==='Counts'?3:-1;if(ri>=0)sh.rows.slice(1).forEach(r=>{if(r[ri]==='FLAG')n++});
+    return '<button class="rtab'+(i===R.tab?' on':'')+'" onclick="RPT.tab='+i+';rptDraw()">'+esc(sh.name)+(n?'<span class="cn">'+n+'</span>':'')+'</button>'}).join('');
+  const sh=R.sheets[R.tab];if(!sh){$('rptBody').innerHTML='';return}
+  let h='';
+  if(sh.name==='Summary'){h='<div class="kv">'+sh.rows.slice(1).filter(r=>r[0]!==''||r[1]!=='').map(r=>'<span>'+esc(r[0])+'</span><span>'+esc(r[1])+'</span>').join('')+'</div>'}
+  else if(sh.name==='Changes'){const body=sh.rows.slice(1);const flagged=body.filter(r=>r[2]==='FLAG');const shown=R.all?body:flagged;const cap=shown.slice(0,500);
+    h='<div class="rt"><button class="sw2'+(R.all?'':' on')+'" onclick="RPT.all=!RPT.all;rptDraw()" aria-label="Show only what needs a check"></button> Show only what needs a check<span class="tg">'+cap.length+' of '+body.length+' rows shown'+(shown.length>cap.length?' (first 500)':'')+'</span></div>';
+    if(!body.length||body[0][2]==='None')h+='<p>No text differences were found.</p>';
+    else{h+='<table><tr><th style="width:100px">Where</th><th style="width:80px">Result</th><th style="width:130px">Type</th><th>Before (original)</th><th>After (fixed)</th></tr>'+cap.map(r=>{const d=dfy(r[5],r[6]);return '<tr class="'+(r[2]==='FLAG'?'rf':r[2]==='Expected'?'re':'')+'"><td>'+esc(r[1])+'</td><td class="rs '+(r[2]==='FLAG'?'f':r[2]==='Expected'?'g':'')+'">'+esc(r[2])+'</td><td>'+esc(r[3])+'</td><td>'+d[0]+'</td><td>'+d[1]+'</td></tr>'}).join('')+'</table>';
+      if(!R.all&&body.length>flagged.length)h+='<div class="note">'+(body.length-flagged.length)+' other rows are changes the tool is allowed to make (for example a typed list label that became a real list). Switch the toggle off to see them.</div>'}}
+  else{h='<table><tr>'+sh.rows[0].map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr>'+sh.rows.slice(1).map(r=>{const rs=r[3];return '<tr class="'+(rs==='FLAG'?'rf':rs==='Expected'?'re':'')+'">'+r.map((c,i)=>'<td'+(i===3?' class="rs '+(rs==='FLAG'?'f':rs==='Match'?'g':'')+'"':'')+'>'+esc(c)+'</td>').join('')+'</tr>'}).join('')+'</table>'+(sh.name==='Counts'?'<div class="note">Slides, pictures, charts, tables and hyperlinks are counted in both files. A difference shows here in red.</div>':'')}
+  $('rptBody').innerHTML=h}
+function drawWork(){const tt=totals(state.rows);window.WG=tt.groups;$('cFiles').textContent=tt.files;$('cSlides').textContent=tt.slides;$('cPages').textContent=tt.pages;$('cRuns').textContent=state.rows.length;
+  $('tbody').innerHTML=tt.groups.length?tt.groups.map((g,i)=>{const isW=/\.docx$/i.test(g.name);const ti=titleOf(g.name);return '<tr><td>'+(i+1)+'</td><td>'+(ti.shown?'<span class="ttlc" onclick="editTitle(\''+esc(ti.key).replace(/'/g,"\\'")+'\')" title="Click to rename this title">'+esc(ti.shown)+'</span>':'<span class="ttlc none" onclick="editTitle(\''+esc(ti.key).replace(/'/g,"\\'")+'\')">+ Add title</span>')+'</td><td><div class="fn"><span class="tile" style="background:'+(isW?'var(--word)':'var(--ppt)')+'">'+(isW?'W':'P')+'</span>'+esc(g.name)+'</div></td><td class="n">'+unitTxt(g)+'</td><td style="white-space:nowrap">'+esc(g.first===g.last?t12(g.first):t12(g.first)+' – '+t12(g.last))+'</td><td>'+chkBadge(g)+'</td><td class="n wkb"><button class="rm" data-i="'+i+'" onclick="wkOpen(this,\'file\')"'+(g.exists===false||!g.path?' disabled':'')+' title="Open the saved file">Open file</button> <button class="rm" data-i="'+i+'" onclick="rptOpen(this)"'+(g.check&&g.check.report?'':' disabled')+(g.check&&g.check.verdict==='REVIEW'?' style="border-color:#c8922a"':'')+' title="Show the Integrity Report here">Integrity report</button> <button class="rm" data-i="'+i+'" onclick="wkOpen(this,\'folder\')"'+(g.exists===false||!g.path?' disabled':'')+' title="Show the file in its folder">Open folder</button> <button class="rm" data-k="'+esc(g.key)+'" data-n="'+esc(g.name)+'" onclick="removeRow(this)" title="Remove this file from the log (use it when a file was run by mistake)">Remove</button></td></tr>'}).join(''):
     '<tr><td colspan="7" style="color:var(--fg3);padding:28px 16px">No files were saved by the tools on this day.</td></tr>'}
 async function report(){const day=$('day').value||state.today;try{const r=await api('/api/report?day='+day+'&name='+encodeURIComponent(LS.get('name',''))+'&titles='+encodeURIComponent(JSON.stringify(getTitles())));const b=await r.blob();
   const cd=r.headers.get('Content-Disposition')||'';const m=/filename="([^"]+)"/.exec(cd);const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=m?m[1]:'Work report.txt';document.body.appendChild(a);a.click();a.remove();toast('ok','Report downloaded',m?m[1]:'')}catch(e){toast('err','Could not make the report',e.message)}}
@@ -841,7 +894,7 @@ $('day').onchange=()=>load(true);$('btnToday').onclick=()=>{$('day').value=state
 $('theme').onclick=()=>document.body.classList.toggle('dark');
 document.addEventListener('keydown',e=>{
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();palOpen();return}
-  if(e.key==='Escape'){palClose();$('keysDlg').classList.remove('on');$('ctx').classList.remove('on');return}
+  if(e.key==='Escape'){rptClose();palClose();$('keysDlg').classList.remove('on');$('ctx').classList.remove('on');return}
   if(e.target.tagName==='INPUT'||$('palBg').classList.contains('on'))return;
   const k=e.key;
   if(k==='?'){$('keysDlg').classList.add('on');return}

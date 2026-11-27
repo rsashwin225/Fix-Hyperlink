@@ -1,5 +1,5 @@
 # S4C INTEGRITY SCRIPT - compares the text of a file before and after a tool ran and writes an Excel report next to the fixed file.
-# S4C-FILE-VERSION: 1.1
+# S4C-FILE-VERSION: 1.2
 # Nothing in the original or the fixed file is changed here: both are only read.
 # Every paragraph is compared exactly (spaces and punctuation included). A change a tool is allowed to make (for example the slide counter,
 # a typed list label that became a real list, hyperlink text) is marked "Expected". Anything else is marked FLAG for a person to check.
@@ -373,6 +373,52 @@ $script:IG_Rules = @{
     'Link Fixer'  = 'Allowed: hyperlink text rewritten in paragraphs that contain a hyperlink. Spacing or punctuation-only changes are always flagged.'
     'Issue Fixer' = 'Allowed: language tags, reading order, shape names, colours and title placeholders. No text may change; any text change is flagged.'
 }
+
+# ---------------------------------------------------------------- counts of things that have no text (slides, pictures, charts, tables, hyperlinks)
+function IG-Counts([string]$path) {
+    $ext = [IO.Path]::GetExtension($path).ToLowerInvariant()
+    $c = [ordered]@{}
+    $zip = [IO.Compression.ZipFile]::OpenRead($path)
+    try {
+        if ($ext -eq '.pptx') {
+            $pres = IG-ReadEntry $zip 'ppt/presentation.xml'
+            $c['Slides'] = [regex]::Matches([string]$pres, '<p:sldId\s').Count
+            $pic = 0; $tbl = 0; $cht = 0; $lnk = 0
+            foreach ($e in $zip.Entries) {
+                if ($e.FullName -match '^ppt/slides/slide\d+\.xml$') {
+                    $t = [string](IG-ReadEntry $zip $e.FullName)
+                    $pic += [regex]::Matches($t, '<p:pic[ >]').Count
+                    $tbl += [regex]::Matches($t, '<a:tbl>').Count
+                    $cht += [regex]::Matches($t, '<c:chart[ >]').Count
+                    $lnk += [regex]::Matches($t, '<a:hlinkClick[ >/]').Count
+                }
+            }
+            $c['Pictures'] = $pic; $c['Charts'] = $cht; $c['Tables'] = $tbl; $c['Hyperlinks'] = $lnk
+        } elseif ($ext -eq '.docx') {
+            $t = [string](IG-ReadEntry $zip 'word/document.xml')
+            $c['Pictures'] = [regex]::Matches($t, '<pic:pic[ >]').Count
+            $c['Charts'] = [regex]::Matches($t, '<c:chart[ >]').Count
+            $c['Tables'] = [regex]::Matches($t, '<w:tbl>').Count
+            $c['Hyperlinks'] = [regex]::Matches($t, '<w:hyperlink[ >]').Count
+        }
+    } finally { $zip.Dispose() }
+    return $c
+}
+# one row per kind of thing: Match, Expected (a tool may add a duplicated slide) or FLAG (something is missing or was added)
+function IG-CompareCounts([string]$tool, [string]$orig, [string]$fixed) {
+    $out = New-Object System.Collections.Generic.List[object]
+    $a = IG-Counts $orig; $b = IG-Counts $fixed
+    $slideTool = ($tool -eq 'SLID Macro' -or $tool -eq 'IMBK Macro')
+    foreach ($k in $a.Keys) {
+        $x = [int]$a[$k]; $y = [int]$b[$k]
+        if ($x -eq $y) { $res = 'Match'; $why = 'Same number in both files.' }
+        elseif ($slideTool -and $y -gt $x) { $res = 'Expected'; $why = 'This tool may duplicate a slide on purpose, so more of them is allowed.' }
+        elseif ($y -lt $x) { $res = 'FLAG'; $why = 'Something is missing in the fixed file.' }
+        else { $res = 'FLAG'; $why = 'The fixed file has more than the original.' }
+        $out.Add([pscustomobject]@{ Kind = $k; Before = $x; After = $y; Result = $res; Why = $why })
+    }
+    return $out.ToArray()
+}
 function Test-Integrity([string]$tool, [string]$orig, [string]$fixed, [string]$reportPath) {
     $ext = [IO.Path]::GetExtension($fixed).ToLowerInvariant()
     if ($ext -eq '.pptx') { $origSet = IG-ReadPptx $orig; $fixSet = IG-ReadPptx $fixed } elseif ($ext -eq '.docx') { $origSet = IG-ReadDocx $orig; $fixSet = IG-ReadDocx $fixed } else { return $null }
@@ -396,7 +442,13 @@ function Test-Integrity([string]$tool, [string]$orig, [string]$fixed, [string]$r
     $flag = @($rows | Where-Object { $_.Result -eq 'FLAG' }).Count
     $exp = @($rows | Where-Object { $_.Result -eq 'Expected' }).Count
     $info = @($rows | Where-Object { $_.Result -eq 'Info' }).Count
-    $verdict = if ($flag -eq 0) { 'PASS - all text is preserved (' + $exp + ' change(s) allowed by the tool rules)' } else { 'REVIEW - ' + $flag + ' change(s) need a check (see the Changes sheet, red rows)' }
+    $cnt = @(); $cntErr = ''
+    try { $cnt = @(IG-CompareCounts $tool $orig $fixed) } catch { $cntErr = $_.Exception.Message }
+    $cflag = @($cnt | Where-Object { $_.Result -eq 'FLAG' }).Count
+    $cnote = (@($cnt | Where-Object { $_.Result -eq 'FLAG' } | ForEach-Object { $_.Kind + ' ' + $_.Before + ' to ' + $_.After }) -join ', ')
+    $textFlag = $flag
+    $flag = $textFlag + $cflag
+    $verdict = if ($flag -eq 0) { 'PASS - all text is preserved and the counts match (' + $exp + ' change(s) allowed by the tool rules)' } else { 'REVIEW - ' + $textFlag + ' text change(s) and ' + $cflag + ' count difference(s) need a check (see the Changes and Counts sheets)' }
     $ci = [Globalization.CultureInfo]::InvariantCulture
     $sum = New-Object System.Collections.Generic.List[object]
     $sum.Add(@('Integrity report', ''))
@@ -408,13 +460,14 @@ function Test-Integrity([string]$tool, [string]$orig, [string]$fixed, [string]$r
     $sum.Add(@('Paragraphs in the original', [string]$stats.OrigParas))
     $sum.Add(@('Paragraphs in the fixed file', [string]$stats.FixParas))
     $sum.Add(@('Paragraphs with identical text', [string]$stats.Same))
-    $sum.Add(@('Changes flagged for a person to check', [string]$flag))
+    $sum.Add(@('Text changes flagged for a person to check', [string]$textFlag))
+    $sum.Add(@('Counts that differ (see the Counts sheet)', [string]$cflag))
     $sum.Add(@('Changes allowed by the tool rules', [string]$exp))
     $sum.Add(@('New slides / parts (not compared)', [string]$info))
     $byType = @{}; foreach ($rw in $rows) { $k2 = $rw.Result + ' - ' + $rw.Type; if ($byType.ContainsKey($k2)) { $byType[$k2]++ } else { $byType[$k2] = 1 } }
     foreach ($k2 in ($byType.Keys | Sort-Object)) { $sum.Add(@(('   ' + $k2), [string]$byType[$k2])) }
     $sum.Add(@('Rules for this tool', $(if ($script:IG_Rules.ContainsKey($tool)) { $script:IG_Rules[$tool] } else { '' })))
-    $sum.Add(@('How it works', 'Every paragraph of the original and the fixed file is compared exactly, including spaces and punctuation. Paragraphs are matched by their text, so moving a shape or changing the reading order is not a text change. Nothing in either file was changed by this check.'))
+    $sum.Add(@('How it works', 'Every paragraph of the original and the fixed file is compared exactly, including spaces and punctuation. Paragraphs are matched by their text, so moving a shape or changing the reading order is not a text change. The Counts sheet compares how many slides, pictures, charts, tables and hyperlinks each file has. Nothing in either file was changed by this check.'))
     $order = @{ 'FLAG' = 0; 'Expected' = 1; 'Info' = 2 }
     $sorted = @($rows | Sort-Object @{ Expression = { $order[$_.Result] } }, @{ Expression = { $mm = [regex]::Match($_.Loc, '\d+'); if ($mm.Success) { [int]$mm.Value } else { 0 } } })
     $ch = New-Object System.Collections.Generic.List[object]
@@ -425,12 +478,17 @@ function Test-Integrity([string]$tool, [string]$orig, [string]$fixed, [string]$r
         $ch.Add(@(@{ v = [string]$n; s = $st }, @{ v = $r.Loc; s = $st }, @{ v = $r.Result; s = $st }, @{ v = $r.Type; s = $st }, @{ v = $r.Seg; s = $st }, @{ v = $r.Before; s = $st }, @{ v = $r.After; s = $st }, @{ v = $r.Why; s = $st }))
     }
     if ($n -eq 0) { $ch.Add(@('', '', 'None', '', 'No text differences were found.', '', '', '')) }
+    $ct = New-Object System.Collections.Generic.List[object]
+    $ct.Add(@('Item', 'Before (original)', 'After (fixed)', 'Result', 'Why'))
+    foreach ($q in $cnt) { $st = if ($q.Result -eq 'FLAG') { 2 } elseif ($q.Result -eq 'Expected') { 3 } else { 0 }; $ct.Add(@(@{ v = $q.Kind; s = $st }, @{ v = [string]$q.Before; s = $st }, @{ v = [string]$q.After; s = $st }, @{ v = $q.Result; s = $st }, @{ v = $q.Why; s = $st })) }
+    if ($cntErr) { $ct.Add(@('', '', '', 'Info', 'The counts could not be read: ' + $cntErr)) }
     $sheets = @(
         @{ Name = 'Summary'; Rows = $sum; Widths = @(38, 110) },
-        @{ Name = 'Changes'; Rows = $ch; Widths = @(5, 16, 10, 18, 40, 55, 55, 55) }
+        @{ Name = 'Changes'; Rows = $ch; Widths = @(5, 16, 10, 18, 40, 55, 55, 55) },
+        @{ Name = 'Counts'; Rows = $ct; Widths = @(18, 20, 20, 12, 70) }
     )
     IG-WriteXlsx $reportPath $sheets
-    return [pscustomobject]@{ Flagged = $flag; Expected = $exp; Info = $info; Verdict = $verdict; Report = $reportPath }
+    return [pscustomobject]@{ Flagged = $flag; TextFlagged = $textFlag; CountFlagged = $cflag; CountNote = $cnote; Expected = $exp; Info = $info; Verdict = $verdict; Report = $reportPath }
 }
 
 # ---------------------------------------------------------------- after a tool has run: check every file it saved
@@ -469,6 +527,13 @@ function Invoke-IntegrityRun([string]$toolFile, [datetime]$since) {
             Write-Host ('Checking the text of ' + (Split-Path $out -Leaf) + ' against the original...') -ForegroundColor Cyan
             $r = Test-Integrity $tool $orig $out $rp
             if ($null -eq $r) { continue }
+            try {
+                $note = if ($r.Flagged -eq 0) { 'Text and counts match' } else { (@(@($(if ($r.TextFlagged -gt 0) { [string]$r.TextFlagged + ' text change(s)' } else { $null }), $(if ($r.CountFlagged -gt 0) { $r.CountNote } else { $null })) | Where-Object { $_ }) -join ', ') }
+                $lb2 = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }
+                $ld2 = Join-Path (Join-Path $lb2 'S4C_Tools') 'WorkLog'; if (-not (Test-Path -LiteralPath $ld2)) { [void](New-Item -ItemType Directory -Path $ld2 -Force) }
+                $line2 = @([IO.Path]::GetFullPath($out), $(if ($r.Flagged -eq 0) { 'PASS' } else { 'REVIEW' }), [string]$r.Flagged, ($note -replace "[`t`r`n]", ' '), [IO.Path]::GetFullPath($r.Report), (Get-Date).ToString('yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture)) -join "`t"
+                [IO.File]::AppendAllText((Join-Path $ld2 'integrity.tsv'), $line2 + "`r`n", (New-Object Text.UTF8Encoding($false)))
+            } catch { }
             if ($r.Flagged -eq 0) { Write-Host ('Integrity: ' + $r.Verdict) -ForegroundColor Green } else { Write-Host ('Integrity: ' + $r.Verdict) -ForegroundColor Yellow }
             Write-Host ('Integrity flagged: ' + $r.Flagged)
             Write-Host ('Integrity report: ' + $r.Report)
