@@ -1,5 +1,5 @@
 # S4C HUB SCRIPT - the S4C Tools window. Runs a small page on this PC only (http://localhost) and opens it
-# S4C-FILE-VERSION: 3.17
+# S4C-FILE-VERSION: 3.18
 # in the browser. From the page you pick a tool, it checks GitHub for that one tool, then opens the tool
 # in its own window exactly as before. Close this window to close S4C Tools.
 $ErrorActionPreference = 'Stop'
@@ -113,6 +113,70 @@ function Read-ReportSheets([string]$path) {
         }
     } finally { $zip.Dispose() }
     return $out.ToArray()
+}
+# ---------------------------------------------------------------- team settings (hidden tools) and admin
+$cfgFile = Join-Path $here 'S4C_Config.json'
+function Get-HiddenTools {
+    $h = @()
+    try {
+        if (Test-Path -LiteralPath $cfgFile) {
+            $o = [IO.File]::ReadAllText($cfgFile, [Text.Encoding]::UTF8) | ConvertFrom-Json
+            foreach ($n in @($o.hiddenTools)) { $n = [string]$n; if ($n -match '^[A-Za-z0-9_]+\.ps1$' -and $TOOLS.Contains($n)) { $h += $n } }
+        }
+    } catch {}
+    return @($h | Select-Object -Unique)
+}
+function Get-StateDir { $b = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }; return (Join-Path $b 'S4C_Tools') }
+# the admin tab is shown only on a PC that has this small private file (it is not part of the zip or GitHub)
+function Test-Admin { return (Test-Path -LiteralPath (Join-Path (Get-StateDir) 'admin.txt') -PathType Leaf) }
+
+# ---------------------------------------------------------------- health check: reads and tests this PC, tells what is wrong in plain words
+function Get-HealthChecks {
+    $list = New-Object System.Collections.Generic.List[object]
+    $add = { param($st, $title, $detail, $fixLabel, $fixPath) $fx = $null; if ($fixLabel) { $fx = [ordered]@{ label = $fixLabel; path = $fixPath } }; $list.Add([ordered]@{ status = $st; title = $title; detail = $detail; fix = $fx }) }
+    # 1 the Tools folder and its files
+    $need = @($TOOLS.Keys) + @('S4C_Hub.html', 'S4C_RunTool.ps1', 'S4C_Update.ps1', 'S4C_SelfUpdate.ps1', 'S4C_Integrity.ps1', 'S4C_Report.ps1')
+    $miss = @($need | Where-Object { -not (Test-Path -LiteralPath (Join-Path $here $_)) })
+    if ($miss.Count) { & $add 'err' 'Some tool files are missing' ('Missing: ' + ($miss -join ', ') + '. Open S4C Tools from the full S4C_Tools folder, or press Check for updates to download them.') 'Show folder' $here }
+    else { & $add 'ok' 'Tools folder found' ($here + '  -  ' + @(Get-ChildItem -LiteralPath $here -File -ErrorAction SilentlyContinue).Count + ' files') $null $null }
+    # 2 every script can be read
+    $bad = New-Object System.Collections.Generic.List[string]
+    foreach ($f in @(Get-ChildItem -LiteralPath $here -Filter '*.ps1' -File -ErrorAction SilentlyContinue)) { $e = $null; $t = $null; try { [void][Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$t, [ref]$e) } catch { $bad.Add($f.Name); continue }; if ($e -and $e.Count) { $bad.Add($f.Name) } }
+    if ($bad.Count) { & $add 'err' 'Some tool files are damaged' ('These files cannot be read as complete scripts: ' + ($bad -join ', ') + '. Press Check for updates to replace them.') $null $null }
+    else { & $add 'ok' 'Tool files are complete' 'All scripts can be read and are complete' $null $null }
+    # 3 PowerShell
+    $lm = [string]$ExecutionContext.SessionState.LanguageMode
+    if ($lm -ne 'FullLanguage') { & $add 'err' 'PowerShell is restricted' ('Language mode is ' + $lm + '. The tools may not run on this PC. Ask IT to allow scripts for this folder.') $null $null }
+    else { & $add 'ok' 'PowerShell works' ('Version ' + $PSVersionTable.PSVersion + ', scripts can run') $null $null }
+    # 4 saving files
+    try {
+        $od = Get-OutputDir; $tf = Join-Path $od ('.s4c_test_' + [guid]::NewGuid().ToString('N').Substring(0, 8) + '.tmp')
+        [IO.File]::WriteAllText($tf, 'x'); Remove-Item -LiteralPath $tf -Force
+        $free = ''; try { $dr = New-Object IO.DriveInfo ([IO.Path]::GetPathRoot($od)); $gb = [math]::Round($dr.AvailableFreeSpace / 1GB, 1); $free = '  -  ' + $gb + ' GB free'; if ($gb -lt 1) { & $add 'warn' 'Very little disk space' ('Only ' + $gb + ' GB is free where fixed files are saved (' + $od + '). Free some space before running big chapters.') 'Show folder' $od } } catch {}
+        & $add 'ok' 'Can save files' ($od + ' is writable' + $free) $null $null
+    } catch { & $add 'err' 'Cannot save files' ('Writing to the output folder failed: ' + $_.Exception.Message + '. Choose a folder you can write to, or ask IT to allow this folder.') $null $null }
+    # 5 other copies of S4C Tools
+    try {
+        $me = [IO.Path]::GetFullPath((Split-Path $here -Parent)).TrimEnd('\')
+        $roots = @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('MyDocuments'), (Join-Path $env:USERPROFILE 'Downloads')) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -Unique
+        $others = New-Object System.Collections.Generic.List[string]
+        foreach ($r in $roots) { foreach ($c in @(Get-ChildItem -LiteralPath $r -Filter 'S4C Tools.cmd' -Recurse -Depth 3 -File -ErrorAction SilentlyContinue)) { $d = [IO.Path]::GetFullPath($c.DirectoryName).TrimEnd('\'); if ($d -ne $me -and -not $others.Contains($d)) { $others.Add($d) } } }
+        if ($others.Count) {
+            $txt = ($others | ForEach-Object { $v = ''; $sf = Join-Path $_ 'Tools\SLID_Macro.ps1'; if (Test-Path -LiteralPath $sf) { $m = [regex]::Match([IO.File]::ReadAllText($sf), "SLID_VERSION\s*=\s*'([^']+)'"); if ($m.Success) { $v = ' (SLID Tool ' + $m.Groups[1].Value + ')' } }; $_ + $v }) -join '; '
+            & $add 'warn' ('Another copy of S4C Tools was found (' + $others.Count + ')') ('Also at: ' + $txt + '. An old copy may be opened by mistake. Keep one folder and delete the others.') 'Show folder' $others[0]
+        } else { & $add 'ok' 'Only one copy of S4C Tools' 'No other S4C Tools folder in Desktop, Documents or Downloads' $null $null }
+    } catch { & $add 'warn' 'Could not look for other copies' $_.Exception.Message $null $null }
+    # 6 GitHub
+    try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
+    try { $px = [Net.WebRequest]::GetSystemWebProxy(); $px.Credentials = [Net.CredentialCache]::DefaultCredentials; [Net.WebRequest]::DefaultWebProxy = $px } catch {}
+    try {
+        $r = Invoke-WebRequest -Uri ('https://raw.githubusercontent.com/rsashwin225/Fix-Hyperlink/refs/heads/testing/S4C_Hub.ps1?t=' + [DateTime]::UtcNow.Ticks) -UseBasicParsing -TimeoutSec 12
+        & $add 'ok' 'GitHub can be reached' 'The newest tool files can be downloaded' $null $null
+    } catch {
+        $m = [string]$_.Exception.Message; if ($m.Length -gt 160) { $m = $m.Substring(0, 160) }
+        & $add 'err' 'GitHub cannot be reached' ('The connection was blocked or timed out (' + $m + '). The tools keep using the copy on this PC. Check the network, or ask IT to allow github.com and raw.githubusercontent.com.') 'Try again' 'retry'
+    }
+    return $list.ToArray()
 }
 function Get-LogRows([string]$day) {
     $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }
@@ -521,7 +585,7 @@ while ($listener.IsListening -and -not $quit) {
             '/api/state' {
                 $day = if ($q['day']) { $q['day'] } else { (Get-Date).ToString('yyyy-MM-dd', $ci) }
                 $tl = @(); foreach ($k in $TOOLS.Keys) { $tl += [ordered]@{ file = $k; version = (Get-ToolVersion $k) } }
-                $body = [ordered]@{ day = $day; today = (Get-Date).ToString('yyyy-MM-dd', $ci); user = $env:USERNAME; pc = $env:COMPUTERNAME; dir = $here; tools = $tl; rows = (Get-LogRows $day) }
+                $body = [ordered]@{ day = $day; today = (Get-Date).ToString('yyyy-MM-dd', $ci); user = $env:USERNAME; pc = $env:COMPUTERNAME; dir = $here; tools = $tl; hidden = @(Get-HiddenTools); admin = (Test-Admin); rows = (Get-LogRows $day) }
                 Send $res 200 'application/json; charset=utf-8' (ToJson $body) $null
             }
             '/api/days' {
@@ -624,6 +688,30 @@ while ($listener.IsListening -and -not $quit) {
                     if ($full.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) -and $full -match '(?i)\.(pptx|docx|xlsx|csv)$' -and (Test-Path -LiteralPath $full -PathType Leaf)) { Send $res 200 'application/octet-stream' ([IO.File]::ReadAllBytes($full)) $null; $ok = $true }
                 } catch {}
                 if (-not $ok) { Send $res 404 'text/plain' 'not found' $null }
+            }
+            '/api/health' {
+                try { Send $res 200 'application/json; charset=utf-8' (ToJson ([ordered]@{ checks = @(Get-HealthChecks) })) $null }
+                catch { Write-HubLog ('health check failed: ' + $_.Exception.Message); Send $res 500 'text/plain' 'The health check could not run.' $null }
+            }
+            '/api/admin' {
+                if (-not (Test-Admin)) { Send $res 403 'text/plain' 'not an admin PC' $null; break }
+                $sd = Get-StateDir
+                switch ([string]$q['what']) {
+                    'info' { Send $res 200 'application/json; charset=utf-8' (ToJson ([ordered]@{ stateDir = $sd; workLogDir = (Join-Path $sd 'WorkLog'); hubLog = (Join-Path $sd 'hub.log'); hidden = @(Get-HiddenTools) })) $null }
+                    'log' {
+                        $lf = Join-Path $sd 'hub.log'; $txt = ''
+                        if (Test-Path -LiteralPath $lf) { $ln = @([IO.File]::ReadAllLines($lf)); $txt = (($ln | Select-Object -Last 300) -join "`n") }
+                        Send $res 200 'text/plain; charset=utf-8' $txt $null
+                    }
+                    'save' {
+                        $b = (Read-Body $req) | ConvertFrom-Json
+                        $names = @(@($b.hiddenTools) | ForEach-Object { [string]$_ } | Where-Object { $_ -match '^[A-Za-z0-9_]+\.ps1$' -and $TOOLS.Contains($_) } | Select-Object -Unique)
+                        $o = [ordered]@{ hiddenTools = $names; updated = (Get-Date).ToString('yyyy-MM-dd HH:mm', $ci) }
+                        [IO.File]::WriteAllText($cfgFile, (ConvertTo-Json $o), (New-Object Text.UTF8Encoding($false)))
+                        Send $res 200 'application/json; charset=utf-8' (ToJson ([ordered]@{ hidden = $names })) $null
+                    }
+                    default { Send $res 400 'text/plain' 'unknown' $null }
+                }
             }
             '/api/reportview' {
                 $p = [string]$q['path']

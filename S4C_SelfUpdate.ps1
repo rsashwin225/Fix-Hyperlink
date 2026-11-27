@@ -1,5 +1,5 @@
 # S4C SELFUPDATE SCRIPT - keeps the S4C Tools page files up to date from the 'testing' branch on GitHub.
-# S4C-FILE-VERSION: 1.2
+# S4C-FILE-VERSION: 1.3
 # Started in the background by S4C_Hub.ps1. A file is replaced only when GitHub has a HIGHER version number
 # and the downloaded file is complete. The tool scripts are not touched here (each tool is checked when it is run).
 $ErrorActionPreference = 'Stop'
@@ -44,6 +44,21 @@ foreach ($f in $files) {
         $updated += ($f.F + ' ' + $(if ($vo) { $vo } else { 'new' }) + ' -> ' + $vn)
     }
 }
+# the team settings file (which tools are hidden): a plain data file, replaced only when GitHub has a valid, different one
+try {
+    $cl = Join-Path $PSScriptRoot 'S4C_Config.json'; $cnew = $null
+    foreach ($b in $bases) {
+        try { $r = Invoke-WebRequest -Uri ($b + 'S4C_Config.json?t=' + [DateTime]::UtcNow.Ticks) -UseBasicParsing -TimeoutSec 30; $cnew = if ($r.Content -is [byte[]]) { [Text.Encoding]::UTF8.GetString($r.Content) } else { [string]$r.Content }; $reached = $true; break }
+        catch { if ($_.Exception.Message -match '404|Not Found') { $reached = $true; break } }
+    }
+    if ($cnew) {
+        $cnew = $cnew.TrimStart([char]0xFEFF)
+        $o = $cnew | ConvertFrom-Json
+        $okNames = $true; foreach ($n in @($o.hiddenTools)) { if (([string]$n) -notmatch '^[A-Za-z0-9_]+\.ps1$') { $okNames = $false } }
+        $cold = if (Test-Path -LiteralPath $cl) { [IO.File]::ReadAllText($cl) } else { '' }
+        if ($okNames -and (($cnew -replace '\s', '') -ne ($cold -replace '\s', ''))) { [IO.File]::WriteAllText($cl, $cnew, (New-Object Text.UTF8Encoding($false))); $updated += 'S4C_Config.json updated' }
+    }
+} catch {}
 if ($env:S4C_SELF_STATUS) {
     $txt = $(if ($reached) { 'connected' } else { 'offline' }) + "`n" + ($updated -join "`n")
     try { [IO.File]::WriteAllText($env:S4C_SELF_STATUS, $txt, (New-Object Text.UTF8Encoding($false))) } catch {}

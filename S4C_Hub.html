@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="3.15">
+<meta name="s4c-hub-version" content="3.16">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -306,6 +306,13 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
 .rbody del{background:rgba(179,64,42,.25);text-decoration:none;padding:0 2px;border-radius:3px}.rbody ins{background:rgba(63,125,58,.28);text-decoration:none;padding:0 2px;border-radius:3px}
 .rbody .kv{display:grid;grid-template-columns:260px 1fr;gap:8px 16px}.rbody .kv>span:nth-child(odd){color:var(--fg3)}.rbody .rt{display:flex;align-items:center;gap:12px;margin-bottom:12px;color:var(--fg2)}.rbody .rt .tg{margin-left:auto;color:var(--fg3)}.rbody .note{margin-top:14px;color:var(--fg3);font-size:12.5px}
 .sw2{width:34px;height:19px;border-radius:999px;background:var(--stroke2);position:relative;display:inline-block;cursor:pointer;border:0;padding:0}.sw2:after{content:"";position:absolute;left:2px;top:2px;width:15px;height:15px;border-radius:50%;background:#fff;transition:left .15s}.sw2.on{background:#2f5d4e}.sw2.on:after{left:17px}
+.hrow{display:flex;align-items:flex-start;gap:12px;padding:11px 14px;border:1px solid var(--stroke);border-radius:12px;margin-bottom:8px;background:var(--card)}
+.hic{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700;flex:none;margin-top:1px}.hic.ok{background:#3f7d3a}.hic.warn{background:#c8922a}.hic.err{background:#b3402a}
+.hrow b{display:block;font-weight:600;font-size:13.5px}.hrow small{color:var(--fg3);font-size:12.5px;line-height:1.5;word-break:break-word}.hrow .fx{margin-left:auto;white-space:nowrap}
+.hbar{display:flex;gap:10px;align-items:center;margin-bottom:14px}.hbar .pl{margin-left:auto;display:flex;gap:8px}.pl .chk{font-size:12px}
+.acard{border:1px solid var(--stroke);border-radius:12px;padding:14px 16px;background:var(--card);margin-bottom:12px}.acard h4{margin:0 0 10px;font-size:14px}
+.arow{display:flex;align-items:center;gap:12px;padding:6px 0}.arow .nm{flex:1}.arow small{color:var(--fg3)}.alog{white-space:pre-wrap;font:12px Consolas,monospace;background:var(--card2);border:1px solid var(--stroke);border-radius:10px;padding:10px;max-height:300px;overflow:auto;margin-top:10px}
+.hidtag{font-style:normal;font-size:10px;border:1px solid var(--stroke2);border-radius:999px;padding:0 6px;margin-left:6px;color:var(--fg3)}
 .dg .tag{white-space:nowrap}.rm.cp{color:var(--fg2)}.rm.cp:hover{background:var(--card2)}.rm{height:28px;padding:0 10px;border-radius:8px;border:1px solid var(--stroke2);background:var(--card);cursor:pointer;font-size:12px;color:#a23a1f}.rm:hover{background:#f7e3dc}
 .rowact{position:absolute;right:12px;top:50%;transform:translateY(-50%);display:flex;gap:6px;opacity:0;transition:opacity .12s}
 .dg tbody tr:hover .rowact{opacity:1}
@@ -376,7 +383,7 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
   <symbol id="i-cal" viewBox="0 0 20 20"><g fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="4" width="14" height="13" rx="2"/><path d="M3 8h14M7 2.5v3M13 2.5v3M6.5 11h2M11.5 11h2M6.5 14h2"/></g></symbol>
   <symbol id="i-help" viewBox="0 0 20 20"><g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="10" cy="10" r="7"/><path d="M8 8a2 2 0 1 1 2.8 1.8c-.5.3-.8.7-.8 1.3v.4"/><path d="M10 14v.1"/></g></symbol>
   <symbol id="i-search" viewBox="0 0 20 20"><g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8.5" cy="8.5" r="5"/><path d="m12.5 12.5 4 4"/></g></symbol>
-  <symbol id="i-moon" viewBox="0 0 20 20"><path fill="none" stroke="currentColor" stroke-width="1.4" d="M16 12A7 7 0 0 1 8 4a7 7 0 1 0 8 8z"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/></symbol><symbol id="i-moon" viewBox="0 0 20 20"><path fill="none" stroke="currentColor" stroke-width="1.4" d="M16 12A7 7 0 0 1 8 4a7 7 0 1 0 8 8z"/></symbol>
   <symbol id="i-waffle" viewBox="0 0 20 20"><g fill="currentColor"><circle cx="4.5" cy="4.5" r="1.5"/><circle cx="10" cy="4.5" r="1.5"/><circle cx="15.5" cy="4.5" r="1.5"/><circle cx="4.5" cy="10" r="1.5"/><circle cx="10" cy="10" r="1.5"/><circle cx="15.5" cy="10" r="1.5"/><circle cx="4.5" cy="15.5" r="1.5"/><circle cx="10" cy="15.5" r="1.5"/><circle cx="15.5" cy="15.5" r="1.5"/></g></symbol>
   <symbol id="i-chev" viewBox="0 0 12 12"><path fill="none" stroke="currentColor" stroke-width="1.4" d="M4.5 2.5 8 6l-3.5 3.5"/></symbol>
   <symbol id="i-ok" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="currentColor"/><path d="m6.5 10.2 2.4 2.3 4.6-4.8" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
@@ -399,6 +406,7 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
   <label class="hsearch"><svg class="s"><use href="#i-search"/></svg><input id="q" placeholder="Search tools"><kbd>Ctrl+K</kbd></label>
   <div class="sp"></div>
   <button class="hbtn pill" id="updAll" title="Check GitHub for a newer S4C Tools and newer versions of every tool"><svg class="i"><use href="#i-sync"/></svg><span>Check for updates</span></button>
+  <button class="hbtn" id="settingsBtn" title="Settings" aria-label="Settings" onclick="setOpen()"><svg class="i"><use href="#i-gear"/></svg></button>
   <button class="hbtn" id="theme" title="Dark mode"><svg class="i"><use href="#i-moon"/></svg></button>
   <div class="persona" id="persona" title="Change your name"><div class="avatar" id="avatar">S4</div><div><b id="uname">S4Carlisle</b><small id="upc">This PC</small></div><svg class="pen" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M10.5 2.5l3 3L5 14H2v-3z"/></svg></div>
 </header>
@@ -492,6 +500,9 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
   <div class="pal-l" id="palL"></div>
   <div class="pal-f"><span><kbd>&uarr;</kbd> <kbd>&darr;</kbd> move</span><span><kbd>Enter</kbd> do it</span><span><kbd>Esc</kbd> close</span><span style="margin-left:auto"><kbd>?</kbd> all shortcuts</span></div>
 </div></div>
+<div class="off" id="setDlg" onclick="if(event.target===this)setClose()"><div class="dlg rpt">
+  <div class="rh"><div><h3>Settings</h3><small id="setSub"></small></div><span class="sp"></span><button class="rx" onclick="setClose()" aria-label="Close">&times;</button></div>
+  <div class="rtabs" id="setTabs"></div><div class="rbody" id="setBody"></div></div></div>
 <div class="off" id="rptDlg" onclick="if(event.target===this)rptClose()"><div class="dlg rpt">
   <div class="rh"><div><h3 id="rptTitle">Integrity report</h3><small id="rptSub"></small></div><span id="rptBadge" class="chk"></span><span class="sp"></span><button class="btn" id="rptXl">Open in Excel</button><button class="rx" onclick="rptClose()" aria-label="Close">&times;</button></div>
   <div class="rtabs" id="rptTabs"></div><div class="rbody" id="rptBody"></div></div></div>
@@ -556,7 +567,8 @@ const TOOLS=[
   steps:[['Choose deck and sheet','Together'],['Check GitHub','Newest version of this tool'],['Check each finding','On its slide'],['Fix what is safe','Order, language, colour'],['Save','Fixed.pptx + Issue Report.xlsx'],['Note in today\'s work','For the daily report']],
   checks:['Every Fixed finding looks right on its slide','False positives were confirmed','Not fixed items were handled by hand']}
 ];
-const disp=x=>{const t=TOOLS.find(q=>(q.key||q.name)===x);return t?t.name:x};
+const ALLT=TOOLS.slice();
+const disp=x=>{const t=ALLT.find(q=>(q.key||q.name)===x);return t?t.name:x};
 let state={tools:{},rows:[],day:'',today:''}, cur=0, job=null, gh={}, phase=-1, doneFor='';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -614,7 +626,7 @@ function stage(cls){$('stage').className='hero-r'+(cls?' '+cls:'')}
 /* ---------- nav ---------- */
 function drawNav(){const q=$('q').value.trim().toLowerCase();const tr=todayRows();
   $('toolNav').innerHTML=TOOLS.map((t,i)=>{const hit=!q||(t.name+' '+t.tagline+' '+GROUPS[t.group]).toLowerCase().includes(q);
-    return '<button class="nitem tool'+(i===cur&&$('v-tools').classList.contains('on')?' on':'')+(hit?'':' hide')+'" data-i="'+i+'"><span class="tile" style="background:'+t.tile+'">'+t.letter+'</span>'+esc(t.name)+'<small>'+esc(state.tools[t.file]||'')+'</small></button>'}).join('');
+    return '<button class="nitem tool'+(i===cur&&$('v-tools').classList.contains('on')?' on':'')+(hit?'':' hide')+'" data-i="'+i+'"><span class="tile" style="background:'+t.tile+'">'+t.letter+'</span>'+esc(t.name)+(t.hiddenTeam?'<i class="hidtag" title="Hidden for the team, visible on this admin PC">hidden</i>':'')+'<small>'+esc(state.tools[t.file]||'')+'</small></button>'}).join('');
   document.querySelectorAll('.nitem.tool').forEach(b=>{const i=+b.dataset.i;
     b.onclick=()=>{view('tools');select(i)};
     b.oncontextmenu=e=>{e.preventDefault();openCtx(i,e.clientX,e.clientY)}});
@@ -830,10 +842,11 @@ async function poll(){
 async function load(keep){const day=$('day').value||'';const r=await (await api('/api/state'+(day?'?day='+day:''))).json();
   const tv={};r.tools.forEach(x=>tv[x.file]=x.version);
   let tr=r.rows||[];if(r.day!==r.today){try{tr=(await (await api('/api/state')).json()).rows||[]}catch(e){}}
-  state={tools:tv,rows:r.rows||[],day:r.day,today:r.today,todayRows:tr,user:r.user,pc:r.pc,dir:r.dir};
+  state={tools:tv,rows:r.rows||[],day:r.day,today:r.today,todayRows:tr,user:r.user,pc:r.pc,dir:r.dir,hidden:r.hidden||[],admin:!!r.admin};
+  const hsig=state.hidden.join(',')+'|'+state.admin;const hchanged=hsig!==window._hsig;if(hchanged){window._hsig=hsig;applyHidden()}
   if(!$('day').value)$('day').value=r.today;
   drawPersona();$('upc').textContent=r.pc||'This PC';
-  drawWork();if(keep){drawNav();drawStats()}else select(cur);drawGreet();drawGoal();achievements()}
+  drawWork();if(keep&&!hchanged){drawNav();drawStats()}else select(cur);drawGreet();drawGoal();achievements()}
 function editTitle(key){const T=getTitles();const cur=key in T?T[key]:key;const v=prompt('Title for every file named like this ('+(key||'no name pattern')+'). Leave empty to use the file-name text.',cur);if(v===null)return;if(v.trim()===''||v.trim().toLowerCase()===key)delete T[key];else T[key]=v.trim();LS.set('titles',T);drawWork();toast('ok','Title saved','Applies to all files with this name pattern, today and later')}
 async function removeRow(b){const n=b.dataset.n,k=b.dataset.k,dy=($('day').value)||state.today;if(!confirm('Remove "'+n+'" from the log for '+dy+'?\n\nUse this when a file was run by mistake. It will no longer count in Today\'s work, your goal or the report.'))return;
   try{const r=await (await api('/api/delete?day='+dy+'&key='+encodeURIComponent(k))).json();await load(true);
@@ -846,6 +859,46 @@ function chkBadge(g){if(g.exists===false)return '<span class="chk miss" title="T
   return '<span class="chk flag" title="'+esc(c.note||'')+'">&#9873; '+(c.flagged||'')+' to check</span>'}
 async function wkOpen(b,what){const g=(window.WG||[])[+b.dataset.i];if(!g)return;const p=what==='report'?(g.check&&g.check.report):g.path;if(!p)return;
   try{await api((what==='file'||what==='report'?'/api/openfile?path=':'/api/openfolder?path=')+encodeURIComponent(p))}catch(e){toast('err','Could not open it',e.message)}}
+/* ---------- team settings: hidden tools ---------- */
+function applyHidden(){const h=new Set(state.hidden||[]);ALLT.forEach(t=>t.hiddenTeam=h.has(t.file));const cf=TOOLS[cur]&&TOOLS[cur].file;
+  const keep=state.admin?ALLT.slice():ALLT.filter(t=>!h.has(t.file));TOOLS.length=0;keep.forEach(t=>TOOLS.push(t));const ni=TOOLS.findIndex(t=>t.file===cf);cur=ni>=0?ni:0}
+/* ---------- settings: health check and admin ---------- */
+let SET={tab:'health',health:null,busy:false,hid:null,log:null};
+function setClose(){$('setDlg').classList.remove('on')}
+function setOpen(){SET.tab='health';$('setDlg').classList.add('on');setDraw();if(!SET.health&&!SET.busy)runHealth()}
+async function runHealth(){SET.busy=true;SET.health=null;setDraw();
+  try{const r=await api('/api/health');if(!r.ok)throw new Error('The health check could not run');SET.health=(await r.json()).checks||[]}
+  catch(e){SET.health=[{status:'err',title:'The health check could not run',detail:(e&&e.message)||'The S4C Tools window did not answer. It may have been closed.'}]}
+  SET.busy=false;setDraw()}
+function hcText(){const L=['S4C Tools health check - '+(state.pc||'')+' - '+new Date().toLocaleString()];(SET.health||[]).forEach(c=>L.push('['+(c.status==='ok'?'OK':c.status==='warn'?'WARNING':'PROBLEM')+'] '+c.title+' - '+c.detail));return L.join('\n')}
+function hcFix(i){const c=(SET.health||[])[i];if(!c||!c.fix)return;if(c.fix.path==='retry'){runHealth();return}api('/api/openfolder?path='+encodeURIComponent(c.fix.path))}
+function setDraw(){$('setSub').textContent=state.pc?('This PC: '+state.pc):'';
+  $('setTabs').innerHTML='<button class="rtab'+(SET.tab==='health'?' on':'')+'" onclick="SET.tab=\'health\';setDraw()">Health check</button>'+(state.admin?'<button class="rtab'+(SET.tab==='admin'?' on':'')+'" onclick="SET.tab=\'admin\';SET.log=null;SET.hid=null;setDraw()">Admin</button>':'');
+  if(SET.tab==='admin'&&state.admin){adminDraw();return}
+  const H=SET.health;let h='<div class="hbar"><button class="btn pri" onclick="runHealth()"'+(SET.busy?' disabled':'')+'>'+(SET.busy?'Checking...':'Run health check')+'</button><button class="btn" onclick="navigator.clipboard&&navigator.clipboard.writeText(hcText()).then(()=>toast(\'ok\',\'Copied\',\'Paste it in a message to whoever looks after S4C Tools\'))"'+(H?'':' disabled')+'>Copy result</button>';
+  if(H){const n=k=>H.filter(c=>c.status===k).length;h+='<span class="pl"><span class="chk pass">'+n('ok')+' OK</span>'+(n('warn')?'<span class="chk flag">'+n('warn')+' warning'+(n('warn')>1?'s':'')+'</span>':'')+(n('err')?'<span class="chk miss">'+n('err')+' problem'+(n('err')>1?'s':'')+'</span>':'')+'</span>'}
+  h+='</div><p style="color:var(--fg3);margin:0 0 12px;font-size:13px">Tests this PC and says in plain words what is wrong and how to fix it. It only reads things; the only thing it writes is a tiny temporary file, which it deletes straight away.</p>';
+  if(SET.busy)h+='<p>Checking the tools, PowerShell, saving files, other copies and GitHub. This takes a few seconds...</p>';
+  if(H)h+=H.map((c,i)=>'<div class="hrow"><span class="hic '+c.status+'">'+(c.status==='ok'?'&#10003;':c.status==='warn'?'!':'&#10005;')+'</span><div><b>'+esc(c.title)+'</b><small>'+esc(c.detail)+'</small></div>'+(c.fix?'<button class="btn fx" onclick="hcFix('+i+')">'+esc(c.fix.label)+'</button>':'')+'</div>').join('');
+  $('setBody').innerHTML=h}
+/* admin: only on a PC that has the private admin file */
+async function adminOpen(){SET.hid=new Set(state.hidden||[]);SET.log=null;adminDraw()}
+function adminDraw(){if(!SET.hid)SET.hid=new Set(state.hidden||[]);
+  let h='<div class="acard"><h4>Updates</h4><div class="arow"><span class="nm">Check GitHub for a newer S4C Tools and newer versions of every tool</span><button class="btn" onclick="setClose();updateAll()">Check all now</button></div>'+
+    '<div class="arow"><small>'+ALLT.map(t=>esc(t.name)+' '+esc(state.tools[t.file]||'')).join(' &middot; ')+'</small></div></div>';
+  h+='<div class="acard"><h4>Tools shown to the team</h4>'+ALLT.map(t=>'<div class="arow"><button class="sw2'+(SET.hid.has(t.file)?'':' on')+'" onclick="adminTog(\''+t.file+'\')" aria-label="Show '+esc(t.name)+'"></button><span class="nm">'+esc(t.name)+'</span><small>'+(SET.hid.has(t.file)?'hidden for the team (you still see it here)':'shown')+'</small></div>').join('')+
+    '<div class="arow" style="margin-top:6px"><button class="btn pri" onclick="adminSave()">Save and download S4C_Config.json</button></div>'+
+    '<p style="color:var(--fg3);font-size:12.5px;margin:6px 0 0;line-height:1.6">Saving applies the change on this PC straight away. To change it for the whole team, upload the downloaded <b>S4C_Config.json</b> to the testing branch on GitHub, next to the tool files. Every PC picks it up the next time S4C Tools starts or checks for updates. Only people who can upload to the repository can change it for the team.</p></div>';
+  h+='<div class="acard"><h4>Support</h4><div class="arow"><button class="btn" onclick="adminLog()">View hub log</button><button class="btn" onclick="adminCopyLog()">Copy log</button><button class="btn" onclick="adminFolder(\'hubLog\')">Open log folder</button><button class="btn" onclick="adminFolder(\'workLogDir\')">Open work log folder</button></div>'+(SET.log!==null?'<div class="alog">'+esc(SET.log||'The log is empty.')+'</div>':'')+'</div>';
+  $('setBody').innerHTML=h}
+function adminTog(f){if(SET.hid.has(f))SET.hid.delete(f);else SET.hid.add(f);adminDraw()}
+async function adminSave(){try{await POSTJ('/api/admin?what=save',{hiddenTools:[...SET.hid]});
+    const out={hiddenTools:[...SET.hid],updated:new Date().toISOString().slice(0,16).replace('T',' ')};const b=new Blob([JSON.stringify(out,null,2)+'\r\n'],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='S4C_Config.json';document.body.appendChild(a);a.click();a.remove();
+    await load(true);toast('ok','Saved on this PC','Upload S4C_Config.json to the testing branch to change it for the team.',null,9000);SET.hid=new Set(state.hidden||[]);adminDraw()}
+  catch(e){toast('err','Could not save',e.message)}}
+async function adminLog(){try{const r=await api('/api/admin?what=log');SET.log=await r.text();adminDraw()}catch(e){toast('err','Could not read the log',e.message)}}
+async function adminCopyLog(){try{const r=await api('/api/admin?what=log');const t=await r.text();await navigator.clipboard.writeText(t);toast('ok','Log copied','')}catch(e){toast('err','Could not copy the log',e.message)}}
+async function adminFolder(k){try{const i=await (await api('/api/admin?what=info')).json();await api('/api/openfolder?path='+encodeURIComponent(i[k]))}catch(e){toast('err','Could not open it',e.message)}}
 /* ---------- the Integrity Report, shown in the page ---------- */
 let RPT=null;
 function dfy(a,b){a=a||'';b=a===undefined?'':(b||'');if(a===b)return [esc(a),esc(b)];let i=0;while(i<a.length&&i<b.length&&a[i]===b[i])i++;let j=0;while(j<a.length-i&&j<b.length-i&&a[a.length-1-j]===b[b.length-1-j])j++;
@@ -894,7 +947,7 @@ $('day').onchange=()=>load(true);$('btnToday').onclick=()=>{$('day').value=state
 $('theme').onclick=()=>document.body.classList.toggle('dark');
 document.addEventListener('keydown',e=>{
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();palOpen();return}
-  if(e.key==='Escape'){rptClose();palClose();$('keysDlg').classList.remove('on');$('ctx').classList.remove('on');return}
+  if(e.key==='Escape'){setClose();rptClose();palClose();$('keysDlg').classList.remove('on');$('ctx').classList.remove('on');return}
   if(e.target.tagName==='INPUT'||$('palBg').classList.contains('on'))return;
   const k=e.key;
   if(k==='?'){$('keysDlg').classList.add('on');return}
@@ -1014,7 +1067,7 @@ function offerRefresh(needRestart,from,to){if(refreshShown)return;refreshShown=t
   toast('inf','Update ready','S4C Tools '+(from&&to?(from+' -> '+to):'has a newer version')+'. Press Refresh to use it.',['Refresh',()=>doRefresh(needRestart)],600000)}
 async function checkHub(n){try{const r=await (await api('/api/hub')).json();$('hubVer').textContent='Page version '+PAGE_VER+'.';
     if(!r.done){if((n||0)<40)setTimeout(()=>checkHub((n||0)+1),5000);return}
-    const ups=r.updated||[];const hubPs=ups.some(x=>/^S4C_Hub\.ps1 /.test(x));
+    const ups=r.updated||[];if(ups.some(x=>/^S4C_Config\.json/.test(x))){await load(true)}const hubPs=ups.some(x=>/^S4C_Hub\.ps1 /.test(x));
     if(r.restart){if(r.canRestart)offerRefresh(true);else toast('inf','S4C Tools has been updated','Close the black S4C Tools window and open S4C Tools again to finish the update.',null,60000);return}
     // an older copy of this program (it cannot restart itself) is still running although GitHub gave it a new version
     if(hubPs&&r.restart===undefined){toast('inf','S4C Tools has been updated','This PC has an older copy running. Close the black window and open S4C Tools once more.',null,60000);return}
