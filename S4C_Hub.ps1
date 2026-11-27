@@ -1,5 +1,5 @@
 # S4C HUB SCRIPT - the S4C Tools window. Runs a small page on this PC only (http://localhost) and opens it
-# S4C-FILE-VERSION: 3.14
+# S4C-FILE-VERSION: 3.15
 # in the browser. From the page you pick a tool, it checks GitHub for that one tool, then opens the tool
 # in its own window exactly as before. Close this window to close S4C Tools.
 $ErrorActionPreference = 'Stop'
@@ -306,7 +306,7 @@ $PICK_FILTERS = @{
     'Word_Fixer.ps1'   = 'Word documents (*.docx)|*.docx'
     'SLID_Macro.ps1'   = 'PowerPoint presentations (*.pptx)|*.pptx'
     'IMBK_Macro.ps1'   = 'PowerPoint presentations (*.pptx)|*.pptx'
-    'AltText_Tool.ps1' = 'Deck and Excel files (*.pptx;*.xlsx;*.csv)|*.pptx;*.xlsx;*.csv'
+    'AltText_Tool.ps1' = 'Deck or Word file and Excel (*.pptx;*.docx;*.xlsx;*.csv)|*.pptx;*.docx;*.xlsx;*.csv'
     'Issue_Fixer.ps1' = 'Deck and issue sheet (*.pptx;*.xlsx)|*.pptx;*.xlsx'
     'Link_Fixer.ps1'   = 'Word and PowerPoint files (*.docx;*.pptx)|*.docx;*.pptx'
 }
@@ -496,14 +496,14 @@ while ($listener.IsListening -and -not $quit) {
             '/api/runfiles' {
                 $b = (Read-Body $req) | ConvertFrom-Json
                 $f = [string]$b.tool
-                $allow = @{ 'Word_Fixer.ps1' = @('.docx'); 'SLID_Macro.ps1' = @('.pptx'); 'IMBK_Macro.ps1' = @('.pptx'); 'AltText_Tool.ps1' = @('.pptx', '.xlsx', '.csv'); 'Link_Fixer.ps1' = @('.docx', '.pptx'); 'Issue_Fixer.ps1' = @('.pptx', '.xlsx') }
+                $allow = @{ 'Word_Fixer.ps1' = @('.docx'); 'SLID_Macro.ps1' = @('.pptx'); 'IMBK_Macro.ps1' = @('.pptx'); 'AltText_Tool.ps1' = @('.pptx', '.docx', '.xlsx', '.csv'); 'Link_Fixer.ps1' = @('.docx', '.pptx'); 'Issue_Fixer.ps1' = @('.pptx', '.xlsx') }
                 if (-not $TOOLS.Contains($f) -or -not $allow.ContainsKey($f)) { Send $res 400 'text/plain' 'this tool does not take chosen files' $null; break }
                 $ok = @($b.files | Where-Object { $_ -and ($_.IndexOf(';') -lt 0) -and (Test-Path -LiteralPath $_ -PathType Leaf) -and ($allow[$f] -contains [IO.Path]::GetExtension($_).ToLowerInvariant()) })
                 if ($ok.Count -eq 0) { Send $res 400 'text/plain' 'no usable files' $null; break }
                 $envs = @{}; $jobFiles = $ok
                 if ($f -eq 'AltText_Tool.ps1') {
-                    $pp = @($ok | Where-Object { $_.ToLowerInvariant().EndsWith('.pptx') }); $xx = @($ok | Where-Object { $_.ToLowerInvariant().EndsWith('.xlsx') }); $cc = @($ok | Where-Object { $_.ToLowerInvariant().EndsWith('.csv') })
-                    if ($pp.Count -eq 0 -or $xx.Count -eq 0) { Send $res 400 'text/plain' 'Alt Text Tool needs the deck (.pptx) and the Excel file (.xlsx)' $null; break }
+                    $pp = @($ok | Where-Object { $_.ToLowerInvariant().EndsWith('.pptx') -or $_.ToLowerInvariant().EndsWith('.docx') }); $xx = @($ok | Where-Object { $_.ToLowerInvariant().EndsWith('.xlsx') }); $cc = @($ok | Where-Object { $_.ToLowerInvariant().EndsWith('.csv') })
+                    if ($pp.Count -eq 0 -or $xx.Count -eq 0) { Send $res 400 'text/plain' 'Alt Text Tool needs the deck (.pptx) or Word file (.docx) and the Excel file (.xlsx)' $null; break }
                     $envs['ALTMATCH_PPTX'] = $pp[0]; $envs['ALTMATCH_XLSX'] = $xx[0]
                     if ($cc.Count -gt 0) { $envs['ALTMATCH_MODE'] = '2'; $envs['ALTMATCH_MAP'] = $cc[0] } else { $envs['ALTMATCH_MODE'] = '1'; $envs['ALTMATCH_CHAPTER'] = [string]$b.chapter }
                     $jobFiles = @($pp[0])

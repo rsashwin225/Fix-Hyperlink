@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="3.9">
+<meta name="s4c-hub-version" content="3.10">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -520,7 +520,7 @@ const TOOLS=[
   idea:'It works on the file itself and keeps a backup named <code>_BEFORE_IMBKfix</code> next to it.',
   steps:[['Pick files','IMBK decks'],['Check GitHub','Newest version of this tool'],['Lay out figures','Captions and credits'],['Name shapes','Title, TextBox, Picture'],['Save','Same file + backup']],
   checks:['Figures, captions and credits are in place','Repeated titles end in (1 of N)','A _BEFORE_IMBKfix backup exists']},
- {file:'AltText_Tool.ps1',drop:['.pptx','.xlsx','.csv'],art:'alt',name:'Alt Text Tool',group:1,letter:'P',tile:'var(--ppt)',out:'<name> AltText.pptx',unit:'slides',
+ {file:'AltText_Tool.ps1',drop:['.pptx','.docx','.xlsx','.csv'],art:'alt',name:'Alt Text Tool',group:1,letter:'P',tile:'var(--ppt)',out:'<name> AltText.pptx / .docx',unit:'slides',
   tagline:'Fills picture alt text from the client\'s Excel log, matched by figure number.',
   intro:['The client sends alt text in an Excel file, one row per figure. Copying it into every picture by hand is slow and easy to get wrong.',
          'The tool reads the figure number on the slide (for example <code>Figure 14.F03</code>), finds the row, and opens a review page where you confirm or pick another row from the whole file.'],
@@ -689,9 +689,9 @@ async function startDrop(){
     if(!pp.length||!xx.length){toast('warn','One more file needed','Choose the deck (.pptx) and the issue sheet (.xlsx) together.');return}
   }
   if(t.file==='AltText_Tool.ps1'){
-    const pp=items.filter(x=>/\.pptx$/i.test(x.file.name)),xx=items.filter(x=>/\.xlsx$/i.test(x.file.name));
-    if(!pp.length||!xx.length){toast('warn','One more file needed','Choose the deck (.pptx) and the Excel alt text file (.xlsx) together. Add the saved mapping (.csv) to apply the matches.');return}
-    if(!items.some(x=>/\.csv$/i.test(x.file.name))){
+    const pp=items.filter(x=>/\.(pptx|docx)$/i.test(x.file.name)),xx=items.filter(x=>/\.xlsx$/i.test(x.file.name));
+    if(!pp.length||!xx.length){toast('warn','One more file needed','Choose the deck (.pptx) or Word file (.docx) and the Excel alt text file (.xlsx) together. Add the saved mapping (.csv) to apply the matches.');return}
+    if(!items.some(x=>/\.csv$/i.test(x.file.name))&&!/\.docx$/i.test(pp[0].file.name)){
       const g=(pp[0].file.name.replace(/\.[^.]+$/,'').match(/(\d{1,2})(?=\D*$)/)||[''])[0];
       chapter=g||prompt('Which chapter number is this deck? (as in the Excel Chapter Number column, for example 05)','')||'';
       if(!chapter){toast('warn','Chapter number needed','Choose the files again and enter the chapter number.');return}}

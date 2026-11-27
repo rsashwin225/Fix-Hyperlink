@@ -1,6 +1,6 @@
 # ALT TEXT TOOL SCRIPT
 # PPT Alt-Text Filler (S4Carlisle). Self-updates from GitHub through AltText_Update.ps1.
-$ALT_VERSION = '3.6'   # shown at the start of the window; the updater compares this number with GitHub
+$ALT_VERSION = '3.8'   # shown at the start of the window; the updater compares this number with GitHub
 # ---- work log: notes each saved file (name, slides or pages) for the daily report in S4C Tools ----
 # Only reads the saved file; never changes it and never stops the tool if something goes wrong.
 function Add-WorkLog([string]$tool, [string]$inPath, [string]$outPath) {
@@ -90,6 +90,8 @@ function Norm-Chapter([string]$v) {
     $t = ($v + '').Trim()
     $n = 0
     if ([int]::TryParse($t, [ref]$n)) { return [string]$n }
+    $mc = [regex]::Match($t, '(?i)^chapter\s*0*(\d+)\b')
+    if ($mc.Success) { return $mc.Groups[1].Value }
     return $t.ToUpperInvariant()
 }
 
@@ -146,16 +148,18 @@ function Get-AltRows([string]$xlsx) {
             $grid = Read-Sheet $zip $sh.Part $strings
             foreach ($rn in ($grid.Keys | Sort-Object)) {
                 $vals = @($grid[$rn].Values | ForEach-Object { ([string]$_).ToLowerInvariant() -replace '[^a-z0-9]', '' })
-                if ($vals -contains 'elementnumber' -and ($vals -contains 'alttextshort' -or $vals -contains 'shortalttext')) { $best = @{ Grid = $grid; Header = $rn }; break }
+                if (($vals -contains 'elementnumber' -or $vals -contains 'imageid') -and ($vals -contains 'alttextshort' -or $vals -contains 'shortalttext' -or $vals -contains 'alttext')) { $best = @{ Grid = $grid; Header = $rn }; break }
             }
             if ($best) { break }
         }
-        if (-not $best) { throw 'The Excel file has no sheet with the columns Element Number and Short Alt Text (or Alt Text - Short).' }
+        if (-not $best) { throw 'The Excel file has no sheet with the columns Element Number (or Image-ID) and Short Alt Text (or Alt Text - Short or AltTextShort).' }
 
         $hdr = $best.Grid[$best.Header]
         $col = @{}
         # the column titles are matched by their words, so 'Alt Text - Short' and 'Short Alt Text' (and Long) both work
-        $canon = @{ 'elementnumber' = 'Element Number'; 'alttextshort' = 'Alt Text - Short'; 'shortalttext' = 'Alt Text - Short'; 'alttextlong' = 'Alt Text - Long'; 'longalttext' = 'Alt Text - Long'; 'chapternumber' = 'Chapter Number'; 'usage' = 'Usage'; 'decorative' = 'Decorative' }
+        $canon = @{ 'elementnumber' = 'Element Number'; 'alttextshort' = 'Alt Text - Short'; 'shortalttext' = 'Alt Text - Short'; 'alttextlong' = 'Alt Text - Long'; 'longalttext' = 'Alt Text - Long'; 'chapternumber' = 'Chapter Number'; 'usage' = 'Usage'; 'decorative' = 'Decorative'; 'imageid' = 'Element Number'; 'chapter' = 'Chapter Number'; 'alttextdecor' = 'Decorative'; 'pagenumber' = 'Page' }
+        # a sheet with both AltText (the full text) and AltTextShort: AltText is the long one
+        if (-not ($hdr.Values | Where-Object { (([string]$_).ToLowerInvariant() -replace '[^a-z0-9]', '') -eq 'alttextlong' })) { $canon['alttext'] = 'Alt Text - Long' } else { $canon['alttext'] = 'Alt Text - Short' }
         foreach ($k in $hdr.Keys) {
             $nm = ([string]$hdr[$k]).ToLowerInvariant() -replace '[^a-z0-9]', ''
             if ($canon.ContainsKey($nm) -and -not $col.ContainsKey($canon[$nm])) { $col[$canon[$nm]] = $k }
@@ -169,16 +173,25 @@ function Get-AltRows([string]$xlsx) {
             $row = $best.Grid[$rn]
             $id = (& $get $row 'Element Number').Trim()
             if (-not $id) { continue }
+            $sh0 = (& $get $row 'Alt Text - Short').Trim(); $lg0 = (& $get $row 'Alt Text - Long').Trim()
+            # the full text of this sheet already begins with the short text: use it once, not twice
+            if ($sh0 -and $lg0 -and $lg0.ToLowerInvariant().StartsWith($sh0.ToLowerInvariant().TrimEnd('.', ' '))) { $sh0 = $lg0; $lg0 = '' }
+            elseif ($sh0 -eq '' -and $lg0) { $sh0 = $lg0; $lg0 = '' }
             $out.Add([pscustomobject]@{
                 Row = $rn
                 Chapter = (Norm-Chapter (& $get $row 'Chapter Number'))
                 Id = $id
+                Page = (& $get $row 'Page').Trim()
                 Usage = (& $get $row 'Usage').Trim()
                 Decorative = ((& $get $row 'Decorative').Trim().ToUpperInvariant() -eq 'YES')
-                Short = (& $get $row 'Alt Text - Short').Trim()
-                Long = (& $get $row 'Alt Text - Long').Trim()
+                Short = $sh0
+                Long = $lg0
             })
         }
+        # the same element name twice in one chapter (for example two unnumbered tables): the page number tells them apart
+        $seen = @{}
+        foreach ($o in $out) { $k = $o.Chapter + '|' + $o.Id; if ($seen.ContainsKey($k)) { $seen[$k]++ } else { $seen[$k] = 1 } }
+        foreach ($o in $out) { $k = $o.Chapter + '|' + $o.Id; if ($seen[$k] -gt 1) { $o.Id = $o.Id + ' (row ' + $o.Row + $(if ($o.Page) { ', page ' + $o.Page } else { '' }) + ')' } }
         return ,$out.ToArray()
     } finally { $zip.Dispose() }
 }
@@ -318,6 +331,133 @@ function Get-DeckPictures([string]$pptx) {
     } finally { $zip.Dispose() }
 }
 
+# ---------- Word (.docx): pictures and charts ----------
+$NS_W  = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+$NS_WP = 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing'
+$NS_C  = 'http://schemas.openxmlformats.org/drawingml/2006/chart'
+$NS_MC = 'http://schemas.openxmlformats.org/markup-compatibility/2006'
+function New-DocNs($doc) {
+    $m = New-Object Xml.XmlNamespaceManager($doc.NameTable)
+    $m.AddNamespace('w', $NS_W); $m.AddNamespace('wp', $NS_WP); $m.AddNamespace('a', $NS_A); $m.AddNamespace('r', $NS_R)
+    $m.AddNamespace('c', $NS_C); $m.AddNamespace('mc', $NS_MC)
+    return ,$m
+}
+# the pictures, charts and diagrams of a Word file, in reading order (a copy kept for older Word inside mc:Fallback is not counted)
+function Get-DocDrawings($doc, $m) {
+    $list = New-Object System.Collections.Generic.List[object]
+    foreach ($x in $doc.SelectNodes('//w:body//wp:inline | //w:body//wp:anchor', $m)) {
+        if ($x.SelectSingleNode('ancestor::mc:Fallback', $m)) { continue }
+        $dp = $x.SelectSingleNode('wp:docPr', $m); if (-not $dp) { continue }
+        $gd = $x.SelectSingleNode('a:graphic/a:graphicData', $m); if (-not $gd) { continue }
+        $uri = $gd.GetAttribute('uri'); $kind = ''
+        if ($uri -match '/picture$') { $kind = 'Picture' } elseif ($uri -match '/chart$') { $kind = 'Chart' } elseif ($uri -match '/diagram$') { $kind = 'Diagram' }
+        if (-not $kind) { continue }
+        $list.Add([pscustomobject]@{ Node = $x; DocPr = $dp; Kind = $kind })
+    }
+    return ,$list.ToArray()
+}
+function Get-ChartInfo($zip, [string]$part) {
+    $info = [pscustomobject]@{ Types = ''; Title = ''; Series = @(); Axes = @() }
+    try {
+        $t = Read-ZipText $zip $part; if (-not $t) { return $info }
+        $d = New-Object Xml.XmlDocument; $d.LoadXml($t)
+        $m = New-DocNs $d
+        $types = New-Object System.Collections.Generic.List[string]
+        foreach ($pa in $d.SelectNodes('//c:plotArea/*', $m)) {
+            switch ($pa.LocalName) {
+                'pieChart' { $types.Add('pie chart') } 'doughnutChart' { $types.Add('pie chart') } 'pie3DChart' { $types.Add('pie chart') }
+                'barChart' { $bd = $pa.SelectSingleNode('c:barDir', $m); if ($bd -and $bd.GetAttribute('val') -eq 'bar') { $types.Add('horizontal bar graph') } else { $types.Add('vertical bar graph column chart') } }
+                'bar3DChart' { $types.Add('vertical bar graph column chart') }
+                'lineChart' { $types.Add('line graph') } 'line3DChart' { $types.Add('line graph') }
+                'scatterChart' { $types.Add('scatter graph') } 'bubbleChart' { $types.Add('scatter graph') }
+                'areaChart' { $types.Add('area chart') } 'radarChart' { $types.Add('radar chart') }
+            }
+        }
+        $info.Types = (@($types.ToArray() | Select-Object -Unique) -join ' and ')
+        $info.Title = (($d.SelectNodes('//c:chart/c:title//a:t', $m) | ForEach-Object { $_.InnerText }) -join '').Trim()
+        $info.Series = @($d.SelectNodes('//c:ser/c:tx//c:v', $m) | ForEach-Object { $_.InnerText.Trim() } | Where-Object { $_ })
+        $info.Axes = @($d.SelectNodes('//c:catAx | //c:valAx | //c:dateAx', $m) | ForEach-Object { (($_.SelectNodes('c:title//a:t', $m) | ForEach-Object { $_.InnerText }) -join '').Trim() } | Where-Object { $_ })
+    } catch { }
+    return $info
+}
+function Get-DocPictures([string]$docx) {
+    $zip = [IO.Compression.ZipFile]::OpenRead($docx)
+    try {
+        $d = New-Object Xml.XmlDocument; $d.PreserveWhitespace = $true; $d.LoadXml((Read-ZipText $zip 'word/document.xml'))
+        $m = New-DocNs $d
+        $relMap = @{}
+        $rt = Read-ZipText $zip 'word/_rels/document.xml.rels'
+        if ($rt) { $rd = New-Object Xml.XmlDocument; $rd.LoadXml($rt); foreach ($r in $rd.DocumentElement.ChildNodes) { if ($r.NodeType -eq 'Element') { $relMap[$r.GetAttribute('Id')] = (Resolve-Part 'word/document.xml' $r.GetAttribute('Target')) } } }
+        # every paragraph: its text, and which chapter heading it is under
+        $paras = @($d.SelectNodes('//w:body//w:p', $m))
+        $texts = New-Object 'string[]' $paras.Count; $chapOf = New-Object 'string[]' $paras.Count
+        $curCh = ''
+        for ($i = 0; $i -lt $paras.Count; $i++) {
+            $tx = (($paras[$i].SelectNodes('.//w:t', $m) | ForEach-Object { $_.InnerText }) -join '')
+            $texts[$i] = ([regex]::Replace($tx, '\s+', ' ')).Trim()
+            $mc = [regex]::Match($texts[$i], '(?i)^chapter\s+0*(\d+)\b')
+            if ($mc.Success -and $texts[$i].Length -lt 200) { $curCh = $mc.Groups[1].Value }
+            $chapOf[$i] = $curCh
+        }
+        $index = @{}; for ($i = 0; $i -lt $paras.Count; $i++) { $index[$paras[$i]] = $i }
+        $out = New-Object System.Collections.Generic.List[object]
+        $capRx = '(?i)^(Fig(?:ure)?|Exhibit|Table|Chart)\.?\s*\d'
+        $n = 0
+        foreach ($dr in (Get-DocDrawings $d $m)) {
+            $n++
+            $pn = $dr.Node.SelectSingleNode('ancestor::w:p[1]', $m)
+            $pi = -1; if ($pn -and $index.ContainsKey($pn)) { $pi = $index[$pn] }
+            $label = ''
+            if ($pi -ge 0) {
+                foreach ($j in @($pi, ($pi + 1), ($pi - 1), ($pi + 2))) {
+                    if ($j -ge 0 -and $j -lt $paras.Count -and $texts[$j] -match $capRx) { $label = $texts[$j]; if ($label.Length -gt 200) { $label = $label.Substring(0, 200) }; break }
+                }
+            }
+            $near = New-Object System.Collections.Generic.List[string]
+            if ($pi -ge 0) {
+                $got = 0
+                for ($j = $pi - 1; $j -ge 0 -and $j -ge ($pi - 8) -and $got -lt 3; $j--) { if ($texts[$j].Length -gt 25) { $near.Insert(0, $texts[$j]); $got++ } }
+                $got = 0
+                for ($j = $pi + 1; $j -lt $paras.Count -and $j -le ($pi + 6) -and $got -lt 2; $j++) { if ($texts[$j].Length -gt 25) { $near.Add($texts[$j]); $got++ } }
+            }
+            $title = ''; $shorts = New-Object System.Collections.Generic.List[string]; $embed = ''
+            $kindWord = $dr.Kind
+            if ($dr.Kind -eq 'Chart') {
+                $cr = $dr.Node.SelectSingleNode('.//c:chart', $m)
+                $rid = ''; if ($cr) { $rid = $cr.GetAttribute('id', $NS_R) }
+                if ($rid -and $relMap.ContainsKey($rid)) {
+                    $ci = Get-ChartInfo $zip $relMap[$rid]
+                    $title = $ci.Title
+                    if ($ci.Types) { $shorts.Add($ci.Types) }
+                    if ($ci.Title) { $shorts.Add($ci.Title) }
+                    foreach ($sr in $ci.Series) { if ($sr.Length -le 80) { $shorts.Add($sr) } }
+                    foreach ($ax in $ci.Axes) { if ($ax.Length -le 80) { $shorts.Add($ax) } }
+                    $kindWord = 'Chart'; if ($ci.Types) { $kindWord = 'Chart (' + $ci.Types + ')' }
+                }
+            } elseif ($dr.Kind -eq 'Picture') {
+                $bl = $dr.Node.SelectSingleNode('.//a:blip', $m)
+                if ($bl) { $embed = $bl.GetAttribute('embed', $NS_R) }
+            }
+            if (-not $title) { $title = $kindWord }
+            $dpId = $dr.DocPr.GetAttribute('id')
+            $fr = $null
+            $fm = [regex]::Match($label, '(?i)^(Fig(?:ure)?|Exhibit|Table)\.?\s*(\d{1,3})\.(\d{1,3})')
+            if ($fm.Success) {
+                $wd = $fm.Groups[1].Value; if ($wd -match '(?i)^fig') { $wd = 'Figure' } elseif ($wd -match '(?i)^exh') { $wd = 'Exhibit' } else { $wd = 'Table' }
+                $fr = [pscustomobject]@{ Chapter = (Norm-Chapter $fm.Groups[2].Value); Id = (Norm-ElemId ($wd + ' ' + $fm.Groups[2].Value + '.' + $fm.Groups[3].Value)); Text = ($wd + ' ' + $fm.Groups[2].Value + '.' + $fm.Groups[3].Value) }
+            }
+            $chapLabel = ''; if ($pi -ge 0 -and $chapOf[$pi]) { $chapLabel = 'Chapter ' + $chapOf[$pi] + ', ' }
+            $out.Add([pscustomobject]@{
+                Part = 'word/document.xml'; Embed = $embed
+                Slide = $n; Title = $title; SlideText = (($near.ToArray()) -join ' '); ShapeId = $dpId; Name = ($chapLabel + $kindWord + ' - ' + $dr.DocPr.GetAttribute('name'))
+                Alt = $dr.DocPr.GetAttribute('descr'); Label = $label; Shorts = $shorts.ToArray(); IsVideo = $false
+                IsAi = (Test-AiGenerated $dr.DocPr.GetAttribute('descr')); FigRef = $fr; ChapterNo = $(if ($pi -ge 0) { $chapOf[$pi] } else { '' })
+            })
+        }
+        return ,$out.ToArray()
+    } finally { $zip.Dispose() }
+}
+
 function Find-ShapeById($shapes, [int]$id) {
     foreach ($s in $shapes) {
         if ($s.Id -eq $id) { return $s }
@@ -404,10 +544,18 @@ function Html($s) { return [System.Net.WebUtility]::HtmlEncode([string]$s) }
 function Make-ReviewPage([string]$pptx, [string]$xlsx, [string]$chapter) {
     Write-Host 'Reading the Excel file...'
     $rows = Get-AltRows $xlsx
+    $isDoc = ([IO.Path]::GetExtension($pptx).ToLowerInvariant() -eq '.docx')
     $chap = Norm-Chapter $chapter
     $withText = @($rows | Where-Object { $_.Short -or $_.Long -or $_.Decorative })
     $opts = @($withText | Where-Object { $_.Chapter -eq $chap })
     if ($withText.Count -eq 0) { throw 'The Excel file has no rows with alt text.' }
+    if ($isDoc) {
+        # a Word file covers many chapters: every row of the file is an option (each picture is compared with the rows of its own chapter first)
+        $idCount = @{}
+        foreach ($o in $withText) { if ($idCount.ContainsKey($o.Id)) { $idCount[$o.Id]++ } else { $idCount[$o.Id] = 1 } }
+        foreach ($o in $withText) { if ($idCount[$o.Id] -gt 1 -and $o.Chapter) { $o.Id = $o.Id + ' (Ch ' + $o.Chapter + ')' } }
+        $opts = @($withText)
+    }
     if ($opts.Count -eq 0) {
         $have = (@($withText | ForEach-Object { $_.Chapter } | Select-Object -Unique) -join ', ')
         Write-Host ("This Excel file has no rows for chapter " + $chapter + ". Chapters in the file: " + $have) -ForegroundColor Yellow
@@ -415,6 +563,7 @@ function Make-ReviewPage([string]$pptx, [string]$xlsx, [string]$chapter) {
     }
     # rows of the other chapters: only for Browse all rows and the figure-number match (their key carries the chapter)
     $others = @($withText | Where-Object { $_.Chapter -ne $chap })
+    if ($isDoc) { $others = @() }
     foreach ($o in $others) {
         $cl = if ($o.Chapter -match '^\d+$') { 'Ch ' + $o.Chapter } else { [string]$o.Chapter }
         $o | Add-Member -NotePropertyName Key -NotePropertyValue ($cl + ' ' + $o.Id) -Force
@@ -422,12 +571,12 @@ function Make-ReviewPage([string]$pptx, [string]$xlsx, [string]$chapter) {
     foreach ($o in $opts) { $o | Add-Member -NotePropertyName Key -NotePropertyValue $o.Id -Force }
     Write-Host ("Excel rows for chapter " + $chapter + ": " + $opts.Count + " (the whole file has " + $withText.Count + " rows, all can be searched)")
 
-    Write-Host 'Reading the pictures in the deck...'
-    $allPics = Get-DeckPictures $pptx
+    if ($isDoc) { Write-Host 'Reading the pictures and charts in the Word file...'; $allPics = Get-DocPictures $pptx }
+    else { Write-Host 'Reading the pictures in the deck...'; $allPics = Get-DeckPictures $pptx }
     $pics = @($allPics | Where-Object { -not $_.IsVideo })
-    Write-Host ("Pictures in the deck: " + $pics.Count)
-    Write-Host 'Making previews (PowerPoint opens the file quietly)...'
-    $thumbResult = Get-Thumbnails $pptx $pics
+    if ($isDoc) { Write-Host ("Pictures and charts in the Word file: " + $pics.Count) } else { Write-Host ("Pictures in the deck: " + $pics.Count) }
+    if ($isDoc) { $thumbResult = @{ Pics = @{}; Slides = @{} } }
+    else { Write-Host 'Making previews (PowerPoint opens the file quietly)...'; $thumbResult = Get-Thumbnails $pptx $pics }
     $thumbs = $thumbResult.Pics
     $slideThumbs = $thumbResult.Slides
     # Where PowerPoint could not make a preview, show the picture stored in the file (PNG, JPEG, GIF) instead.
@@ -507,9 +656,13 @@ function Make-ReviewPage([string]$pptx, [string]$xlsx, [string]$chapter) {
         }
         $altTok = @(); if ($p.Alt) { $altTok = @(Get-Tokens $p.Alt) }
 
+        $optsHere = $opts
+        if ($isDoc -and $p.ChapterNo) { $tmpO = @($opts | Where-Object { $_.Chapter -eq (Norm-Chapter $p.ChapterNo) }); if ($tmpO.Count -gt 0) { $optsHere = $tmpO } }
+        # a picture or chart is compared with the figures, not with the tables, equations or unnumbered tables of the Excel file (they can still be searched)
+        if ($isDoc) { $figOnly = @($optsHere | Where-Object { $_.Id -notmatch '(?i)^\s*(un)?numbered\s*tables?|^\s*table\b|equation' }); if ($figOnly.Count -gt 0) { $optsHere = $figOnly } }
         $found = New-Object System.Collections.Generic.List[object]
         $order = 0
-        foreach ($o in $opts) {
+        foreach ($o in $optsHere) {
             $order++
             $sT = $optShort[$o.Id]; $lT = $optLong[$o.Id]
             $best = $null
@@ -573,7 +726,7 @@ function Make-ReviewPage([string]$pptx, [string]$xlsx, [string]$chapter) {
             # nothing is close: offer the rows that share the most words, marked weak
             $weakList = New-Object System.Collections.Generic.List[object]
             $order2 = 0
-            foreach ($o in $opts) {
+            foreach ($o in $optsHere) {
                 $order2++
                 $allTok = New-Object System.Collections.Generic.List[string]
                 foreach ($ph in $phr) { foreach ($w in $ph.Tok) { if (-not $allTok.Contains($w)) { $allTok.Add($w) } } }
@@ -1051,6 +1204,10 @@ document.getElementById("save").addEventListener("click", function(){
 render();
 </script></body></html>
 '@
+    if ($isDoc) {
+        $html = $html.Replace(' &middot; chapter __CHAPTER__', ' &middot; Word file').Replace("<b>Slide ' + p.slide", "<b>Item ' + p.slide").Replace('"Slide " + p.slide', '"Item " + p.slide').Replace('with this slide.', 'with this item.')
+        $html = $html.Replace('copy of the PowerPoint', 'copy of the Word file').Replace('Add alt text to the PowerPoint', 'Add alt text to the Word file').Replace('Search slide, name or text', 'Search item, name or text')
+    }
     $html = $html.Replace('__DECK__', (Html $deckName)).Replace('__CHAPTER__', (Html $chap)).Replace('__CARDS__', $cards.ToString())
     $slideThumbJson = New-Object System.Collections.Generic.List[string]
     foreach ($k in $slideThumbs.Keys) { $slideThumbJson.Add((& $js $k) + ':' + (& $js $slideThumbs[$k])) }
@@ -1068,7 +1225,96 @@ render();
 # =====================================================================
 # Apply (used by Step 2 and by the button on the review page)
 # =====================================================================
+function Invoke-ApplyDoc([string]$docx, $lookup, $map, [string]$outPath, [bool]$replace = $false) {
+    Copy-Item -LiteralPath $docx -Destination $outPath -Force
+    $issues = New-Object System.Collections.Generic.List[string]
+    $keptList = New-Object System.Collections.Generic.List[string]
+    $unmatched = New-Object System.Collections.Generic.List[string]
+    $notSure = New-Object System.Collections.Generic.List[string]
+    $filled = 0; $own = 0; $kept = 0; $decor = 0; $missing = 0; $replaced = 0
+    $zip = [IO.Compression.ZipFile]::Open($outPath, 'Update')
+    try {
+        $d = New-Object Xml.XmlDocument; $d.PreserveWhitespace = $true; $d.LoadXml((Read-ZipText $zip 'word/document.xml'))
+        $m = New-DocNs $d
+        $drawings = Get-DocDrawings $d $m
+        $changed = $false
+        foreach ($row in $map) {
+            $no = 0; if (-not [int]::TryParse([string]$row.Slide, [ref]$no)) { continue }
+            if ($no -lt 1 -or $no -gt $drawings.Count) { $issues.Add("Item $no : not found in the Word file, skipped"); $missing++; continue }
+            $dr = $drawings[$no - 1]; $nv = $dr.DocPr
+            # the same picture or chart as when the page was made: the id must still agree
+            if (([string]$row.ShapeId) -match '^\d+$' -and $nv.GetAttribute('id') -ne ([string]$row.ShapeId)) {
+                $alt2 = $null
+                foreach ($c2 in $drawings) { if ($c2.DocPr.GetAttribute('id') -eq ([string]$row.ShapeId)) { $alt2 = $c2; break } }
+                if ($alt2) { $dr = $alt2; $nv = $dr.DocPr } else { $issues.Add("Item $no : picture id $($row.ShapeId) not found, skipped"); $missing++; continue }
+            }
+            $where = "Item $no $($nv.GetAttribute('name'))"
+            $mode = ''
+            if ($row.PSObject.Properties['Mode'] -and $row.Mode) { $mode = ([string]$row.Mode).ToLowerInvariant() }
+            elseif ($row.ExcelId) { $mode = 'excel' }
+            else { $mode = 'none' }
+            $custom = ''; if ($row.PSObject.Properties['CustomText']) { $custom = [string]$row.CustomText }
+            $noteTxt = ''; if ($row.PSObject.Properties['Note']) { $noteTxt = ([string]$row.Note).Trim() }
+            if ($mode -eq 'unsure') { if ($noteTxt) { $notSure.Add("$where ($noteTxt)") } else { $notSure.Add($where) }; continue }
+            if ($mode -eq 'none') { $curAlt = $nv.GetAttribute('descr'); if (-not ($curAlt -and $curAlt.Trim().Length -gt 0)) { $unmatched.Add($where) }; continue }
+            $alt = ''; $isDeco = $false; $src = ''
+            if ($mode -eq 'excel') {
+                $key = (Norm-Chapter $row.Chapter) + '|' + $row.ExcelId
+                if (-not $lookup.ContainsKey($key)) { $issues.Add("$where : Excel row $($row.ExcelId) not found, skipped"); $missing++; continue }
+                $x = $lookup[$key]
+                $src = "Excel row $($row.ExcelId)"
+                if ($x.Decorative) { $isDeco = $true }
+                else { $alt = $x.Short; if ($x.Long) { $alt = ($alt + ' ' + $x.Long).Trim() } }
+            }
+            elseif ($mode -eq 'own') { $alt = $custom.Trim(); $src = 'your own text' }
+            elseif ($mode -eq 'deco') { $isDeco = $true; $src = 'decorative' }
+            else { $issues.Add("$where : unknown choice '$mode', skipped"); $missing++; continue }
+            if (-not $isDeco -and -not $alt) { $issues.Add("$where : $src has no alt text, skipped"); $missing++; continue }
+            $existing = $nv.GetAttribute('descr')
+            $hasExisting = [bool]($existing -and $existing.Trim().Length -gt 0)
+            if ($hasExisting -and -not $replace) { $kept++; $keptList.Add("$where ($src not used)"); continue }
+            if ($isDeco) {
+                $nv.SetAttribute('descr', '')
+                $ext = $nv.SelectSingleNode('a:extLst', $m)
+                if (-not $ext) { $ext = $d.CreateElement('a', 'extLst', $NS_A); $null = $nv.AppendChild($ext) }
+                if (-not $ext.SelectSingleNode('a:ext[@uri="' + $DEC_URI + '"]', $m)) {
+                    $e = $d.CreateElement('a', 'ext', $NS_A)
+                    $e.SetAttribute('uri', $DEC_URI)
+                    $dnode = $d.CreateElement('adec', 'decorative', $NS_DEC)
+                    $dnode.SetAttribute('val', '1')
+                    $null = $e.AppendChild($dnode)
+                    $null = $ext.AppendChild($e)
+                }
+                if ($hasExisting) { $replaced++ }
+                $decor++
+            } else {
+                $nv.SetAttribute('descr', $alt)
+                $oldDec = $nv.SelectSingleNode('a:extLst/a:ext[@uri="' + $DEC_URI + '"]', $m)
+                if ($oldDec) { $null = $oldDec.ParentNode.RemoveChild($oldDec) }
+                if ($hasExisting) { $replaced++ }
+                if ($mode -eq 'own') { $own++ } else { $filled++ }
+            }
+            $changed = $true
+        }
+        if ($changed) {
+            $e = $zip.GetEntry('word/document.xml'); if ($e) { $e.Delete() }
+            $ne = $zip.CreateEntry('word/document.xml')
+            $sw = New-Object IO.StreamWriter($ne.Open(), (New-Object Text.UTF8Encoding($false)))
+            $d.Save($sw)
+            $sw.Close()
+        }
+    } finally { $zip.Dispose() }
+    $summary = "From Excel: $filled ; your own text: $own ; decorative: $decor ; replaced: $replaced ; kept as they were: $kept ; problems: $missing ; marked not sure: $($notSure.Count) ; still without a match: $($unmatched.Count)"
+    Add-WorkLog 'Alt Text Tool' $docx $outPath
+    return [pscustomobject]@{
+        Filled = $filled; Own = $own; Replaced = $replaced; Decor = $decor; Kept = $kept; Problems = $missing
+        KeptList = $keptList.ToArray(); Issues = $issues.ToArray(); Unmatched = $unmatched.ToArray(); NotSure = $notSure.ToArray()
+        OutPath = $outPath; OutFile = (Split-Path -Leaf $outPath); Summary = $summary
+    }
+}
+
 function Invoke-Apply([string]$pptx, $lookup, $map, [string]$outPath, [bool]$replace = $false) {
+    if ([IO.Path]::GetExtension($pptx).ToLowerInvariant() -eq '.docx') { return (Invoke-ApplyDoc $pptx $lookup $map $outPath $replace) }
     Copy-Item -LiteralPath $pptx -Destination $outPath -Force
     $issues = New-Object System.Collections.Generic.List[string]
     $keptList = New-Object System.Collections.Generic.List[string]
@@ -1181,7 +1427,7 @@ function Get-Lookup($rows) {
 }
 
 function Get-OutPath([string]$pptx) {
-    return (Join-Path (Split-Path -Parent $pptx) ([IO.Path]::GetFileNameWithoutExtension($pptx) + ' AltText.pptx'))
+    return (Join-Path (Split-Path -Parent $pptx) ([IO.Path]::GetFileNameWithoutExtension($pptx) + ' AltText' + [IO.Path]::GetExtension($pptx).ToLowerInvariant()))
 }
 
 # =====================================================================
@@ -1281,6 +1527,7 @@ try {
         if (-not $xlsx) { throw 'No Excel file selected.' }
         if ($mode -eq '1') {
             $chapter = $env:ALTMATCH_CHAPTER
+            if (-not $chapter -and $pptx.ToLowerInvariant().EndsWith('.docx')) { $chapter = 'all' }
             if (-not $chapter) {
                 $guess = [regex]::Match([IO.Path]::GetFileNameWithoutExtension($pptx), '(\d{1,2})(?=\D*$)').Value
                 $chapter = [Microsoft.VisualBasic.Interaction]::InputBox('Which chapter number is this deck? (as written in the Excel Chapter Number column, for example 05)', 'Chapter', $guess)
