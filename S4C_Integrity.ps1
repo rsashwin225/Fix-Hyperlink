@@ -1,5 +1,5 @@
 # S4C INTEGRITY SCRIPT - compares the text of a file before and after a tool ran and writes an Excel report next to the fixed file.
-# S4C-FILE-VERSION: 1.0
+# S4C-FILE-VERSION: 1.1
 # Nothing in the original or the fixed file is changed here: both are only read.
 # Every paragraph is compared exactly (spaces and punctuation included). A change a tool is allowed to make (for example the slide counter,
 # a typed list label that became a real list, hyperlink text) is marked "Expected". Anything else is marked FLAG for a person to check.
@@ -58,7 +58,15 @@ function IG-PptParas($d) {
             } elseif ($ln -eq 'br') { [void]$sb.Append("`n") }
         }
         $txt = $sb.ToString()
-        if ($txt.Trim().Length -gt 0) { $list.Add([pscustomobject]@{ Idx = $k; Text = $txt; Link = $link }) }
+        if ($txt.Trim().Length -gt 0) {
+            # the box this paragraph is in: turned? where? (used to report a moved copyright line)
+            $rot = ''; $px = 0.0; $py = 0.0
+            $sp = $p.ParentNode; while ($sp -and $sp.LocalName -ne 'sp') { $sp = $sp.ParentNode }
+            if ($sp) {
+                foreach ($c1 in $sp.ChildNodes) { if ($c1.LocalName -eq 'spPr') { foreach ($q in $c1.ChildNodes) { if ($q.LocalName -eq 'xfrm') { $rot = $q.GetAttribute('rot'); foreach ($q2 in $q.ChildNodes) { if ($q2.LocalName -eq 'off') { $px = [double]$q2.GetAttribute('x'); $py = [double]$q2.GetAttribute('y') } } } } } }
+            }
+            $list.Add([pscustomobject]@{ Idx = $k; Text = $txt; Link = $link; Rot = $rot; X = $px; Y = $py })
+        }
     }
     return ,$list
 }
@@ -190,6 +198,25 @@ function IG-Classify([string]$tool, $r, $a, [string]$loc) {
         return (IG-Row 'Expected' 'Hyperlink text' $loc $seg $r.Text $a.Text 'The paragraph contains a hyperlink; Hyperlink Tool may rewrite hyperlink text.')
     }
     return (IG-Row 'FLAG' 'Text changed' $loc $seg $r.Text $a.Text 'The words of this paragraph changed and no rule of this tool allows that. Please check.')
+}
+# SDRS decks: a sideways copyright line beside a photo is moved under that photo. The text stays the same, so it is listed here on its own.
+function IG-CreditMoves([string]$label, $origList, $fixList, $rows) {
+    $rx = '^\s*(' + [char]169 + '|\(c\)|Courtesy|Source|Photo|Image|Copyright|Used with)'
+    $o = @($origList | Where-Object { $_.Text -match $rx -and ($_.Rot -eq '5400000' -or $_.Rot -eq '16200000') } | Sort-Object X)
+    $f = @($fixList | Where-Object { $_.Text -match $rx })
+    $used = @{}
+    foreach ($c in $o) {
+        $m = $null
+        foreach ($d in ($f | Sort-Object X)) { if ($d.Text -eq $c.Text -and -not $used.ContainsKey($d.Idx)) { $m = $d; break } }
+        if (-not $m) { continue }
+        $used[$m.Idx] = $true
+        $moved = ($m.Rot -ne '5400000' -and $m.Rot -ne '16200000')
+        if ($moved) { $rows.Add((IG-Row 'Expected' 'Copyright moved' $label 'The copyright line was moved from beside the photo to under the photo (turned upright). The text is the same.' ('Sideways beside the photo: "' + (IG-Show $c.Text) + '"') ('Under the photo: "' + (IG-Show $m.Text) + '"') 'SLID Tool moves sideways photo credits under their picture in SDRS files.')) }
+        else { $rows.Add((IG-Row 'Info' 'Copyright not moved' $label 'The copyright line is still sideways beside the photo.' ('"' + (IG-Show $c.Text) + '"') '' 'There was no room under the photo, or no photo was found beside it.')) }
+    }
+    # two copyright lines sitting on top of each other would hide one of them
+    $seen = @{}
+    foreach ($d in $f) { $k = [string][long]$d.X + ',' + [string][long]$d.Y; if ($seen.ContainsKey($k)) { $rows.Add((IG-Row 'FLAG' 'Copyright overlap' $label 'Two copyright lines are in exactly the same place, so one hides the other.' ('"' + (IG-Show $d.Text) + '"') '' 'Please move one of them under its own photo.')) } else { $seen[$k] = 1 } }
 }
 function IG-ComparePart([string]$tool, [string]$label, $origList, $fixList, $rows, $stats) {
     $om = New-Object 'System.Collections.Generic.Dictionary[string,System.Collections.Generic.List[object]]'
@@ -340,7 +367,7 @@ function IG-WriteXlsx([string]$path, $sheets) {
 # ---------------------------------------------------------------- one before / after pair
 $script:IG_Rules = @{
     'Word Fixer'  = 'Allowed: a typed list label (I. / A. / 1. / bullet) removed because the paragraph became a real list; a paragraph split or joined with the same words. Everything else is flagged.'
-    'SLID Macro'  = 'Allowed: the (n of m) counter added to repeated slide titles. Slides may be duplicated. Shape names and reading order are not text. Everything else is flagged.'
+    'SLID Macro'  = 'Allowed: the (n of m) counter added to repeated slide titles. In SDRS decks a sideways copyright line is moved under its photo (listed as Copyright moved). Slides may be duplicated. Shape names and reading order are not text. Everything else is flagged.'
     'IMBK Macro'  = 'Allowed: figures moved and boxes resized (no text change). Any added, removed or changed text is flagged.'
     'Alt Text Tool' = 'Allowed: alt text on pictures (it is not slide text). Any slide text change is flagged.'
     'Link Fixer'  = 'Allowed: hyperlink text rewritten in paragraphs that contain a hyperlink. Spacing or punctuation-only changes are always flagged.'
@@ -359,6 +386,7 @@ function Test-Integrity([string]$tool, [string]$orig, [string]$fixed, [string]$r
             continue
         }
         IG-ComparePart $tool $fixMap[$og.Key].Label $og.Paras $fixMap[$og.Key].Paras $rows $stats
+        if ($tool -eq 'SLID Macro' -and $ext -eq '.pptx' -and $og.Key -like 's*' -and $og.Key -notlike 'n*') { IG-CreditMoves $fixMap[$og.Key].Label $og.Paras $fixMap[$og.Key].Paras $rows }
     }
     foreach ($fx in $fixSet) {
         if (-not $origMap.ContainsKey($fx.Key)) {

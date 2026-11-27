@@ -1,7 +1,7 @@
 # SLID Macro - numbers repeated slide titles (1 of 4), renames shapes, puts sideways photo credits under their picture (SDRS files only), fixes language tags.
 # Saves a remediated copy next to the original. (Self-updates from GitHub via SLID_Update.ps1.)
 # SLID MACRO SCRIPT
-$SLID_VERSION = '1.6'   # shown at the start of the window; the updater compares this number with GitHub
+$SLID_VERSION = '1.7'   # shown at the start of the window; the updater compares this number with GitHub
 # ---- work log: notes each saved file (name, slides or pages) for the daily report in S4C Tools ----
 # Only reads the saved file; never changes it and never stops the tool if something goes wrong.
 function Add-WorkLog([string]$tool, [string]$inPath, [string]$outPath) {
@@ -244,18 +244,31 @@ try {
             if (-not $ph -and $txt -match $creditRx -and ($rot -eq '5400000' -or $rot -eq '16200000')) { $creds.Add($r) }
             elseif (-not ($ph -and @('title', 'ctrTitle', 'subTitle') -contains $ph.GetAttribute('type'))) { $texts.Add($r) }
         }
+        # which picture each credit stands beside: the sideways box has swapped width and height. Every picture gets ONE credit
+        # (nearest first), so two credits can never land on the same picture; a credit left over takes its nearest picture.
+        $cands = New-Object System.Collections.Generic.List[object]
         foreach ($cr in $creds) {
-            # the picture this credit stands beside: the sideways box has swapped width and height
             $cxm = $cr.L + $cr.W / 2; $cym = $cr.T + $cr.H / 2
             $vl = $cxm - $cr.H / 2; $vr = $cxm + $cr.H / 2; $vt = $cym - $cr.W / 2; $vb = $cym + $cr.W / 2
-            $best = $null; $bestGap = 1e12
             foreach ($pc in $pics) {
                 $ov = [Math]::Min($vb, $pc.T + $pc.H) - [Math]::Max($vt, $pc.T)
                 if ($ov -lt ($vb - $vt) * 0.5) { continue }
                 $gap = 0.0
                 if ($vr -lt $pc.L) { $gap = $pc.L - $vr } elseif ($vl -gt ($pc.L + $pc.W)) { $gap = $vl - ($pc.L + $pc.W) }
-                if ($gap -le 548640 -and $gap -lt $bestGap) { $best = $pc; $bestGap = $gap }
+                if ($gap -gt 548640) { continue }
+                $edge = [Math]::Min([Math]::Abs($vr - $pc.L), [Math]::Abs($vl - ($pc.L + $pc.W)))
+                $cands.Add([pscustomobject]@{ Cr = $cr; Pc = $pc; Gap = $gap; Edge = $edge })
             }
+        }
+        $pairOf = @{}; $picUsed = @{}
+        foreach ($cd in @($cands | Sort-Object Edge)) {
+            $ck = $creds.IndexOf($cd.Cr); $pk = $pics.IndexOf($cd.Pc)
+            if ($pairOf.ContainsKey($ck) -or $picUsed.ContainsKey($pk)) { continue }
+            $pairOf[$ck] = $cd.Pc; $picUsed[$pk] = $true
+        }
+        foreach ($cd in @($cands | Sort-Object Gap, Edge)) { $ck = $creds.IndexOf($cd.Cr); if (-not $pairOf.ContainsKey($ck)) { $pairOf[$ck] = $cd.Pc } }
+        foreach ($cr in $creds) {
+            $best = $pairOf[$creds.IndexOf($cr)]
             if (-not $best) { continue }
             $nw = [Math]::Min($cr.W, $best.W)
             $nx = $best.L + ($best.W - $nw) / 2
