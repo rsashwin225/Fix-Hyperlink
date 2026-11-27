@@ -22,7 +22,7 @@
 # (it must be a Link Fixer script of a higher version that PowerShell can read) and then used for this run, and
 # a copy is kept for when there is no connection. Without an address, or without a connection, the version inside
 # this file is used. Nothing is sent to the address, the tool only reads from it.
-$LF_VERSION = 14
+$LF_VERSION = 15
 # ---- work log: notes each saved file (name, slides or pages) for the daily report in S4C Tools ----
 # Only reads the saved file; never changes it and never stops the tool if something goes wrong.
 function Add-WorkLog([string]$tool, [string]$inPath, [string]$outPath) {
@@ -1463,8 +1463,6 @@ function Invoke-ApplyAll($files, $texts) {
     }
     $report = New-Object System.Collections.Generic.List[string]
     foreach ($o in $out) { $report.Add("$($o.InFile) -> $($o.OutFile): $($o.Changed) links changed, $($o.Skipped) left as they are") }
-    $repPath = Join-Path (Get-FolderOf $out[0].OutPath) 'Link Fixer report.txt'
-    $report | Set-Content -LiteralPath $repPath -Encoding UTF8
     $notes.Add('Links inside a document (bookmarks) and mail links are not changed.')
     return [pscustomobject]@{ Files = $out.ToArray(); Notes = $notes.ToArray() }
 }

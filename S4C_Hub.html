@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="3.8">
+<meta name="s4c-hub-version" content="3.9">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -660,7 +660,7 @@ function dzRender(){const t=TOOLS[cur];const list=$('dzList');
   $('dzIn').accept=dropOf(t).join(',');
   const it=dzOn();list.style.display=it.length?'':'none';
   list.innerHTML=it.map((x,i)=>'<div class="r"><span class="nm" title="'+esc(x.path||x.file.name)+'">'+esc(x.file.name)+'</span><span class="st'+(x.state==='done'?' ok':x.state==='failed'?' bad':'')+'">'+esc(x.msg)+'</span>'+
-    (x.state==='needfolder'&&!job?'<button class="btn" onclick="dzPickDir('+i+')">Choose folder</button><button class="btn" onclick="dzUseDefault('+i+')">Save in Documents</button>':'')+(!x.noOpen&&(x.path||x.outPath)?'<button class="btn" onclick="dzOpen('+i+')">Open folder</button>':'')+(x.state==='failed'&&!job?'<button class="x" title="Remove" onclick="dzDel('+i+')">&times;</button>':'')+'</div>').join('');
+    (x.state==='needfolder'&&!job?'<button class="btn pri" onclick="dzPickWin('+i+')">Pick it again</button><button class="btn" onclick="dzPickDir('+i+')">Choose folder</button><button class="btn" onclick="dzUseDefault('+i+')">Save in Documents</button>':'')+(!x.noOpen&&(x.path||x.outPath)?'<button class="btn" onclick="dzOpen('+i+')">Open folder</button>':'')+(x.state==='failed'&&!job?'<button class="x" title="Remove" onclick="dzDel('+i+')">&times;</button>':'')+'</div>').join('');
   if(!job)$('runTxt').textContent='Choose files';
   rnDraw()}
 function dzDel(i){dz.items.splice(i,1);dzRender()}
@@ -674,7 +674,7 @@ async function dzAdd(files){const t=TOOLS[cur];if(!t.drop)return;
   const mine=[];
   for(const f of add){if(dz.items.some(x=>x.file.name===f.name&&x.file.size===f.size))continue;const x={file:f,path:'',state:'looking',msg:'Looking for the original...'};dz.items.push(x);mine.push(x)}
   dzRender();if(!mine.length)return;
-  const miss='Original not found. Press Choose folder and pick the folder it is in, or Save in Documents.';
+  const miss='Could not tell which folder this file is in. Press Pick it again and choose the same file, so the fixed copy is saved beside it.';
   try{const r=await POSTJ('/api/locate',mine.map(x=>({name:x.file.name,size:x.file.size,mtime:x.file.lastModified})));
     const fl=[].concat(r.files||[]);
     mine.forEach(x=>{const m=fl.find(y=>y.name===x.file.name);if(m&&m.path){x.state='ready';x.path=m.path;x.msg='Found in '+folderOf(m.path)}else{x.state='needfolder';x.msg=miss}})
@@ -720,6 +720,15 @@ async function dzPickDir(i){const x=dzOn()[i];if(!x)return;
   if(!window.showDirectoryPicker){dzUseDefault(i);toast('inf','Saved in Documents','This browser cannot pick a folder, so the fixed copy goes to Documents\\S4C Output.');return}
   try{const hd=await window.showDirectoryPicker({mode:'readwrite'});x.dirHandle=hd;x.state='ready';x.msg='Fixed copy will be saved in the folder "'+hd.name+'"';dzRender();startDrop()}
   catch(e){if(e&&e.name!=='AbortError')toast('warn','That folder cannot be used','Pick another folder, or use Save in Documents.')}}
+/* the Windows file window gives the real folder, so the fixed copy is saved right beside the original */
+async function dzPickWin(i){const x=dzOn()[i];if(!x||pickBusy)return;pickBusy=true;
+  try{const t=TOOLS[cur];x.msg='Waiting for the file window...';dzRender();
+    const id=(await (await api('/api/pick?mode=file&tool='+encodeURIComponent(t.file))).json()).id;
+    const r=await pickWait(id,5000);const f=(r.files||[]).find(p=>leafOf(p).toLowerCase()===x.file.name.toLowerCase());
+    if(f){x.path=f;x.state='ready';x.msg='Found in '+folderOf(f);dzRender();startDrop()}
+    else{x.state='needfolder';x.msg=r.files&&r.files.length?'That is a different file. Pick '+x.file.name+'.':'No file chosen.';dzRender()}}
+  catch(e){x.state='needfolder';x.msg='The file window could not open. Use Choose folder or Save in Documents.';dzRender()}
+  finally{pickBusy=false}}
 function dzUseDefault(i){const x=dzOn()[i];if(!x)return;x.dirHandle=null;x.state='ready';x.msg='Fixed copy will be saved in Documents\\S4C Output';dzRender();startDrop()}
 /* after a run for a file whose folder was chosen in the browser: the finished copy is written into that folder */
 async function dzWriteBack(x){

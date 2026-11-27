@@ -1,7 +1,7 @@
 # SLID Macro - numbers repeated slide titles (1 of 4), renames shapes, puts sideways photo credits under their picture (SDRS files only), fixes language tags.
 # Saves a remediated copy next to the original. (Self-updates from GitHub via SLID_Update.ps1.)
 # SLID MACRO SCRIPT
-$SLID_VERSION = '1.8'   # shown at the start of the window; the updater compares this number with GitHub
+$SLID_VERSION = '1.9'   # shown at the start of the window; the updater compares this number with GitHub
 # ---- work log: notes each saved file (name, slides or pages) for the daily report in S4C Tools ----
 # Only reads the saved file; never changes it and never stops the tool if something goes wrong.
 function Add-WorkLog([string]$tool, [string]$inPath, [string]$outPath) {
@@ -542,8 +542,6 @@ finally {
     $zip.Dispose()
 }
 
-$repPath = Join-Path (Split-Path -Parent $OutPath) ([IO.Path]::GetFileNameWithoutExtension($OutPath) + ' report.txt')
-$report | Set-Content -LiteralPath $repPath -Encoding UTF8
 $report | ForEach-Object { Write-Host $_ }
 Write-Host "Saved: $OutPath"
 Add-WorkLog 'SLID Macro' $src $OutPath

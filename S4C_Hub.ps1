@@ -1,5 +1,5 @@
 # S4C HUB SCRIPT - the S4C Tools window. Runs a small page on this PC only (http://localhost) and opens it
-# S4C-FILE-VERSION: 3.12
+# S4C-FILE-VERSION: 3.14
 # in the browser. From the page you pick a tool, it checks GitHub for that one tool, then opens the tool
 # in its own window exactly as before. Close this window to close S4C Tools.
 $ErrorActionPreference = 'Stop'
@@ -93,6 +93,15 @@ function Step-Job($j) {
         if (Test-Path -LiteralPath $j.Sf) {
             $c = [IO.File]::ReadAllText($j.Sf).Split("`t")
             if ($c.Count -ge 2) { $j.Status = [ordered]@{ status = $c[0]; message = $c[1]; reason = $(if ($c.Count -ge 3) { $c[2] } else { '' }) } }
+        }
+        # GitHub could not be reached: try once more before using the copy on this PC, so the newest version is used whenever it can be
+        if ($j.Status.status -eq 'offline' -and [int]$j.Tries -lt 1) {
+            $j.Tries = [int]$j.Tries + 1
+            Remove-Item -LiteralPath $j.Out, $j.Err, $j.Sf -ErrorAction SilentlyContinue
+            $env:S4C_STATUS_FILE = $j.Sf
+            try { $j.Upd = Start-Process -FilePath $exe -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $here 'S4C_Update.ps1') + '" -Tool ' + $j.File) -NoNewWindow -PassThru -RedirectStandardOutput $j.Out -RedirectStandardError $j.Err } catch { Write-HubLog ('update retry could not start: ' + $_.Exception.Message) }
+            Remove-Item Env:S4C_STATUS_FILE -ErrorAction SilentlyContinue
+            return
         }
         Remove-Item -LiteralPath $j.Out, $j.Err, $j.Sf -ErrorAction SilentlyContinue
         if ($j.Launch) {
@@ -317,7 +326,30 @@ function Find-Originals($items) {
     $want = @{}; foreach ($it in $items) { $want[([string]$it.name).ToLowerInvariant()] = $it }
     $found = @{}
     $sw = [Diagnostics.Stopwatch]::StartNew()
-    foreach ($root in (Get-SearchRoots)) {
+    # 1) the Windows "recent files" list: a file picked in a file window is noted there with its exact folder
+    try {
+        $rec = [Environment]::GetFolderPath('Recent')
+        if ($rec -and (Test-Path -LiteralPath $rec)) {
+            $wsh = New-Object -ComObject WScript.Shell
+            foreach ($k in @($want.Keys)) {
+                $lnk = Join-Path $rec ($want[$k].name + '.lnk')
+                if (-not (Test-Path -LiteralPath $lnk)) { continue }
+                try {
+                    $tp = $wsh.CreateShortcut($lnk).TargetPath
+                    if ($tp -and (Test-Path -LiteralPath $tp -PathType Leaf)) {
+                        $fi = Get-Item -LiteralPath $tp
+                        $ms = [long]([DateTimeOffset]$fi.LastWriteTimeUtc).ToUnixTimeMilliseconds()
+                        if ([long]$fi.Length -eq [long]$want[$k].size -and [math]::Abs($ms - [long]$want[$k].mtime) -le 2500 -and $fi.FullName.IndexOf(';') -lt 0) { $found[$k] = $fi.FullName }
+                    }
+                } catch {}
+            }
+        }
+    } catch {}
+    # 2) the usual folders, then the other drives
+    $roots = New-Object System.Collections.Generic.List[string]
+    foreach ($r0 in (Get-SearchRoots)) { $roots.Add($r0) }
+    try { foreach ($dv in (Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue)) { if ($dv.Root -and $dv.Root -ne ([string]$env:SystemDrive + '\') -and (Test-Path -LiteralPath $dv.Root) -and $dv.Root -match '^[A-Za-z]:\\$') { $roots.Add($dv.Root) } } } catch {}
+    foreach ($root in $roots) {
         if ($sw.Elapsed.TotalSeconds -gt 30 -or $found.Count -ge $want.Count) { break }
         try {
             foreach ($f in (Get-ChildItem -LiteralPath $root -Recurse -File -Include '*.pptx', '*.docx', '*.xlsx', '*.csv' -Depth 8 -ErrorAction SilentlyContinue)) {

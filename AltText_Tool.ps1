@@ -1,6 +1,6 @@
 # ALT TEXT TOOL SCRIPT
 # PPT Alt-Text Filler (S4Carlisle). Self-updates from GitHub through AltText_Update.ps1.
-$ALT_VERSION = '3.5'   # shown at the start of the window; the updater compares this number with GitHub
+$ALT_VERSION = '3.6'   # shown at the start of the window; the updater compares this number with GitHub
 # ---- work log: notes each saved file (name, slides or pages) for the daily report in S4C Tools ----
 # Only reads the saved file; never changes it and never stops the tool if something goes wrong.
 function Add-WorkLog([string]$tool, [string]$inPath, [string]$outPath) {
@@ -1165,8 +1165,6 @@ function Invoke-Apply([string]$pptx, $lookup, $map, [string]$outPath, [bool]$rep
     foreach ($i in $issues) { $report.Add($i) }
     if ($notSure.Count) { $report.Add('Marked not sure, nothing written: ' + ($notSure -join ' ; ')) }
     if ($unmatched.Count) { $report.Add('Still without a match (write these by hand): ' + ($unmatched -join ' ; ')) }
-    $repPath = Join-Path (Split-Path -Parent $outPath) ([IO.Path]::GetFileNameWithoutExtension($outPath) + ' report.txt')
-    $report | Set-Content -LiteralPath $repPath -Encoding UTF8
     Add-WorkLog 'Alt Text Tool' $pptx $outPath
 
     return [pscustomobject]@{

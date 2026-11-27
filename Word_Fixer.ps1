@@ -14,7 +14,7 @@
 #      lists ("LO ..." styles) become List Paragraph items with a separate list per parent item (as in the team's finished files).
 #
 # The original file is never changed: the result is saved as "<name> Fixed.docx" with a report next to it.
-$WF_VERSION = '2.4'   # shown at the start of the window; the updater compares this number with GitHub
+$WF_VERSION = '2.5'   # shown at the start of the window; the updater compares this number with GitHub
 # ---- work log: notes each saved file (name, slides or pages) for the daily report in S4C Tools ----
 # Only reads the saved file; never changes it and never stops the tool if something goes wrong.
 function Add-WorkLog([string]$tool, [string]$inPath, [string]$outPath) {
@@ -1822,8 +1822,6 @@ try {
             $out = [IO.Path]::Combine([IO.Path]::GetDirectoryName($f), [IO.Path]::GetFileNameWithoutExtension($f) + ' Fixed.docx')
             $rep = Repair-Docx $f $out
             foreach ($l in $rep) { if ($l.StartsWith('CHECK')) { Write-Host ('  ' + $l) -ForegroundColor Yellow } else { Write-Host ('  ' + $l) } }
-            $repPath = [IO.Path]::Combine([IO.Path]::GetDirectoryName($f), [IO.Path]::GetFileNameWithoutExtension($f) + ' Fixed report.txt')
-            $rep | Set-Content -LiteralPath $repPath -Encoding UTF8
             Write-Host ('  Saved: ' + $out) -ForegroundColor Green
             Add-WorkLog 'Word Fixer' $f $out
         } catch {
