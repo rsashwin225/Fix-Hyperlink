@@ -2080,7 +2080,7 @@ function Start-WordEditor([string[]]$files) {
         $ctx = $listener.EndGetContext($ar); $req = $ctx.Request; $res = $ctx.Response
         $status = 200; $ctype = 'application/json; charset=utf-8'; $body = ''
         try {
-            $path = $req.Url.AbsolutePath; $q = [Web.HttpUtility]::ParseQueryString($req.Url.Query)
+            $path = $req.Url.AbsolutePath; $q = $req.QueryString
             if ($req.HttpMethod -eq 'GET' -and $path -eq '/') { $ctype = 'text/html; charset=utf-8'; $body = $html }
             elseif ($req.Headers['X-Token'] -ne $token) { $status = 403; $body = '{"error":"Not allowed"}' }
             elseif ($req.HttpMethod -eq 'GET' -and $path -eq '/api/state') { $body = (@{ files = $names; saved = @($saved.Keys | ForEach-Object { [int]$_ }) } | ConvertTo-Json -Compress -Depth 3) }
