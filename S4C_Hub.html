@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="s4c-hub-version" content="3.17">
+<meta name="s4c-hub-version" content="3.18">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>S4C Tools</title>
 <style>
@@ -531,12 +531,12 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;background:
 const TOKEN='__S4C_TOKEN__';
 const GROUPS=['Word','PowerPoint','Word and PowerPoint'];
 const TOOLS=[
- {file:'Word_Fixer.ps1',drop:'.docx',art:'doc',name:'Word Tool',key:'Word Fixer',group:0,letter:'W',tile:'var(--word)',out:'<name> Fixed.docx',unit:'pages',
+ {file:'Word_Fixer.ps1',drop:'.docx',art:'doc',name:'Word Tool',key:'Word Fixer',group:0,letter:'W',tile:'var(--word)',out:'<name> Remediated.docx',unit:'pages',
   tagline:'Turns typed headings and outlines into real Word headings and list levels.',
   intro:['Many chapters arrive with headings that are only bold text and lists typed by hand (<code>I.</code> <code>A.</code> <code>1.</code> <code>a.</code>), so a screen reader hears no structure.',
-         'Word Tool makes the first two lines the Title and section titles Heading 1 (Heading 2 only for a sub-heading), and turns typed outlines into real list levels.'],
-  idea:'The text is never changed. A safety check compares every word before the copy is saved.',
-  steps:[['Choose files','In the tool window'],['Check GitHub','Newest version of this tool'],['Fix headings','Title, Heading 1, Heading 2'],['Fix list levels','I, A, 1, a, i, (a), (i)'],['Save a copy','Fixed.docx + report'],['Note in today\'s work','For the daily report']],
+         'Word Tool reads the file and suggests the Title, the headings and the list levels. A page then opens in your browser: you accept each suggestion or pick another heading or list level, and press Save.'],
+  idea:'Only the structure changes, never the words. A safety check compares every word of the saved copy with your original.',
+  steps:[['Choose files','In the tool window'],['Check GitHub','Newest version of this tool'],['Find headings and lists','The tool makes its suggestions'],['Review page','Pick each heading and list level'],['Save a copy','Remediated.docx'],['Note in today\'s work','For the daily report']],
   checks:['Title is the first two lines','Section titles are Heading 1','No heading level is skipped','Roman numerals are lists, not headings','List ladder: I, A, 1, a, i, (a), (i)']},
  {file:'SLID_Macro.ps1',drop:'.pptx',art:'slide',name:'SLID Tool',key:'SLID Macro',group:1,letter:'P',tile:'var(--ppt)',out:'<name> Remediated.pptx',unit:'slides',
   tagline:'Slide titles, shape names and reading order. SDRS credit lines too.',
@@ -685,10 +685,11 @@ const POSTJ=async(p,body)=>{const r=await fetch(p,{method:'POST',headers:{'X-S4C
 const folderOf=p=>String(p||'').replace(/[\\/][^\\/]*$/,'');
 const leafOf=p=>String(p||'').replace(/^.*[\\/]/,'');
 const dropOf=t=>[].concat(t.drop||[]);
-const INTER=['Link_Fixer.ps1','AltText_Tool.ps1'];
+const INTER=['Link_Fixer.ps1','AltText_Tool.ps1','Word_Fixer.ps1'];
 const RN_STEPS={d:['Checking GitHub','Reading the file','Fixing','Saving'],
  'Link_Fixer.ps1':['Checking GitHub','Reading the links','Looking up links','Review page open'],
- 'AltText_Tool.ps1':['Checking GitHub','Reading deck and Excel','Building the review page','Review page open']};
+ 'AltText_Tool.ps1':['Checking GitHub','Reading deck and Excel','Building the review page','Review page open'],
+ 'Word_Fixer.ps1':['Checking GitHub','Reading the file','Finding headings and lists','Review page open']};
 function dzOn(){return dz.tool===TOOLS[cur].file?dz.items:[]}
 function dzRender(){const t=TOOLS[cur];const list=$('dzList');
   if(!t.drop){list.style.display='none';$('rnCard').style.display='none';return}
@@ -766,6 +767,7 @@ const RC=2*Math.PI*42;
 function rnTitle(){const t=TOOLS.find(x=>x.file===rn.tool);
   if(rn.tool==='Link_Fixer.ps1')return rn.serving?'The review page is open':'Reading your links...';
   if(rn.tool==='AltText_Tool.ps1')return rn.serving?'The review page is open':'Building the review page...';
+  if(rn.tool==='Word_Fixer.ps1')return rn.serving?'The page is open in your browser':'Finding headings and lists...';
   return 'Fixing '+rn.total+(rn.total===1?' file':' files')+'...'}
 function rnDraw(){const c=$('rnCard');if(!rn||rn.tool!==TOOLS[cur].file){c.style.display='none';return}
   c.style.display='';
@@ -796,7 +798,7 @@ function rnUpdate(r){if(!rn)return;const p=r.progress||{total:rn.total,done:0};l
   rn.stage=stage;rn.pct=Math.max(rn.pct,pct);rnPaint()}
 function rnFinish(was,r){const it=dz.items;const ok=it.length&&it.every(x=>x.state==='done');const errs=((r.progress||{}).errors)||[];
   const n=it.filter(x=>x.state==='done'&&/\.(pptx|docx)$/i.test(x.file.name)).length;const t=TOOLS.find(x=>x.file===was.tool);
-  const inter=INTER.includes(was.tool);
+  const inter=INTER.includes(was.tool)&&was.tool!=='Word_Fixer.ps1';
   const head=ok?(inter?'Completed. Your review was applied.':'Completed. '+n+(n===1?' file':' files')+' fixed.'):'Completed with problems';
   const sub=ok?(was.tool==='IMBK_Macro.ps1'?'The decks were fixed in place and a backup of each was kept. Today\'s work is updated.':'The fixed copies are saved next to your originals. Today\'s work is updated.'):
     (errs.find(x=>/FAILED|Cannot|not found|denied|Exception/i.test(x))||errs[0]||'Some files were not saved. The list below says which one and why.');
@@ -811,7 +813,7 @@ function dzDone(was,r){const t=TOOLS.find(x=>x.file===was.tool);
     const isDoc=/\.(pptx|docx)$/i.test(x.file.name);
     if(q){x.state='done';x.outPath=folderOf(x.path)+'\\'+q.out;x.msg=(q.out===q.file?'Fixed in place, backup kept':'Saved: '+q.out)+(q.count?'  ('+q.count+' '+q.unit+')':'');if(x.dirHandle&&q.out!==q.file)dzWriteBack(x);else if(x.dirHandle)x.msg+='  (in Documents\\S4C Output, not in your folder)'}
     else if(!isDoc){x.state='done';x.msg='Used'}
-    else{x.state='failed';x.msg=(INTER.includes(was.tool)&&!(((r.progress||{}).errors)||[]).length)?'Nothing was saved (the review was not applied).':'Not saved. '+((((r.progress||{}).errors)||[])[0]||'The tool reported a problem.')}})}
+    else{x.state='failed';x.msg=(INTER.includes(was.tool)&&!(((r.progress||{}).errors)||[]).length)?(was.tool==='Word_Fixer.ps1'?'Nothing was saved (the page was closed before Save was pressed).':'Nothing was saved (the review was not applied).'):'Not saved. '+((((r.progress||{}).errors)||[])[0]||'The tool reported a problem.')}})}
 (function(){const h=document.querySelector('section.hero');
   ['dragenter','dragover'].forEach(n=>h.addEventListener(n,e=>{e.preventDefault();h.classList.add('hot')}));
   ['dragleave','drop'].forEach(n=>h.addEventListener(n,e=>{e.preventDefault();h.classList.remove('hot')}));

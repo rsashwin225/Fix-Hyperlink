@@ -13,8 +13,10 @@
 #   7. Team format: headings start at Heading 1 (no skipped level), typed bullets become real bullets, and lecture-outline
 #      lists ("LO ..." styles) become List Paragraph items with a separate list per parent item (as in the team's finished files).
 #
-# The original file is never changed: the result is saved as "<name> Fixed.docx" with a report next to it.
-$WF_VERSION = '2.5'   # shown at the start of the window; the updater compares this number with GitHub
+# Version 3: the fixes above are only the SUGGESTION. A page opens in the browser where you choose each heading / list level, then Save
+# ("<name> Remediated.docx"). Set WF_AUTO=1 to save the automatic result as "<name> Fixed.docx" without the page.
+# The original file is never changed.
+$WF_VERSION = '3.0'   # shown at the start of the window; the updater compares this number with GitHub
 # ---- work log: notes each saved file (name, slides or pages) for the daily report in S4C Tools ----
 # Only reads the saved file; never changes it and never stops the tool if something goes wrong.
 function Add-WorkLog([string]$tool, [string]$inPath, [string]$outPath) {
@@ -1785,6 +1787,367 @@ function Invoke-TeamFormat($doc, $nsm, $sty, $snsm, $numRef, $nnsmRef, $info, [s
     elseif ($nHead + $nBul + $nList) { $report.Add('Team format: all text, numbers and bullets look exactly as before.') }
 }
 
+$WE_HTML = @'
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Word Tool - headings and lists</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4eee2;font-family:"Segoe UI",Inter,Arial,sans-serif;color:#1f2a24}
+.top{display:flex;align-items:center;gap:12px;padding:12px 22px;background:#fffdf7;border-bottom:1px solid #e6dcc7;position:sticky;top:0;z-index:5}
+.top h1{font-family:Georgia,serif;font-size:19px;margin:0;font-weight:600}
+.m{color:#6b6a5e;font-size:13px}.sp{flex:1}
+.btn{border:1px solid #d9ceb4;background:#fff;border-radius:10px;padding:8px 16px;font-size:13.5px;cursor:pointer;color:#1f2a24;font-family:inherit}
+.btn:hover{background:#faf6ea}.btn:disabled{opacity:.5;cursor:default}
+.btn.pr{background:#2d5a45;color:#fff;border-color:#2d5a45;font-weight:600}.btn.pr:hover{background:#264d3b}
+.wrap{display:flex;gap:18px;padding:18px 22px;align-items:flex-start}
+.doc{flex:1;min-width:0;background:#fff;border:1px solid #e6dcc7;border-radius:14px;padding:18px 22px 26px}
+.tabs{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.tab{padding:6px 13px;border-radius:99px;background:#efe8d6;color:#5a584b;font-size:12.5px;cursor:pointer;border:0;font-family:inherit}
+.tab.on{background:#2d5a45;color:#fff}
+.p{position:relative;padding:5px 10px 5px 78px;border-radius:8px;margin:2px 0;cursor:pointer;font-family:Georgia,serif;font-size:15px;line-height:1.55;border:2px solid transparent;word-wrap:break-word}
+.p:hover{background:#faf6ea}
+.p.sel{background:#fbf3df;border-color:#d9a93a}
+.p.mine{box-shadow:inset 4px 0 0 #2d5a45}
+.b{position:absolute;left:6px;top:7px;font-family:"Segoe UI",Arial,sans-serif;font-size:10.5px;font-weight:600;border-radius:6px;padding:2px 6px;background:#e3efe6;color:#2d5a45;min-width:54px;text-align:center}
+.b.n{background:#eee;color:#888}.b.l{background:#e8e2f3;color:#4b3d7a}.b.t{background:#dbe7f3;color:#1f4a78}
+.k-head{font-weight:700}.k-h1{font-size:23px}.k-h2{font-size:20px}.k-h3{font-size:17.5px}.k-title{font-size:25px;font-weight:700}
+.k-list{padding-left:100px}.k-list .b{left:30px}
+.k-list2{padding-left:126px}.k-list2 .b{left:56px}.k-list3{padding-left:152px}.k-list3 .b{left:82px}
+.tb{font-family:"Segoe UI",Arial,sans-serif;font-size:10.5px;color:#8a8672;margin-left:6px}
+.side{width:340px;flex:none;position:sticky;top:70px;background:#fffdf7;border:1px solid #e6dcc7;border-radius:14px;padding:18px;font-size:13.5px;max-height:calc(100vh - 90px);overflow:auto}
+.side h2{font-family:Georgia,serif;font-size:17px;margin:0 0 4px;font-weight:600}
+.cap{color:#7a786a;font-size:12px}
+.q{background:#f4eee2;border-radius:8px;padding:8px 10px;margin:10px 0 4px;font-family:Georgia,serif;font-size:13.5px;max-height:110px;overflow:auto}
+.lbl{font-size:10.5px;letter-spacing:.08em;color:#8a8672;font-weight:600;text-transform:uppercase;margin:14px 0 6px}
+.o{display:inline-block;border:1px solid #d9ceb4;background:#fff;border-radius:8px;padding:6px 11px;margin:0 4px 6px 0;font-size:13px;cursor:pointer;font-family:inherit;color:#1f2a24}
+.o:hover{background:#faf6ea}.o.on{background:#2d5a45;color:#fff;border-color:#2d5a45}.o.sg{border-color:#d9a93a;background:#fbf3df;color:#1f2a24}
+.o.sg.on{background:#2d5a45;color:#fff;border-color:#2d5a45}
+.prog{height:6px;border-radius:9px;background:#e8dfc9;margin:6px 0 4px}.prog i{display:block;height:6px;border-radius:9px;background:#2d5a45;width:0}
+.foot{border-top:1px solid #efe6d2;margin-top:16px;padding-top:12px;color:#6b6a5e;font-size:12px;line-height:1.5}
+.keys{margin-top:10px;color:#8a8672;font-size:11.5px;line-height:1.6}
+kbd{background:#f1ead7;border:1px solid #e0d5b8;border-radius:4px;padding:0 5px;font-size:11px}
+.msg{padding:50px 20px;text-align:center;color:#6b6a5e;font-size:15px}
+.done{max-width:640px;margin:60px auto;background:#fffdf7;border:1px solid #e6dcc7;border-radius:16px;padding:30px 34px;text-align:center}
+.done h1{font-family:Georgia,serif;margin:0 0 8px;font-weight:600}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1f2a24;color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;display:none;z-index:9;max-width:80vw}
+.warn{background:#fbf3df;border:1px solid #ecd9a4;border-radius:10px;padding:10px 14px;margin:12px 0;font-size:13px;text-align:left}
+</style></head><body>
+<div class="top"><h1>Word Tool</h1><span class="m" id="fn"></span><span class="sp"></span><span class="m" id="cnt"></span>
+<button class="btn" id="undoAll" onclick="resetAll()">Back to the tool's suggestions</button>
+<button class="btn pr" id="saveBtn" onclick="save()">Save Remediated file</button></div>
+<div id="app"><div class="msg">Reading the document and finding headings...</div></div>
+<div class="toast" id="toast"></div>
+<script>
+var TOKEN='__TOKEN__';
+var FILES=[],FI=0,P=[],CUR={},SEL=-1,TAB='sug',SAVED={};
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function api(path,body){return fetch(path,body===undefined?{headers:{'X-Token':TOKEN}}:{method:'POST',headers:{'X-Token':TOKEN,'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){return r.json()})}
+function toast(t){var e=document.getElementById('toast');e.textContent=t;e.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(function(){e.style.display='none'},3500)}
+function label(k,n){if(k==='head')return 'Heading '+n;if(k==='list')return 'List level '+n;if(k==='title')return 'Title';return 'Normal text'}
+function short(k,n){if(k==='head')return 'H'+n;if(k==='list')return 'List '+n;if(k==='title')return 'Title';return 'Normal'}
+function same(a,b){return a.k===b.k&&(a.k==='normal'||a.k==='title'||a.n===b.n)}
+function isMine(x){return !same(CUR[x.i],{k:x.sk,n:x.sn})}
+function load(i){
+  FI=i;SEL=-1;TAB='sug';document.getElementById('app').innerHTML='<div class="msg">Reading the document and finding headings...</div>';
+  document.getElementById('saveBtn').disabled=true;
+  api('/api/plan?i='+i).then(function(d){
+    if(d.auto){SAVED[i]=d.out;toast('This file cannot be shown here. The tool saved its automatic fix: '+d.out);if(d.next>=0)load(d.next);else finish({});return}
+    if(d.error){document.getElementById('app').innerHTML='<div class="msg">This file could not be shown here.<br><br>'+esc(d.error)+'</div>';return}
+    P=d.paras;CUR={};P.forEach(function(x){CUR[x.i]={k:x.sk,n:x.sn}});
+    document.getElementById('fn').textContent=d.name+(FILES.length>1?'  (file '+(i+1)+' of '+FILES.length+')':'');
+    var nsug=P.filter(function(x){return x.ch}).length;if(nsug===0)TAB='hl';
+    draw();document.getElementById('saveBtn').disabled=false;
+    var f=P.filter(function(x){return TAB==='sug'?x.ch:true})[0];if(f)select(f.i);
+  }).catch(function(){document.getElementById('app').innerHTML='<div class="msg">The tool window was closed. Open the Word Tool again.</div>'})
+}
+function vis(){
+  if(TAB==='all')return P;
+  if(TAB==='hl')return P.filter(function(x){var c=CUR[x.i];return c.k!=='normal'});
+  if(TAB==='mine')return P.filter(isMine);
+  return P.filter(function(x){return x.ch||isMine(x)});
+}
+function rowHtml(x){
+  var c=CUR[x.i],cls='p',bc='b';
+  if(c.k==='head')cls+=' k-head k-h'+Math.min(c.n,3);if(c.k==='title')cls+=' k-title k-head';
+  if(c.k==='list'){cls+=' k-list'+(c.n===2?'2':c.n>=3?'3':'');bc+=' l'}
+  if(c.k==='normal')bc+=' n';if(c.k==='title')bc+=' t';
+  if(x.i===SEL)cls+=' sel';if(isMine(x))cls+=' mine';
+  return '<div class="'+cls+'" id="r'+x.i+'" onclick="select('+x.i+')"><span class="'+bc+'">'+short(c.k,c.n)+'</span>'+esc(x.t)+(x.box?'<span class="tb">in a table or box</span>':'')+'</div>';
+}
+function draw(){
+  var nsug=P.filter(function(x){return x.ch}).length,nhl=P.filter(function(x){return CUR[x.i].k!=='normal'}).length,nm=P.filter(isMine).length;
+  var tabs=[['sug','Tool changed ('+nsug+')'],['hl','Headings and lists ('+nhl+')'],['all','All paragraphs ('+P.length+')'],['mine','Changed by me ('+nm+')']];
+  var h='<div class="wrap"><div class="doc"><div class="tabs">'+tabs.map(function(t){return '<button class="tab'+(TAB===t[0]?' on':'')+'" onclick="setTab(\''+t[0]+'\')">'+t[1]+'</button>'}).join('')+'</div><div id="rows">';
+  var v=vis();h+=v.length?v.map(rowHtml).join(''):'<div class="msg">Nothing here.</div>';
+  h+='</div></div><div class="side" id="side"></div></div>';
+  document.getElementById('app').innerHTML=h;side();
+  document.getElementById('cnt').textContent=nm?nm+' changed by you':'No changes by you';
+}
+function setTab(t){TAB=t;draw();var e=document.getElementById('r'+SEL);if(e)e.scrollIntoView({block:'center'})}
+function refreshRow(i){
+  var x=P.filter(function(y){return y.i===i})[0];var e=document.getElementById('r'+i);
+  if(e&&x){var t=document.createElement('div');t.innerHTML=rowHtml(x);e.replaceWith(t.firstChild)}
+  var nm=P.filter(isMine).length;document.getElementById('cnt').textContent=nm?nm+' changed by you':'No changes by you';
+  var tb=document.querySelectorAll('.tab');if(tb[3])tb[3].textContent='Changed by me ('+nm+')';
+}
+function select(i){var old=SEL;SEL=i;if(old>=0)refreshRow(old);refreshRow(i);side();var e=document.getElementById('r'+i);if(e)e.scrollIntoView({block:'nearest'})}
+function side(){
+  var s=document.getElementById('side');if(!s)return;
+  var nm=P.filter(isMine).length;
+  var h='';
+  if(SEL<0){s.innerHTML='<h2>Pick a paragraph</h2><div class="cap">Click any line on the left.</div>';return}
+  var x=P.filter(function(y){return y.i===SEL})[0],c=CUR[SEL];
+  var sg={k:x.sk,n:x.sn};
+  h+='<h2>Selected paragraph</h2><div class="cap">The tool suggests: '+label(x.sk,x.sn)+(x.ok!==x.sk||x.on!==x.sn?' (it was '+label(x.ok,x.on).toLowerCase()+')':'')+'</div><div class="q">'+esc(x.t)+'</div>';
+  function chip(k,n,txt){var on=same(c,{k:k,n:n}),sgst=same(sg,{k:k,n:n});return '<button class="o'+(sgst?' sg':'')+(on?' on':'')+'" onclick="setKind(\''+k+'\','+n+')">'+txt+'</button>'}
+  h+='<div class="lbl">Make it</div>'+chip('normal',0,'Normal text')+chip('title',0,'Title');
+  h+='<div class="lbl">A heading</div>'+[1,2,3,4,5,6].map(function(n){return chip('head',n,'Heading '+n)}).join('');
+  h+='<div class="lbl">Or a list item</div>'+[1,2,3,4].map(function(n){return chip('list',n,'Level '+n)}).join('');
+  if(x.sk!==c.k||x.sn!==c.n)h+='<div class="lbl">Tool suggestion</div><button class="o sg" onclick="setKind(\''+x.sk+'\','+x.sn+')">Use '+label(x.sk,x.sn)+'</button>';
+  h+='<div class="lbl">Progress</div><div class="prog"><i style="width:'+Math.round(100*nm/Math.max(1,P.length))+'%"></i></div><div class="cap">'+nm+' changed by you &middot; the rest is as the tool suggests</div>';
+  h+='<div class="keys">Keys: <kbd>&uarr;</kbd> <kbd>&darr;</kbd> next / previous &middot; <kbd>0</kbd> normal &middot; <kbd>1</kbd>-<kbd>6</kbd> heading &middot; <kbd>Q</kbd> <kbd>W</kbd> <kbd>E</kbd> list level 1-3</div>';
+  h+='<div class="foot">Only the structure changes. The words, their order and spacing stay exactly as they are. Save makes a new file called <b>'+esc(FILES[FI].replace(/\.docx$/i,''))+' Remediated.docx</b> next to the original; your original is not touched.</div>';
+  s.innerHTML=h;
+}
+function setKind(k,n){if(SEL<0)return;CUR[SEL]={k:k,n:n};refreshRow(SEL);side();if(TAB==='mine'||TAB==='sug'){}}
+function resetAll(){if(!P.length)return;P.forEach(function(x){CUR[x.i]={k:x.sk,n:x.sn}});draw();toast("Back to the tool's suggestions")}
+function move(d){
+  var v=vis();if(!v.length)return;var ix=-1;for(var j=0;j<v.length;j++)if(v[j].i===SEL)ix=j;
+  var n=Math.min(v.length-1,Math.max(0,ix+d));select(v[n].i)
+}
+document.addEventListener('keydown',function(e){
+  if(e.ctrlKey||e.altKey||e.metaKey||!P.length)return;var k=e.key;
+  if(k==='ArrowDown'){e.preventDefault();move(1)}else if(k==='ArrowUp'){e.preventDefault();move(-1)}
+  else if(k==='0')setKind('normal',0);else if(/^[1-6]$/.test(k))setKind('head',+k);
+  else if(k==='q'||k==='Q')setKind('list',1);else if(k==='w'||k==='W')setKind('list',2);else if(k==='e'||k==='E')setKind('list',3)
+});
+function save(){
+  var ch={};P.forEach(function(x){if(isMine(x))ch[x.i]=CUR[x.i]});
+  var b=document.getElementById('saveBtn');b.disabled=true;b.textContent='Saving...';
+  api('/api/save',{i:FI,choices:ch}).then(function(d){
+    b.textContent='Save Remediated file';
+    if(d.error){b.disabled=false;toast('Not saved: '+d.error);return}
+    SAVED[FI]=d.out;
+    if(d.next>=0){toast('Saved '+d.out+'. Next file...');load(d.next)}else finish(d)
+  }).catch(function(){b.disabled=false;b.textContent='Save Remediated file';toast('The tool window was closed, nothing was saved.')})
+}
+function finish(d){
+  var list=Object.keys(SAVED).map(function(k){return '<div style="margin:6px 0"><b>'+esc(SAVED[k])+'</b> <button class="btn" onclick="openF('+k+')">Show in folder</button></div>'}).join('');
+  var warn=(d.skipped&&d.skipped.length)?'<div class="warn"><b>Left as the tool had it:</b><br>'+d.skipped.map(esc).join('<br>')+'</div>':'';
+  document.getElementById('app').innerHTML='<div class="done"><h1>Saved</h1><div class="m">Your original file was not changed.</div><div style="margin-top:16px">'+list+'</div>'+warn+'<div class="m" style="margin-top:18px">You can close this tab. S4C Tools has noted the file in Today\'s work.</div><div style="margin-top:14px"><button class="btn" onclick="api(\'/api/quit\',{});window.close()">Finish</button></div></div>';
+  document.getElementById('saveBtn').style.display='none';document.getElementById('undoAll').style.display='none';document.getElementById('cnt').textContent='';
+}
+function openF(i){api('/api/open',{i:+i})}
+api('/api/state').then(function(d){FILES=d.files;load(0)}).catch(function(){document.getElementById('app').innerHTML='<div class="msg">The tool window was closed. Open the Word Tool again.</div>'});
+</script></body></html>
+'@
+# ----------------------------------------------------------------- editor: the page where you choose headings and list levels
+# The automatic fixes above make the SUGGESTION. The page shows every paragraph with what the tool suggests; you accept it or
+# pick another heading / list level, then press Save. Only the structure is changed - the words are never edited.
+function Get-ParaKind($p, $nsm, $info, [string]$defStyle) {
+    $sid = WAttr (SSN $p 'w:pPr/w:pStyle' $nsm) 'val'; if (-not $sid) { $sid = $defStyle }
+    $nm = ''; if ($info.ContainsKey($sid)) { $nm = [string]$info[$sid].name }
+    $pol = WAttr (SSN $p 'w:pPr/w:outlineLvl' $nsm) 'val'
+    $ol = Get-StyleChainValue $info $sid 'outline'
+    $lvl = $null
+    if ($null -ne $pol -and $pol -ne '') { $lvl = [int]$pol } elseif ($null -ne $ol -and "$ol" -ne '') { $lvl = [int]$ol }
+    if ($nm -ieq 'Title') { return @{ k = 'title'; n = 0 } }
+    if ($null -ne $lvl -and $lvl -le 8) { return @{ k = 'head'; n = ($lvl + 1) } }
+    $nid = WAttr (SSN $p 'w:pPr/w:numPr/w:numId' $nsm) 'val'
+    $isList = $false; $ilv = 0
+    if ($nid) { $isList = ($nid -ne '0') } elseif (Get-StyleChainValue $info $sid 'numPr') { $isList = $true }
+    if ($isList) {
+        $iv = WAttr (SSN $p 'w:pPr/w:numPr/w:ilvl' $nsm) 'val'
+        if ($iv) { $ilv = [int]$iv }
+        else { $sn = Get-StyleChainValue $info $sid 'numPr'; $iv2 = WAttr (SSN $sn 'w:ilvl' $nsm) 'val'; if ($iv2) { $ilv = [int]$iv2 } }
+        return @{ k = 'list'; n = ($ilv + 1) }
+    }
+    return @{ k = 'normal'; n = 0 }
+}
+function Get-WordPlan([string]$inPath, [string]$sugPath) {
+    $null = Repair-Docx $inPath $sugPath
+    $zo = [IO.Compression.ZipFile]::OpenRead($inPath); $zs = [IO.Compression.ZipFile]::OpenRead($sugPath)
+    try {
+        $dO = New-XmlDoc (Read-Entry $zo 'word/document.xml'); $nO = New-Ns $dO
+        $sO = New-XmlDoc (Read-Entry $zo 'word/styles.xml'); $snO = New-Ns $sO
+        $dS = New-XmlDoc (Read-Entry $zs 'word/document.xml'); $nS = New-Ns $dS
+        $sS = New-XmlDoc (Read-Entry $zs 'word/styles.xml'); $snS = New-Ns $sS
+    } finally { $zo.Dispose(); $zs.Dispose() }
+    $iO = Get-StyleInfo $sO $snO; $iS = Get-StyleInfo $sS $snS
+    $dfO = Get-DefaultParaStyle $sO $snO; $dfS = Get-DefaultParaStyle $sS $snS
+    $pO = @($dO.SelectNodes('/w:document/w:body//w:p', $nO)); $pS = @($dS.SelectNodes('/w:document/w:body//w:p', $nS))
+    if ($pO.Count -ne $pS.Count) { return $null }
+    $items = New-Object System.Collections.Generic.List[object]; $orig = @{}
+    for ($i = 0; $i -lt $pO.Count; $i++) {
+        $tO = Get-ParaText $pO[$i] $nO; $tS = Get-ParaText $pS[$i] $nS
+        if ($tO.Trim() -eq '' -and $tS.Trim() -eq '') { continue }
+        $kO = Get-ParaKind $pO[$i] $nO $iO $dfO; $kS = Get-ParaKind $pS[$i] $nS $iS $dfS
+        $orig[$i] = $tO
+        $shown = $tO; if ($shown.Length -gt 400) { $shown = $shown.Substring(0, 400) + '...' }
+        $sid = WAttr (SSN $pS[$i] 'w:pPr/w:pStyle' $nS) 'val'; if (-not $sid) { $sid = $dfS }
+        $sn = ''; if ($iS.ContainsKey($sid)) { $sn = [string]$iS[$sid].name }
+        $items.Add([ordered]@{ i = $i; t = $shown; sk = $kS.k; sn = [int]$kS.n; ok = $kO.k; on = [int]$kO.n; ch = [bool]($kO.k -ne $kS.k -or $kO.n -ne $kS.n -or $tO -ne $tS); box = [bool]$pS[$i].SelectSingleNode('ancestor::w:tbl|ancestor::w:txbxContent', $nS); sty = $sn })
+    }
+    return @{ Items = $items.ToArray(); Orig = $orig; Count = $pO.Count }
+}
+function Remove-ParaDirect($p, $nsm, [string[]]$tags) {
+    $pPr = $p.SelectSingleNode('w:pPr', $nsm); if (-not $pPr) { return }
+    foreach ($t in $tags) { foreach ($x in @($pPr.SelectNodes('w:' + $t, $nsm))) { [void]$pPr.RemoveChild($x) } }
+}
+function Restore-TypedStart($p, $nsm, [string]$prefix) {
+    $t = $p.SelectSingleNode('.//w:t', $nsm); if (-not $t) { return }
+    $t.InnerText = $prefix + $t.InnerText
+    # xml:space must keep its own "xml" prefix (SetAttribute with the namespace would invent another prefix and Word would refuse the file)
+    $a = $t.Attributes['xml:space']
+    if (-not $a) { $a = $t.OwnerDocument.CreateAttribute('xml', 'space', 'http://www.w3.org/XML/1998/namespace'); $a.Value = 'preserve'; [void]$t.Attributes.Append($a) } else { $a.Value = 'preserve' }
+}
+# $choices: paragraph number -> @{ k = 'normal'|'title'|'head'|'list'; n = level }. Returns the lines that could not be applied.
+function Save-WordEdit([string]$sugPath, [string]$outPath, $choices, $origText) {
+    Copy-Item -LiteralPath $sugPath -Destination $outPath -Force
+    $skipped = New-Object System.Collections.Generic.List[string]
+    if ($choices.Count -eq 0) { return ,$skipped }
+    $script:LookOf = @{}
+    $zip = [IO.Compression.ZipFile]::Open($outPath, 'Update')
+    try {
+        $doc = New-XmlDoc (Read-Entry $zip 'word/document.xml'); $nsm = New-Ns $doc
+        $sty = New-XmlDoc (Read-Entry $zip 'word/styles.xml'); $snsm = New-Ns $sty
+        $info = Get-StyleInfo $sty $snsm; $defStyle = Get-DefaultParaStyle $sty $snsm
+        $paras = @($doc.SelectNodes('/w:document/w:body//w:p', $nsm))
+        $usedIds = @{}; foreach ($p in $paras) { $s0 = WAttr (SSN $p 'w:pPr/w:pStyle' $nsm) 'val'; if (-not $s0) { $s0 = $defStyle }; $usedIds[$s0] = $true }
+        foreach ($idx in (@($choices.Keys) | Sort-Object { [int]$_ })) {
+            $i = [int]$idx; if ($i -lt 0 -or $i -ge $paras.Count) { continue }
+            $p = $paras[$i]; $c = $choices[$idx]; $k = [string]$c.k; $n = [int]$c.n
+            $curSid = WAttr (SSN $p 'w:pPr/w:pStyle' $nsm) 'val'; if (-not $curSid) { $curSid = $defStyle }
+            $label = ((Get-ParaText $p $nsm).Trim() -replace '^(.{50}).+$', '$1...')
+            $sugText = Get-ParaText $p $nsm; $o = [string]$origText[$i]
+            if ($k -eq 'list') {
+                if ((Get-ParaKind $p $nsm $info $defStyle).k -eq 'list') {
+                    $pPr = $p.SelectSingleNode('w:pPr', $nsm)
+                    $np = $pPr.SelectSingleNode('w:numPr', $nsm); if (-not $np) { $np = New-W $doc 'numPr'; [void]$pPr.AppendChild($np) }
+                    $il = $np.SelectSingleNode('w:ilvl', $nsm); if (-not $il) { $il = New-W $doc 'ilvl'; [void]$np.InsertBefore($il, $np.FirstChild) }
+                    Set-WAttr $il 'val' ([string]([math]::Max(0, $n - 1))); Sort-Kids $pPr $PPR_ORDER
+                    continue
+                }
+                # not a list item yet: join the list of the paragraph just above it, when that one is a list item
+                $prev = $null
+                for ($j = $i - 1; $j -ge [math]::Max(0, $i - 8); $j--) { if ((Get-ParaText $paras[$j] $nsm).Trim()) { $prev = $paras[$j]; break } }
+                $pn = $null; if ($prev -and $prev.ParentNode -eq $p.ParentNode) { $pn = WAttr (SSN $prev 'w:pPr/w:numPr/w:numId' $nsm) 'val' }
+                if (-not $pn -or $pn -eq '0') { $skipped.Add("'" + $label + "': a list item needs a list item right above it, so it was left as the tool had it"); continue }
+                $psid = WAttr (SSN $prev 'w:pPr/w:pStyle' $nsm) 'val'
+                Remove-ParaDirect $p $nsm @('numPr', 'outlineLvl')
+                if ($psid) { Set-ParaStyle $p $nsm $psid } else { Remove-ParaDirect $p $nsm @('pStyle') }
+                $pPr = $p.SelectSingleNode('w:pPr', $nsm); if (-not $pPr) { $pPr = New-W $doc 'pPr'; [void]$p.PrependChild($pPr) }
+                $np = New-W $doc 'numPr'; $il = New-W $doc 'ilvl'; Set-WAttr $il 'val' ([string]([math]::Max(0, $n - 1))); $ni = New-W $doc 'numId'; Set-WAttr $ni 'val' $pn
+                [void]$np.AppendChild($il); [void]$np.AppendChild($ni); [void]$pPr.AppendChild($np); Sort-Kids $pPr $PPR_ORDER
+                continue
+            }
+            # heading, title or normal text: no list number, no outline level of its own, then the chosen style
+            if ($k -eq 'head') { $n = [math]::Min([math]::Max($n, 1), 9); $sid = Use-BuiltinStyle $sty $snsm $info ('heading ' + $n) ('Heading' + $n) $curSid $usedIds ($n - 1); Remove-ParaDirect $p $nsm @('numPr', 'outlineLvl'); Set-ParaStyle $p $nsm $sid }
+            elseif ($k -eq 'title') { $sid = Use-BuiltinStyle $sty $snsm $info 'Title' 'Title' $curSid $usedIds; Remove-ParaDirect $p $nsm @('numPr', 'outlineLvl'); Set-ParaStyle $p $nsm $sid }
+            else { Remove-ParaDirect $p $nsm @('numPr', 'outlineLvl', 'pStyle') }
+            $pPr = $p.SelectSingleNode('w:pPr', $nsm); if ($pPr) { Sort-Kids $pPr $PPR_ORDER }
+            # the tool had turned a typed "A." / "1." into a real list number: a heading or plain text keeps the typed text as it was
+            if ($o.Length -gt $sugText.Length -and $o.EndsWith($sugText)) { Restore-TypedStart $p $nsm $o.Substring(0, $o.Length - $sugText.Length) }
+        }
+        Write-Entry $zip 'word/document.xml' $doc.OuterXml
+        Write-Entry $zip 'word/styles.xml' $sty.OuterXml
+    } finally { $zip.Dispose() }
+    $chk = [IO.Compression.ZipFile]::OpenRead($outPath); $chk.Dispose()
+    return ,$skipped
+}
+function Start-WordEditor([string[]]$files) {
+    $token = [guid]::NewGuid().ToString('N')
+    $listener = $null; $port = 0
+    foreach ($try in 1..40) {
+        $port = Get-Random -Minimum 49200 -Maximum 49900
+        $l = New-Object System.Net.HttpListener; $l.Prefixes.Add("http://localhost:$port/")
+        try { $l.Start(); $listener = $l; break } catch { $l.Close() }
+    }
+    if (-not $listener) { throw 'Could not start the local page server.' }
+    $url = "http://localhost:$port/"
+    $names = @($files | ForEach-Object { [IO.Path]::GetFileName($_) })
+    $plans = @{}; $saved = @{}
+    $html = $WE_HTML.Replace('__TOKEN__', $token)
+    if ($env:WF_PORTFILE) { Set-Content -LiteralPath $env:WF_PORTFILE -Value "$port|$token" -Encoding ASCII } else { Start-Process $url }
+    Write-Host ''
+    Write-Host ('The review page is open at ' + $url)
+    Write-Host 'Choose the headings and list levels in the page, then press Save. Close this window when you are finished.'
+    $quit = $false; $doneAt = $null
+    while ($listener.IsListening -and -not $quit) {
+        $ar = $listener.BeginGetContext($null, $null)
+        while (-not $ar.AsyncWaitHandle.WaitOne(500)) { if ($doneAt -and ((Get-Date) - $doneAt).TotalSeconds -gt 60) { $quit = $true; break } }
+        if ($quit) { break }
+        $ctx = $listener.EndGetContext($ar); $req = $ctx.Request; $res = $ctx.Response
+        $status = 200; $ctype = 'application/json; charset=utf-8'; $body = ''
+        try {
+            $path = $req.Url.AbsolutePath; $q = [Web.HttpUtility]::ParseQueryString($req.Url.Query)
+            if ($req.HttpMethod -eq 'GET' -and $path -eq '/') { $ctype = 'text/html; charset=utf-8'; $body = $html }
+            elseif ($req.Headers['X-Token'] -ne $token) { $status = 403; $body = '{"error":"Not allowed"}' }
+            elseif ($req.HttpMethod -eq 'GET' -and $path -eq '/api/state') { $body = (@{ files = $names; saved = @($saved.Keys | ForEach-Object { [int]$_ }) } | ConvertTo-Json -Compress -Depth 3) }
+            elseif ($req.HttpMethod -eq 'GET' -and $path -eq '/api/plan') {
+                $i = [int]$q['i']; $f = $files[$i]
+                if (-not $plans.ContainsKey($i)) {
+                    Write-Host ('Fixing: ' + [IO.Path]::GetFileName($f))
+                    $sug = Join-Path ([IO.Path]::GetTempPath()) ('wf_sug_' + [guid]::NewGuid().ToString('N').Substring(0, 8) + '.docx')
+                    $pl = $null; $err = ''
+                    try { $pl = Get-WordPlan $f $sug } catch { $err = $_.Exception.Message }
+                    if ($pl) { $plans[$i] = @{ Plan = $pl; Sug = $sug } } else { $plans[$i] = @{ Plan = $null; Sug = $sug; Err = $err } }
+                }
+                $pp = $plans[$i]
+                if (-not $pp.Plan -and -not $pp.Err -and (Test-Path -LiteralPath $pp.Sug)) {
+                    # the page cannot show this file paragraph by paragraph: the automatic result is saved instead
+                    $out = [IO.Path]::Combine([IO.Path]::GetDirectoryName($f), [IO.Path]::GetFileNameWithoutExtension($f) + ' Remediated.docx')
+                    Copy-Item -LiteralPath $pp.Sug -Destination $out -Force
+                    Write-Host '  This file cannot be shown in the page, so the tool saved its automatic fix.'
+                    Write-Host ('  Saved: ' + $out) -ForegroundColor Green
+                    Add-WorkLog 'Word Fixer' $f $out
+                    $saved[[string]$i] = $out; if ($saved.Count -ge $files.Count) { $doneAt = Get-Date }
+                    $nx = -1; for ($j = 0; $j -lt $files.Count; $j++) { if (-not $saved.ContainsKey([string]$j)) { $nx = $j; break } }
+                    $body = (@{ auto = $true; name = $names[$i]; out = (Split-Path $out -Leaf); next = $nx } | ConvertTo-Json -Compress)
+                }
+                elseif (-not $pp.Plan) { $body = (@{ error = $(if ($pp.Err) { $pp.Err } else { 'This file could not be shown in the page.' }) } | ConvertTo-Json -Compress) }
+                else { $body = (@{ name = $names[$i]; paras = $pp.Plan.Items } | ConvertTo-Json -Compress -Depth 5) }
+            }
+            elseif ($req.HttpMethod -eq 'POST') {
+                $sr = New-Object IO.StreamReader($req.InputStream, [Text.Encoding]::UTF8); $raw = $sr.ReadToEnd(); $sr.Close()
+                if ($path -eq '/api/save') {
+                    $data = $raw | ConvertFrom-Json; $i = [int]$data.i; $f = $files[$i]; $pp = $plans[$i]
+                    if (-not $pp -or -not $pp.Plan) { throw 'Open the file in the page first.' }
+                    $choices = @{}
+                    foreach ($pr in $data.choices.PSObject.Properties) { $choices[[string]$pr.Name] = @{ k = [string]$pr.Value.k; n = [int]$pr.Value.n } }
+                    $out = [IO.Path]::Combine([IO.Path]::GetDirectoryName($f), [IO.Path]::GetFileNameWithoutExtension($f) + ' Remediated.docx')
+                    $skipped = Save-WordEdit $pp.Sug $out $choices $pp.Plan.Orig
+                    Write-Host ('  ' + $choices.Count + ' paragraph(s) changed by you on the page')
+                    foreach ($s in $skipped) { Write-Host ('  CHECK: ' + $s) -ForegroundColor Yellow }
+                    Write-Host ('  Saved: ' + $out) -ForegroundColor Green
+                    Add-WorkLog 'Word Fixer' $f $out
+                    $saved[[string]$i] = $out
+                    if ($saved.Count -ge $files.Count) { $doneAt = Get-Date }
+                    $nx = -1; for ($j = 0; $j -lt $files.Count; $j++) { if (-not $saved.ContainsKey([string]$j)) { $nx = $j; break } }
+                    $body = (@{ ok = $true; out = (Split-Path $out -Leaf); next = $nx; skipped = @($skipped) } | ConvertTo-Json -Compress -Depth 3)
+                }
+                elseif ($path -eq '/api/open') {
+                    $d = $raw | ConvertFrom-Json; $o = $saved[[string][int]$d.i]
+                    if ($o -and (Test-Path -LiteralPath $o)) { Start-Process -FilePath 'explorer.exe' -ArgumentList ('/select,"' + $o + '"') }
+                    $body = '{"ok":true}'
+                }
+                elseif ($path -eq '/api/quit') { $body = '{"ok":true}'; $quit = $true }
+                else { $status = 404; $body = '{"error":"Not found"}' }
+            }
+            else { $status = 404; $body = '{"error":"Not found"}' }
+        } catch {
+            $status = 500; $body = (@{ error = $_.Exception.Message } | ConvertTo-Json -Compress)
+            Write-Host ('  FAILED: ' + $_.Exception.Message) -ForegroundColor Red
+        }
+        $bytes = [Text.Encoding]::UTF8.GetBytes($body)
+        $res.StatusCode = $status; $res.ContentType = $ctype; $res.ContentLength64 = $bytes.Length
+        $res.OutputStream.Write($bytes, 0, $bytes.Length); $res.OutputStream.Close()
+    }
+    $listener.Stop()
+    foreach ($k in $plans.Keys) { try { Remove-Item -LiteralPath $plans[$k].Sug -Force -ErrorAction SilentlyContinue } catch { } }
+    Write-Host 'Page closed.'
+}
+
 # ----------------------------------------------------------------- main
 Write-Host ('Word Fixer - running version ' + $WF_VERSION) -ForegroundColor Cyan
 Write-Host ''
@@ -1815,6 +2178,11 @@ try {
         if ($line) { $files = @([regex]::Matches($line, '"([^"]+)"|(\S+\.docx)') | ForEach-Object { if ($_.Groups[1].Success) { $_.Groups[1].Value } else { $_.Groups[2].Value } } | Where-Object { Test-Path -LiteralPath $_ }) }
     }
     if ($files.Count -eq 0) { Write-Host 'No file selected.' }
+    if ($files.Count -gt 0 -and $env:WF_AUTO -ne '1') {
+        # the page opens in the browser: choose the headings and list levels, then Save
+        Start-WordEditor ([string[]]@($files | ForEach-Object { [IO.Path]::GetFullPath($_) }))
+        $files = @()
+    }
     foreach ($f in $files) {
         $f = [IO.Path]::GetFullPath($f)
         Write-Host ('Fixing: ' + [IO.Path]::GetFileName($f))
