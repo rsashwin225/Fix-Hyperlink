@@ -16,7 +16,7 @@
 # Version 3: the fixes above are only the SUGGESTION. A page opens in the browser where you choose each heading / list level, then Save
 # ("<name> Remediated.docx"). Set WF_AUTO=1 to save the automatic result as "<name> Fixed.docx" without the page.
 # The original file is never changed.
-$WF_VERSION = '3.1'   # shown at the start of the window; the updater compares this number with GitHub
+$WF_VERSION = '3.2'   # shown at the start of the window; the updater compares this number with GitHub
 # ---- work log: notes each saved file (name, slides or pages) for the daily report in S4C Tools ----
 # Only reads the saved file; never changes it and never stops the tool if something goes wrong.
 function Add-WorkLog([string]$tool, [string]$inPath, [string]$outPath) {
@@ -392,6 +392,15 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
         $labelsBefore = Get-ListLabels $paras $nsm $sty $snsm $num $nnsm $defStyle
         $pStyleOf = { param($p) $v = WAttr (SSN $p 'w:pPr/w:pStyle' $nsm) 'val'; if ($v) { $v } else { $defStyle } }
         $usedIds = @{}; foreach ($p in $paras) { $usedIds[(& $pStyleOf $p)] = $true }
+        # Learned from the team's finished lesson plans and lecture outlines (30 files): these books keep their own outline styles and
+        # their bold lines stay plain text; only the section headings are set, from the team's section list.
+        $script:LessonPlan = $false; $script:TeamBook = $false
+        $secHit = @{}
+        foreach ($p in $paras) { $t0 = ((Get-ParaText $p $nsm).Trim() -replace '[:\s]+$', '').ToLowerInvariant(); if ($t0.Length -le 40 -and $LP_SECTIONS.ContainsKey($t0)) { $secHit[$t0] = $true } }
+        if ($secHit.Count -ge 6 -and $secHit.ContainsKey('chapter overview') -and $secHit.ContainsKey('presentation overview')) { $script:LessonPlan = $true }
+        $loCount = 0; foreach ($p in $paras) { $sid0 = & $pStyleOf $p; if ($info.ContainsKey($sid0) -and ([string]$info[$sid0].name) -match '(?i)lect_?outln\d') { $loCount++ } }
+        if ($script:LessonPlan -or $loCount -ge 10) { $script:TeamBook = $true }
+        $joined = 0; $levelFixes = 0
 
         Write-Host ('    ' + 'Reading the document and finding headings...') -ForegroundColor DarkGray
         # ---- 1. custom heading styles -> real headings
@@ -569,6 +578,7 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
                 }
             }
         }
+        if ($script:LessonPlan) { $cands = @($cands | Where-Object { $_.decl }) }   # lesson plans: bold / italic lines stay plain text, as in the team's finished files
         if ($cands.Count -gt 0) {
             $sigs = @($cands | ForEach-Object { $_.sig } | Sort-Object -Unique | Sort-Object @{ Expression = { [int]$_.Split('|')[0] }; Descending = $true }, @{ Expression = { [int]$_.Split('|')[1] }; Descending = $true }, @{ Expression = { [int]$_.Split('|')[3] }; Descending = $true })
             $rankOf = @{}; for ($k = 0; $k -lt $sigs.Count; $k++) { $rankOf[$sigs[$k]] = $k + 1 }
@@ -753,6 +763,7 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
                 while ($n -and $n.LocalName -ne 'tc' -and $n.LocalName -ne 'txbxContent' -and $n.LocalName -ne 'body') { $n = $n.ParentNode }
                 return $n
             }
+            if (-not $script:TeamBook) {   # the team's finished outlines keep their own list levels
             # 3a2. a separate list that is only indented further (e.g. "List Bullet 3" under "List Bullet 2") is
             #      really a sublist: it joins the list above it one level deeper. Only done when that deeper level
             #      is free, so it can take over the sublist's own bullet / number look.
@@ -843,7 +854,9 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
                 }
             }
             if ($joined) { $report.Add("Lists: $joined item(s) of a separate, further-indented list made a real sublist of the list above them") }
+            }
 
+            if (-not $script:TeamBook) {   # the team's finished outlines keep their own list levels
             # 3b. list levels: inside every heading section, the outermost list level becomes level 1,
             #     its sublist level 2, and so on, with no gaps. The look of every item stays the same:
             #     the level definitions move together with the items.
@@ -1063,6 +1076,7 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
                 }
             }
             if ($levelFixes) { $report.Add("Lists: $levelFixes list item(s) moved to the right list level (first level after each heading = level 1, each sublist one level deeper, no gaps)") }
+            }
 
             # 3c. numbers typed by hand -> real numbering
             $usedLv = @{}
@@ -1604,6 +1618,9 @@ function Repair-Docx([string]$inPath, [string]$outPath) {
 #   b. Bullets typed by hand ("* text") become real bullet lists (the typed bullet is removed).
 #   c. Lecture-outline lists (styles named "LO ...") become List Paragraph items, one list per parent item so each level
 #      restarts correctly (I. / A. / 1. / a. ...), with the same numbers the reader saw before.
+$LP_SECTIONS = @{ 'chapter overview' = 1; 'objectives and resources' = 1; 'teaching tips' = 1; 'presentation overview' = 1; 'pre-lecture' = 1; 'lecture' = 1; 'post-lecture' = 1
+    'learning objectives' = 2; 'support materials' = 3; 'reading and preparation' = 2; 'purpose' = 2; 'instructor directions' = 2; 'review questions' = 2; 'discussion questions' = 2; 'applying the key terms' = 2
+    'knowledge objectives' = 3; 'skills objectives' = 3; 'additional nfpa standards' = 3 }
 $TEAM_TOP_SECTIONS = @('unit summary', 'national ems education standard competencies', 'knowledge objectives', 'skills objectives', 'readings and preparation', 'support materials', 'enhancements', 'teaching tips', 'unit activities', 'pre-lecture', 'lecture', 'post-lecture')
 $TEAM_LIST_STYLE_RX = '^(?i)LO[_\s]'
 $TEAM_BULLET_CHARS = -join ([char[]](0x2022, 0xB7, 0x25CF, 0x25AA, 0x25E6, 0x2023, 0xF0B7))   # typed bullet characters (kept as numbers so the file stays plain ASCII)
@@ -1640,6 +1657,16 @@ function Invoke-TeamFormat($doc, $nsm, $sty, $snsm, $numRef, $nnsmRef, $info, [s
         foreach ($h in $real) {
             $h.new = $map[$h.lvl]
             if ($TEAM_TOP_SECTIONS -contains (($h.text -replace '[:\s]+$', '').ToLowerInvariant())) { $h.new = 1 }
+        }
+        if ($script:LessonPlan) {
+            # the team's lesson-plan outline: Heading 1 = main sections, Heading 2 = parts of them, Heading 3 = objectives (and
+            # "Instructor Directions" under "Applying the Key Terms"). Any other heading keeps the level worked out above.
+            $prevText = ''
+            foreach ($h in $real) {
+                $k0 = ($h.text -replace '[:\s]+$', '').ToLowerInvariant()
+                if ($LP_SECTIONS.ContainsKey($k0)) { $h.new = $LP_SECTIONS[$k0]; if ($k0 -eq 'instructor directions' -and $prevText -eq 'applying the key terms') { $h.new = 3 } }
+                $prevText = $k0
+            }
         }
         $prevL = 0; $bump = $null
         foreach ($h in $heads) {
