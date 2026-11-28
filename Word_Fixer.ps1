@@ -16,7 +16,7 @@
 # Version 3: the fixes above are only the SUGGESTION. A page opens in the browser where you choose each heading / list level, then Save
 # ("<name> Remediated.docx"). Set WF_AUTO=1 to save the automatic result as "<name> Fixed.docx" without the page.
 # The original file is never changed.
-$WF_VERSION = '3.0'   # shown at the start of the window; the updater compares this number with GitHub
+$WF_VERSION = '3.1'   # shown at the start of the window; the updater compares this number with GitHub
 # ---- work log: notes each saved file (name, slides or pages) for the daily report in S4C Tools ----
 # Only reads the saved file; never changes it and never stops the tool if something goes wrong.
 function Add-WorkLog([string]$tool, [string]$inPath, [string]$outPath) {
